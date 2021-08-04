@@ -4,8 +4,10 @@ use errors::{DownloadFileError, DownloadPartError};
 pub mod condow_client;
 mod download_range;
 pub mod errors;
+pub mod streams;
 
 pub use download_range::DownloadRange;
+use streams::CondowStream;
 
 #[derive(Clone)]
 pub struct Condow<C: CondowClient> {
@@ -42,23 +44,8 @@ impl<C: CondowClient> Condow<C> {
         unimplemented!()
     }
 
-    pub fn inner_client(&self) -> &C {
-        &self.client
+    pub async fn download_non_concurrent(&self, location: C::Location) ->  Result<CondowStream, DownloadFileError> {
+        unimplemented!()
     }
 }
 
-pub struct CondowStream {
-    n_parts: usize
-}
-
-impl CondowStream {
-    pub fn empty() -> Self {
-        CondowStream {
-            n_parts: 0
-        }
-    }
-
-    pub fn n_parts(&self) -> usize {
-        self.n_parts
-    } 
-}
