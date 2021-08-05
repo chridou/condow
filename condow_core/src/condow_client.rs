@@ -1,8 +1,7 @@
-use bytes::Bytes;
-use futures::{future::BoxFuture, stream::BoxStream};
+use futures::future::BoxFuture;
 use thiserror::Error;
 
-pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
+use crate::streams::{BytesStream, TotalBytesHint};
 
 pub trait CondowClient {
     type Location: std::fmt::Display + Clone;
@@ -13,11 +12,11 @@ pub trait CondowClient {
         location: Self::Location,
         from_inclusive: usize,
         to_inclusive: usize,
-    ) -> BoxFuture<'static, Result<BytesStream, DownloadRangeError>>;
+    ) -> BoxFuture<'static, Result<(BytesStream, TotalBytesHint), DownloadRangeError>>;
     fn download_full(
         &self,
         location: Self::Location,
-    ) -> BoxFuture<'static, Result<BytesStream, DownloadFullError>>;
+    ) -> BoxFuture<'static, Result<(BytesStream, TotalBytesHint), DownloadFullError>>;
 }
 
 #[derive(Error, Debug)]
@@ -61,7 +60,3 @@ pub enum DownloadFullError {
     #[error("error: {0}")]
     Other(String),
 }
-
-#[derive(Error, Debug)]
-#[error("io error: {0}")]
-pub struct IoError(String);

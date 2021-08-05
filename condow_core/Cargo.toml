@@ -5,6 +5,8 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+pin-project-lite = "0.2"
 bytes = "1"
 futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros"] }
 thiserror = "1.0"

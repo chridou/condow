@@ -57,6 +57,18 @@ impl From<DownloadPartError> for DownloadFileError {
     }
 }
 
+impl From<DownloadFullError> for DownloadFileError {
+    fn from(dfe: DownloadFullError) -> Self {
+        match dfe {
+            DownloadFullError::NotFound(msg) => DownloadFileError::NotFound(msg),
+            DownloadFullError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
+            DownloadFullError::Remote(msg) => DownloadFileError::Remote(msg),
+            DownloadFullError::Io(msg) => DownloadFileError::Io(msg),
+            DownloadFullError::Other(msg) => DownloadFileError::Other(msg),
+        }
+    }
+}
+
 impl From<GetSizeError> for DownloadPartError {
     fn from(dfe: GetSizeError) -> Self {
         match dfe {
@@ -68,3 +80,7 @@ impl From<GetSizeError> for DownloadPartError {
         }
     }
 }
+
+#[derive(Error, Debug)]
+#[error("io error: {0}")]
+pub struct IoError(String);

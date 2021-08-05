@@ -56,6 +56,30 @@ impl DownloadRange {
             _ => {}
         }
     }
+    pub fn inclusive_boundaries(self, size: usize) -> Option<(usize, usize)> {
+        if size == 0 {
+            return None;
+        }
+
+        let max_inclusive = size - 1;
+        let inclusive = match self {
+            Self::FromTo(a, b) => Some((a, (max_inclusive).min(b - 1))),
+            Self::FromToInclusive(a, b) => Some((a, (max_inclusive).min(b))),
+            Self::From(a) => Some((a, max_inclusive)),
+            Self::To(b) => Some((0, (max_inclusive).min(b - 1))),
+            Self::ToInclusive(b) => Some((0, (max_inclusive).min(b))),
+            Self::Full => Some((0, max_inclusive)),
+            Self::Empty => None,
+        };
+
+        if let Some((a, b)) = inclusive {
+            if b < a {
+                return None;
+            }
+        }
+
+        inclusive
+    }
 }
 
 impl From<RangeFull> for DownloadRange {
