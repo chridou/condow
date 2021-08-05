@@ -4,7 +4,7 @@ use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
-use super::{BytesStream, TotalBytesHint, StreamError};
+use super::{BytesStream, StreamError, TotalBytesHint};
 
 pub type ChunkStreamItem = Result<ChunkItem, StreamError>;
 
@@ -13,10 +13,10 @@ pub struct ChunkItem {
     pub part: usize,
     /// Offset of the part this chunk belongs to
     pub offset: usize,
-    pub payload: Payload,
+    pub payload: ChunkItemPayload,
 }
 
-pub enum Payload {
+pub enum ChunkItemPayload {
     Chunk {
         bytes: Bytes,
         /// Index of the chunk within the part
@@ -67,16 +67,19 @@ impl ChunkStream {
                 match next {
                     Ok(bytes) => {
                         let n_bytes = bytes.len();
-                        if sender.unbounded_send(Ok(ChunkItem {
-                            part: 0,
-                            offset: 0,
-                            payload: Payload::Chunk {
-                                bytes,
-                                index: chunk_index,
-                                offset,
-                            },
-                        })).is_err() {
-                            break
+                        if sender
+                            .unbounded_send(Ok(ChunkItem {
+                                part: 0,
+                                offset: 0,
+                                payload: ChunkItemPayload::Chunk {
+                                    bytes,
+                                    index: chunk_index,
+                                    offset,
+                                },
+                            }))
+                            .is_err()
+                        {
+                            break;
                         }
                         chunk_index += 1;
                         offset += n_bytes;
@@ -121,14 +124,15 @@ impl Stream for ChunkStream {
 
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
         match next {
-            Some(Ok(chunk_item)) => {
-                Poll::Ready(Some(Ok(chunk_item)))},
+            Some(Ok(chunk_item)) => Poll::Ready(Some(Ok(chunk_item))),
             Some(Err(err)) => {
                 *this.is_closed = true;
+                this.receiver.close();
                 Poll::Ready(Some(Err(err)))
             }
             None => {
                 *this.is_closed = true;
+                this.receiver.close();
                 Poll::Ready(None)
             }
         }

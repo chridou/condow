@@ -83,4 +83,4 @@ impl From<GetSizeError> for DownloadPartError {
 
 #[derive(Error, Debug)]
 #[error("io error: {0}")]
-pub struct IoError(String);
+pub struct IoError(pub String);

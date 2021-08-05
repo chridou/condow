@@ -3,12 +3,13 @@ use thiserror::Error;
 
 use crate::streams::{BytesStream, TotalBytesHint};
 
-pub trait CondowClient {
-    type Location: std::fmt::Display + Clone;
+pub trait CondowClient: Clone + Send + Sync + 'static {
+    type Location: std::fmt::Display + Clone + Send + Sync + 'static;
 
     fn get_size(&self, location: Self::Location)
         -> BoxFuture<'static, Result<usize, GetSizeError>>;
     fn download_range(
+        &self,
         location: Self::Location,
         from_inclusive: usize,
         to_inclusive: usize,

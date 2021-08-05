@@ -56,7 +56,14 @@ impl<C: CondowClient> Condow<C> {
         }
 
         if let Some((start, end_incl)) = range.inclusive_boundaries(size) {
-            machinery::download(&self.client, location, start, end_incl, &self.config).await
+            machinery::download(
+                self.client.clone(),
+                location,
+                start,
+                end_incl,
+                self.config.clone(),
+            )
+            .await
         } else {
             return Ok(ChunkStream::empty());
         }
