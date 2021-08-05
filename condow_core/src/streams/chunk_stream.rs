@@ -35,6 +35,7 @@ pin_project! {
         #[pin]
         receiver: mpsc::UnboundedReceiver<ChunkStreamItem>,
         is_closed: bool,
+        is_fresh: bool,
     }
 }
 
@@ -50,6 +51,7 @@ impl ChunkStream {
             total_bytes,
             receiver,
             is_closed: false,
+            is_fresh: true,
         };
 
         (me, tx)
@@ -109,6 +111,62 @@ impl ChunkStream {
     pub fn total_bytes(&self) -> TotalBytesHint {
         self.total_bytes
     }
+
+    pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, StreamError> {
+        if !self.is_fresh {
+            return Err(StreamError::Other("stream already iterated".to_string()));
+        }
+
+        if let Some(total_bytes) = self.total_bytes {
+            if buffer.len() < total_bytes {
+                return Err(StreamError::Other(format!(
+                    "buffer to small. at least {} bytes required",
+                    total_bytes
+                )));
+            }
+        }
+
+        let mut bytes_written = 0;
+
+        while let Some(next) = self.next().await {
+            let ChunkItem {
+                offset, payload, ..
+            } = match next {
+                Err(err) => return Err(err),
+                Ok(next) => next,
+            };
+
+            let (bytes, chunk_offset) = match payload {
+                ChunkItemPayload::Terminator => continue,
+                ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
+            };
+
+            let bytes_offset = offset + chunk_offset;
+            let end_excl = bytes_offset + bytes.len();
+            if end_excl >= buffer.len() {
+                return Err(StreamError::Other(format!(
+                    "buffer to small. at least {} bytes required",
+                    end_excl
+                )));
+            }
+
+            buffer[bytes_offset..end_excl].copy_from_slice(&bytes[..]);
+
+            bytes_written += buffer.len();
+        }
+
+        Ok(bytes_written)
+    }
+
+    pub async fn into_vec(self) -> Result<Vec<u8>, StreamError> {
+        if let Some(total_bytes) = self.total_bytes {
+            let mut buffer = vec![0; total_bytes];
+            let _ = self.fill_buffer(buffer.as_mut()).await?;
+            Ok(buffer)
+        } else {
+            todo!()
+        }
+    }
 }
 
 impl Stream for ChunkStream {
@@ -120,6 +178,7 @@ impl Stream for ChunkStream {
         }
 
         let mut this = self.project();
+        *this.is_fresh = false;
         let receiver = this.receiver.as_mut();
 
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
