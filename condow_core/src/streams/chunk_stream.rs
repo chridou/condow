@@ -8,6 +8,7 @@ use super::{BytesStream, StreamError, TotalBytesHint};
 
 pub type ChunkStreamItem = Result<ChunkItem, StreamError>;
 
+#[derive(Debug, Clone)]
 pub struct ChunkItem {
     /// Index of the part this chunk belongs to
     pub part: usize,
@@ -16,6 +17,7 @@ pub struct ChunkItem {
     pub payload: ChunkItemPayload,
 }
 
+#[derive(Debug, Clone)]
 pub enum ChunkItemPayload {
     Chunk {
         bytes: Bytes,
@@ -24,7 +26,7 @@ pub enum ChunkItemPayload {
         /// Offset of the chunk relative to the parts offset
         offset: usize,
     },
-    /// Last chunk of the part.
+    /// Last chunk of the part has already been sent.
     Terminator,
 }
 

@@ -65,7 +65,7 @@ impl<C: CondowClient> Condow<C> {
             )
             .await
         } else {
-            return Ok(ChunkStream::empty());
+            Ok(ChunkStream::empty())
         }
     }
 
