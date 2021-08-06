@@ -1,6 +1,6 @@
 use crate::condow_client::CondowClient;
 use crate::config::Config;
-use crate::errors::DownloadPartError;
+use crate::errors::DownloadRangeError;
 use crate::streams::ChunkStream;
 
 pub async fn download<C: CondowClient>(
@@ -9,7 +9,7 @@ pub async fn download<C: CondowClient>(
     start: usize,
     end_incl: usize,
     config: Config,
-) -> Result<ChunkStream, DownloadPartError> {
+) -> Result<ChunkStream, DownloadRangeError> {
     let (n_parts, ranges_stream) = range_stream::create(config.part_size.0, start, end_incl);
 
     if n_parts == 0 {
@@ -46,11 +46,7 @@ mod downloader {
         Stream, StreamExt,
     };
 
-    use crate::{
-        condow_client::CondowClient,
-        config::Config,
-        streams::{BytesStream, ChunkItem, ChunkItemPayload, ChunkStreamItem, StreamError},
-    };
+    use crate::{DownloadRange, condow_client::CondowClient, config::Config, streams::{BytesStream, ChunkItem, ChunkItemPayload, ChunkStreamItem, StreamError}};
 
     use super::range_stream::RangeRequest;
 
@@ -170,10 +166,9 @@ mod downloader {
                         }
 
                         match client
-                            .download_range(
+                            .download(
                                 location.clone(),
-                                range_request.start,
-                                range_request.end_incl,
+                                DownloadRange::FromToInclusive(range_request.start, range_request.end_incl)
                             )
                             .await
                         {

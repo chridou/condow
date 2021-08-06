@@ -1,6 +1,6 @@
 use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
-use crate::errors::DownloadPartError;
+use crate::errors::DownloadRangeError;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadRange {
@@ -14,11 +14,11 @@ pub enum DownloadRange {
 }
 
 impl DownloadRange {
-    pub fn validate(&self) -> Result<(), DownloadPartError> {
+    pub fn validate(&self) -> Result<(), DownloadRangeError> {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
-                    Err(DownloadPartError::InvalidRange(format!(
+                    Err(DownloadRangeError::InvalidRange(format!(
                         "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -28,7 +28,7 @@ impl DownloadRange {
             }
             Self::FromToInclusive(a, b) => {
                 if b < a {
-                    Err(DownloadPartError::InvalidRange(format!(
+                    Err(DownloadRangeError::InvalidRange(format!(
                         "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))

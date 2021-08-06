@@ -154,8 +154,18 @@ impl ChunkStream {
 
             buffer[bytes_offset..end_excl].copy_from_slice(&bytes[..]);
 
-            bytes_written += buffer.len();
+            bytes_written += bytes.len();
         }
+
+        if let Some(total_bytes) = self.total_bytes {
+            if bytes_written != total_bytes {
+                return Err(StreamError::Other(format!(
+                    "wrong file size. got {} from remote but only {} were written",
+                    total_bytes, bytes_written
+                )));
+            }
+        }
+
 
         Ok(bytes_written)
     }
@@ -166,9 +176,38 @@ impl ChunkStream {
             let _ = self.fill_buffer(buffer.as_mut()).await?;
             Ok(buffer)
         } else {
-            todo!()
+            stream_into_vec_with_unknown_size(self).await
         }
     }
+}
+
+async fn stream_into_vec_with_unknown_size(mut stream: ChunkStream) -> Result<Vec<u8>, StreamError> {
+    let mut buffer = Vec::new();
+
+    while let Some(next) = stream.next().await {
+        let ChunkItem {
+            offset, payload, ..
+        } = match next {
+            Err(err) => return Err(err),
+            Ok(next) => next,
+        };
+
+        let (bytes, chunk_offset) = match payload {
+            ChunkItemPayload::Terminator => continue,
+            ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
+        };
+
+        let bytes_offset = offset + chunk_offset;
+        let end_excl = bytes_offset + bytes.len();
+        if end_excl >= buffer.len() {
+            let missing = end_excl - buffer.len();
+            buffer.extend((0..missing).map(|_| 0));
+        }
+
+        buffer[bytes_offset..end_excl].copy_from_slice(&bytes[..]);
+    }
+
+    Ok(buffer)
 }
 
 impl Stream for ChunkStream {

@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::{condow_client::DownloadRangeError, errors::IoError};
+use crate::{condow_client::ClientDownloadError, errors::IoError};
 use bytes::Bytes;
 use futures::stream::BoxStream;
 
@@ -21,10 +21,10 @@ pub enum StreamError {
     Other(String),
 }
 
-impl From<DownloadRangeError> for StreamError {
-    fn from(dre: DownloadRangeError) -> Self {
+impl From<ClientDownloadError> for StreamError {
+    fn from(dre: ClientDownloadError) -> Self {
         match dre {
-            DownloadRangeError::Io(msg) => StreamError::Io(IoError(msg)),
+            ClientDownloadError::Io(msg) => StreamError::Io(IoError(msg)),
             err => StreamError::Other(err.to_string()),
         }
     }

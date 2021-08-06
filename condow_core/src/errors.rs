@@ -1,9 +1,9 @@
 use thiserror::Error;
 
-use crate::condow_client::{DownloadFullError, GetSizeError};
+use crate::condow_client::{ClientDownloadError, GetSizeError};
 
 #[derive(Error, Debug)]
-pub enum DownloadPartError {
+pub enum DownloadRangeError {
     #[error("invalid range: {0}")]
     InvalidRange(String),
     #[error("not found: {0}")]
@@ -32,51 +32,52 @@ pub enum DownloadFileError {
     Other(String),
 }
 
-impl From<DownloadFileError> for DownloadPartError {
+impl From<DownloadFileError> for DownloadRangeError {
     fn from(dfe: DownloadFileError) -> Self {
         match dfe {
-            DownloadFileError::NotFound(msg) => DownloadPartError::NotFound(msg),
-            DownloadFileError::AccessDenied(msg) => DownloadPartError::AccessDenied(msg),
-            DownloadFileError::Remote(msg) => DownloadPartError::Remote(msg),
-            DownloadFileError::Io(msg) => DownloadPartError::Io(msg),
-            DownloadFileError::Other(msg) => DownloadPartError::Other(msg),
+            DownloadFileError::NotFound(msg) => DownloadRangeError::NotFound(msg),
+            DownloadFileError::AccessDenied(msg) => DownloadRangeError::AccessDenied(msg),
+            DownloadFileError::Remote(msg) => DownloadRangeError::Remote(msg),
+            DownloadFileError::Io(msg) => DownloadRangeError::Io(msg),
+            DownloadFileError::Other(msg) => DownloadRangeError::Other(msg),
         }
     }
 }
 
-impl From<DownloadPartError> for DownloadFileError {
-    fn from(dfe: DownloadPartError) -> Self {
+impl From<DownloadRangeError> for DownloadFileError {
+    fn from(dfe: DownloadRangeError) -> Self {
         match dfe {
-            DownloadPartError::InvalidRange(msg) => DownloadFileError::Other(msg),
-            DownloadPartError::NotFound(msg) => DownloadFileError::NotFound(msg),
-            DownloadPartError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
-            DownloadPartError::Remote(msg) => DownloadFileError::Remote(msg),
-            DownloadPartError::Io(msg) => DownloadFileError::Io(msg),
-            DownloadPartError::Other(msg) => DownloadFileError::Other(msg),
+            DownloadRangeError::InvalidRange(msg) => DownloadFileError::Other(msg),
+            DownloadRangeError::NotFound(msg) => DownloadFileError::NotFound(msg),
+            DownloadRangeError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
+            DownloadRangeError::Remote(msg) => DownloadFileError::Remote(msg),
+            DownloadRangeError::Io(msg) => DownloadFileError::Io(msg),
+            DownloadRangeError::Other(msg) => DownloadFileError::Other(msg),
         }
     }
 }
 
-impl From<DownloadFullError> for DownloadFileError {
-    fn from(dfe: DownloadFullError) -> Self {
+impl From<ClientDownloadError> for DownloadFileError {
+    fn from(dfe: ClientDownloadError) -> Self {
         match dfe {
-            DownloadFullError::NotFound(msg) => DownloadFileError::NotFound(msg),
-            DownloadFullError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
-            DownloadFullError::Remote(msg) => DownloadFileError::Remote(msg),
-            DownloadFullError::Io(msg) => DownloadFileError::Io(msg),
-            DownloadFullError::Other(msg) => DownloadFileError::Other(msg),
+            ClientDownloadError::InvalidRange(msg) => DownloadFileError::Other(msg),
+            ClientDownloadError::NotFound(msg) => DownloadFileError::NotFound(msg),
+            ClientDownloadError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
+            ClientDownloadError::Remote(msg) => DownloadFileError::Remote(msg),
+            ClientDownloadError::Io(msg) => DownloadFileError::Io(msg),
+            ClientDownloadError::Other(msg) => DownloadFileError::Other(msg),
         }
     }
 }
 
-impl From<GetSizeError> for DownloadPartError {
+impl From<GetSizeError> for DownloadRangeError {
     fn from(dfe: GetSizeError) -> Self {
         match dfe {
-            GetSizeError::NotFound(msg) => DownloadPartError::NotFound(msg),
-            GetSizeError::AccessDenied(msg) => DownloadPartError::AccessDenied(msg),
-            GetSizeError::Remote(msg) => DownloadPartError::Remote(msg),
-            GetSizeError::Io(msg) => DownloadPartError::Io(msg),
-            GetSizeError::Other(msg) => DownloadPartError::Other(msg),
+            GetSizeError::NotFound(msg) => DownloadRangeError::NotFound(msg),
+            GetSizeError::AccessDenied(msg) => DownloadRangeError::AccessDenied(msg),
+            GetSizeError::Remote(msg) => DownloadRangeError::Remote(msg),
+            GetSizeError::Io(msg) => DownloadRangeError::Io(msg),
+            GetSizeError::Other(msg) => DownloadRangeError::Other(msg),
         }
     }
 }

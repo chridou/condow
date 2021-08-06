@@ -1,6 +1,6 @@
 use condow_client::CondowClient;
 use config::Config;
-use errors::{DownloadFileError, DownloadPartError};
+use errors::{DownloadFileError, DownloadRangeError};
 
 pub mod condow_client;
 pub mod config;
@@ -11,6 +11,9 @@ pub mod streams;
 
 pub use download_range::DownloadRange;
 use streams::{BytesStream, ChunkStream, TotalBytesHint};
+
+#[cfg(test)]
+pub mod test_utils;
 
 #[derive(Clone)]
 pub struct Condow<C> {
@@ -23,16 +26,16 @@ impl<C: CondowClient> Condow<C> {
         &self,
         location: C::Location,
     ) -> Result<ChunkStream, DownloadFileError> {
-        self.download_part(location, DownloadRange::Full)
+        self.download_range(location, DownloadRange::Full)
             .await
             .map_err(DownloadFileError::from)
     }
 
-    pub async fn download_part<R: Into<DownloadRange>>(
+    pub async fn download_range<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
         range: R,
-    ) -> Result<ChunkStream, DownloadPartError> {
+    ) -> Result<ChunkStream, DownloadRangeError> {
         let mut range: DownloadRange = range.into();
         range.validate()?;
         range.sanitize();
@@ -51,7 +54,7 @@ impl<C: CondowClient> Condow<C> {
             let (bytes_stream, total_bytes_hint) = self
                 .download_file_non_concurrent(location)
                 .await
-                .map_err(DownloadPartError::from)?;
+                .map_err(DownloadRangeError::from)?;
             return Ok(ChunkStream::from_full_file(bytes_stream, total_bytes_hint));
         }
 
@@ -74,7 +77,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
     ) -> Result<(BytesStream, TotalBytesHint), DownloadFileError> {
         self.client
-            .download_full(location)
+            .download(location, DownloadRange::Full)
             .await
             .map_err(DownloadFileError::from)
     }
