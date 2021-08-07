@@ -4,7 +4,9 @@ use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
-use super::{BytesStream, StreamError, TotalBytesHint};
+use crate::errors::{IoError, StreamError};
+
+use super::{BytesHint, BytesStream};
 
 pub type ChunkStreamItem = Result<ChunkItem, StreamError>;
 
@@ -33,7 +35,7 @@ pub enum ChunkItemPayload {
 pin_project! {
     pub struct ChunkStream {
         n_parts: usize,
-        total_bytes: TotalBytesHint,
+        bytes_hint: BytesHint,
         #[pin]
         receiver: mpsc::UnboundedReceiver<ChunkStreamItem>,
         is_closed: bool,
@@ -44,13 +46,13 @@ pin_project! {
 impl ChunkStream {
     pub fn new(
         n_parts: usize,
-        total_bytes: TotalBytesHint,
+        bytes_hint: BytesHint,
     ) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
         let (tx, receiver) = mpsc::unbounded();
 
         let me = Self {
             n_parts,
-            total_bytes,
+            bytes_hint,
             receiver,
             is_closed: false,
             is_fresh: true,
@@ -59,8 +61,8 @@ impl ChunkStream {
         (me, tx)
     }
 
-    pub fn from_full_file(mut bytes_stream: BytesStream, total_bytes: TotalBytesHint) -> Self {
-        let (me, sender) = Self::new(0, total_bytes);
+    pub fn from_full_file(mut bytes_stream: BytesStream, bytes_hint: BytesHint) -> Self {
+        let (me, sender) = Self::new(0, bytes_hint);
 
         tokio::spawn(async move {
             let mut chunk_index = 0;
@@ -88,8 +90,8 @@ impl ChunkStream {
                         chunk_index += 1;
                         offset += n_bytes;
                     }
-                    Err(err) => {
-                        let _ = sender.unbounded_send(Err(StreamError::Io(err)));
+                    Err(IoError(msg)) => {
+                        let _ = sender.unbounded_send(Err(StreamError::Io(msg)));
                         break;
                     }
                 }
@@ -100,7 +102,7 @@ impl ChunkStream {
     }
 
     pub fn empty() -> Self {
-        let (mut me, _) = Self::new(0, Some(0));
+        let (mut me, _) = Self::new(0, BytesHint(0, Some(0)));
         me.is_closed = true;
         me.receiver.close();
         me
@@ -110,8 +112,8 @@ impl ChunkStream {
         self.n_parts
     }
 
-    pub fn total_bytes(&self) -> TotalBytesHint {
-        self.total_bytes
+    pub fn bytes_hint(&self) -> BytesHint {
+        self.bytes_hint
     }
 
     pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, StreamError> {
@@ -119,7 +121,7 @@ impl ChunkStream {
             return Err(StreamError::Other("stream already iterated".to_string()));
         }
 
-        if let Some(total_bytes) = self.total_bytes {
+        if let Some(total_bytes) = self.bytes_hint.upper_bound() {
             if buffer.len() < total_bytes {
                 return Err(StreamError::Other(format!(
                     "buffer to small. at least {} bytes required",
@@ -157,20 +159,11 @@ impl ChunkStream {
             bytes_written += bytes.len();
         }
 
-        if let Some(total_bytes) = self.total_bytes {
-            if bytes_written != total_bytes {
-                return Err(StreamError::Other(format!(
-                    "wrong file size. got {} from remote but only {} were written",
-                    total_bytes, bytes_written
-                )));
-            }
-        }
-
         Ok(bytes_written)
     }
 
     pub async fn into_vec(self) -> Result<Vec<u8>, StreamError> {
-        if let Some(total_bytes) = self.total_bytes {
+        if let Some(total_bytes) = self.bytes_hint.upper_bound() {
             let mut buffer = vec![0; total_bytes];
             let _ = self.fill_buffer(buffer.as_mut()).await?;
             Ok(buffer)
@@ -183,7 +176,7 @@ impl ChunkStream {
 async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
 ) -> Result<Vec<u8>, StreamError> {
-    let mut buffer = Vec::new();
+    let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
 
     while let Some(next) = stream.next().await {
         let ChunkItem {

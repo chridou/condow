@@ -8,32 +8,27 @@ use futures::{
 use rand::{rngs::OsRng, thread_rng, Rng};
 use tokio::time;
 
-use crate::{condow_client::CondowClient, streams::BytesStream, DownloadRange};
+use crate::{
+    condow_client::CondowClient,
+    streams::{BytesHint, BytesStream},
+    DownloadRange,
+};
 
 #[derive(Clone)]
 pub struct TestCondowClient {
-    data: Arc<Vec<u8>>,
-    max_jitter_us: usize,
-    include_size_hit: bool,
-    max_chunk_size: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct DummyLocation;
-
-impl fmt::Display for DummyLocation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "location")
-    }
+    pub data: Arc<Vec<u8>>,
+    pub max_jitter_us: usize,
+    pub include_size_hit: bool,
+    pub max_chunk_size: usize,
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = DummyLocation;
+    type Location = ();
 
     fn get_size(
         &self,
         _location: Self::Location,
-    ) -> BoxFuture<'static, Result<usize, crate::condow_client::GetSizeError>> {
+    ) -> BoxFuture<'static, Result<usize, crate::errors::GetSizeError>> {
         let f = future::ready(Ok(self.data.len()));
         Box::pin(f)
     }
@@ -45,8 +40,8 @@ impl CondowClient for TestCondowClient {
     ) -> BoxFuture<
         'static,
         Result<
-            (crate::streams::BytesStream, crate::streams::TotalBytesHint),
-            crate::condow_client::ClientDownloadError,
+            (crate::streams::BytesStream, crate::streams::BytesHint),
+            crate::errors::DownloadRangeError,
         >,
     > {
         let range = match range.boundaries_excl() {
@@ -57,7 +52,7 @@ impl CondowClient for TestCondowClient {
 
         let slice = &self.data[range];
 
-        let bytes_returned = slice.len();
+        let bytes_hint = BytesHint::new(slice.len(), Some(slice.len()));
 
         let iter = slice
             .chunks(self.max_chunk_size)
@@ -77,7 +72,7 @@ impl CondowClient for TestCondowClient {
 
         let stream: BytesStream = Box::pin(stream);
 
-        let f = future::ready(Ok((stream, Some(bytes_returned))));
+        let f = future::ready(Ok((stream, bytes_hint)));
 
         Box::pin(f)
     }

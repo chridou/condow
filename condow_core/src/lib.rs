@@ -12,7 +12,7 @@ mod machinery;
 pub mod streams;
 
 pub use download_range::DownloadRange;
-use streams::{BytesStream, ChunkStream, TotalBytesHint};
+use streams::{BytesHint, BytesStream, ChunkStream};
 
 #[cfg(test)]
 pub mod test_utils;
@@ -24,6 +24,10 @@ pub struct Condow<C> {
 }
 
 impl<C: CondowClient> Condow<C> {
+    pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
+        Ok(Self { client, config })
+    }
+
     pub async fn download_file(
         &self,
         location: C::Location,
@@ -53,11 +57,11 @@ impl<C: CondowClient> Condow<C> {
         }
 
         if size <= self.config.part_size_bytes.into() {
-            let (bytes_stream, total_bytes_hint) = self
+            let (bytes_stream, bytes_hint) = self
                 .download_file_non_concurrent(location)
                 .await
                 .map_err(DownloadRangeError::from)?;
-            return Ok(ChunkStream::from_full_file(bytes_stream, total_bytes_hint));
+            return Ok(ChunkStream::from_full_file(bytes_stream, bytes_hint));
         }
 
         if let Some((start, end_incl)) = range.boundaries_from_size_incl(size) {
@@ -77,7 +81,7 @@ impl<C: CondowClient> Condow<C> {
     pub async fn download_file_non_concurrent(
         &self,
         location: C::Location,
-    ) -> Result<(BytesStream, TotalBytesHint), DownloadFileError> {
+    ) -> Result<(BytesStream, BytesHint), DownloadFileError> {
         self.client
             .download(location, DownloadRange::Full)
             .await

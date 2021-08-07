@@ -1,6 +1,4 @@
-use thiserror::Error;
-
-use crate::{condow_client::ClientDownloadError, errors::IoError};
+use crate::errors::IoError;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 
@@ -10,22 +8,33 @@ pub use chunk_stream::*;
 
 pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
 
-/// The total number of bytes bytes in this stream
-pub type TotalBytesHint = Option<usize>;
+/// Returns the bounds on the remaining bytes of the stream.
+///
+/// Specifically, `bytes_hint()` returns a tuple where the first element is
+/// the lower bound, and the second element is the upper bound.
+///
+/// The second half of the tuple that is returned is an `Option<usize>`.
+/// A None here means that either there is no known upper bound,
+/// or the upper bound is larger than usize.
+#[derive(Debug, Copy, Clone)]
+pub struct BytesHint(usize, Option<usize>);
 
-#[derive(Error, Debug)]
-pub enum StreamError {
-    #[error("io error: {0}")]
-    Io(IoError),
-    #[error("{0}")]
-    Other(String),
-}
+impl BytesHint {
+    pub fn new(lower_bound: usize, upper_bound: Option<usize>) -> Self {
+        BytesHint(lower_bound, upper_bound)
+    }
 
-impl From<ClientDownloadError> for StreamError {
-    fn from(dre: ClientDownloadError) -> Self {
-        match dre {
-            ClientDownloadError::Io(msg) => StreamError::Io(IoError(msg)),
-            err => StreamError::Other(err.to_string()),
-        }
+    pub fn lower_bound(&self) -> usize {
+        self.0
+    }
+
+    /// A `None` here means that either there is no known upper bound,
+    /// or the upper bound is larger than usize.
+    pub fn upper_bound(&self) -> Option<usize> {
+        self.1
+    }
+
+    pub fn tuple(self) -> (usize, Option<usize>) {
+        (self.lower_bound(), self.upper_bound())
     }
 }

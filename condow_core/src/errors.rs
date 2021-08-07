@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::condow_client::{ClientDownloadError, GetSizeError};
-
 #[derive(Error, Debug)]
 pub enum DownloadRangeError {
     #[error("invalid range: {0}")]
@@ -57,19 +55,6 @@ impl From<DownloadRangeError> for DownloadFileError {
     }
 }
 
-impl From<ClientDownloadError> for DownloadFileError {
-    fn from(dfe: ClientDownloadError) -> Self {
-        match dfe {
-            ClientDownloadError::InvalidRange(msg) => DownloadFileError::Other(msg),
-            ClientDownloadError::NotFound(msg) => DownloadFileError::NotFound(msg),
-            ClientDownloadError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
-            ClientDownloadError::Remote(msg) => DownloadFileError::Remote(msg),
-            ClientDownloadError::Io(msg) => DownloadFileError::Io(msg),
-            ClientDownloadError::Other(msg) => DownloadFileError::Other(msg),
-        }
-    }
-}
-
 impl From<GetSizeError> for DownloadRangeError {
     fn from(dfe: GetSizeError) -> Self {
         match dfe {
@@ -82,6 +67,48 @@ impl From<GetSizeError> for DownloadRangeError {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum StreamError {
+    #[error("invalid range: {0}")]
+    InvalidRange(String),
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("access denied: {0}")]
+    AccessDenied(String),
+    #[error("error: {0}")]
+    Remote(String),
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("error: {0}")]
+    Other(String),
+}
+
+impl From<DownloadRangeError> for StreamError {
+    fn from(dre: DownloadRangeError) -> Self {
+        match dre {
+            DownloadRangeError::InvalidRange(msg) => StreamError::InvalidRange(msg),
+            DownloadRangeError::NotFound(msg) => StreamError::NotFound(msg),
+            DownloadRangeError::AccessDenied(msg) => StreamError::AccessDenied(msg),
+            DownloadRangeError::Remote(msg) => StreamError::Remote(msg),
+            DownloadRangeError::Io(msg) => StreamError::Io(msg),
+            DownloadRangeError::Other(msg) => StreamError::Other(msg),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum GetSizeError {
+    #[error("not found: {0}")]
+    NotFound(String),
+    #[error("access denied: {0}")]
+    AccessDenied(String),
+    #[error("error: {0}")]
+    Remote(String),
+    #[error("io error: {0}")]
+    Io(String),
+    #[error("error: {0}")]
+    Other(String),
+}
 #[derive(Error, Debug)]
 #[error("io error: {0}")]
 pub struct IoError(pub String);
