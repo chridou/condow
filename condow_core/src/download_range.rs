@@ -56,17 +56,28 @@ impl DownloadRange {
             _ => {}
         }
     }
-    pub fn inclusive_boundaries(self, size: usize) -> Option<(usize, usize)> {
+
+    pub fn boundaries_from_size_incl(self, size: usize) -> Option<(usize, usize)> {
         if size == 0 {
             return None;
         }
 
         let max_inclusive = size - 1;
         let inclusive = match self {
-            Self::FromTo(a, b) => Some((a, (max_inclusive).min(b - 1))),
+            Self::FromTo(a, b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some((a, (max_inclusive).min(b - 1)))
+            }
             Self::FromToInclusive(a, b) => Some((a, (max_inclusive).min(b))),
             Self::From(a) => Some((a, max_inclusive)),
-            Self::To(b) => Some((0, (max_inclusive).min(b - 1))),
+            Self::To(b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some((0, (max_inclusive).min(b - 1)))
+            }
             Self::ToInclusive(b) => Some((0, (max_inclusive).min(b))),
             Self::Full => Some((0, max_inclusive)),
             Self::Empty => None,
@@ -74,6 +85,56 @@ impl DownloadRange {
 
         if let Some((a, b)) = inclusive {
             if b < a {
+                return None;
+            }
+        }
+
+        inclusive
+    }
+
+    pub fn boundaries_incl(self) -> Option<(usize, Option<usize>)> {
+        let inclusive = match self {
+            Self::FromTo(a, b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some((a, Some(b - 1)))
+            }
+            Self::FromToInclusive(a, b) => Some((a, Some(b))),
+            Self::From(a) => Some((a, None)),
+            Self::To(b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some((0, Some(b - 1)))
+            }
+            Self::ToInclusive(b) => Some((0, Some(b))),
+            Self::Full => Some((0, None)),
+            Self::Empty => None,
+        };
+
+        if let Some((a, Some(b))) = inclusive {
+            if b < a {
+                return None;
+            }
+        }
+
+        inclusive
+    }
+
+    pub fn boundaries_excl(self) -> Option<(usize, Option<usize>)> {
+        let inclusive = match self {
+            Self::FromTo(a, b) => Some((a, Some(b))),
+            Self::FromToInclusive(a, b) => Some((a, Some(b + 1))),
+            Self::From(a) => Some((a, None)),
+            Self::To(b) => Some((0, Some(b))),
+            Self::ToInclusive(b) => Some((0, Some(b + 1))),
+            Self::Full => Some((0, None)),
+            Self::Empty => None,
+        };
+
+        if let Some((a, Some(b))) = inclusive {
+            if b <= a {
                 return None;
             }
         }

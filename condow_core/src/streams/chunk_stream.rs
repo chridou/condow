@@ -166,7 +166,6 @@ impl ChunkStream {
             }
         }
 
-
         Ok(bytes_written)
     }
 
@@ -181,7 +180,9 @@ impl ChunkStream {
     }
 }
 
-async fn stream_into_vec_with_unknown_size(mut stream: ChunkStream) -> Result<Vec<u8>, StreamError> {
+async fn stream_into_vec_with_unknown_size(
+    mut stream: ChunkStream,
+) -> Result<Vec<u8>, StreamError> {
     let mut buffer = Vec::new();
 
     while let Some(next) = stream.next().await {

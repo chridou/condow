@@ -2,6 +2,8 @@ use condow_client::CondowClient;
 use config::Config;
 use errors::{DownloadFileError, DownloadRangeError};
 
+#[macro_use]
+pub(crate) mod helpers;
 pub mod condow_client;
 pub mod config;
 mod download_range;
@@ -50,7 +52,7 @@ impl<C: CondowClient> Condow<C> {
             return Ok(ChunkStream::empty());
         }
 
-        if size <= self.config.part_size.0 {
+        if size <= self.config.part_size_bytes.into() {
             let (bytes_stream, total_bytes_hint) = self
                 .download_file_non_concurrent(location)
                 .await
@@ -58,7 +60,7 @@ impl<C: CondowClient> Condow<C> {
             return Ok(ChunkStream::from_full_file(bytes_stream, total_bytes_hint));
         }
 
-        if let Some((start, end_incl)) = range.inclusive_boundaries(size) {
+        if let Some((start, end_incl)) = range.boundaries_from_size_incl(size) {
             machinery::download(
                 self.client.clone(),
                 location,

@@ -1,7 +1,10 @@
 use futures::future::BoxFuture;
 use thiserror::Error;
 
-use crate::{DownloadRange, streams::{BytesStream, TotalBytesHint}};
+use crate::{
+    streams::{BytesStream, TotalBytesHint},
+    DownloadRange,
+};
 
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Display + Clone + Send + Sync + 'static;
@@ -13,7 +16,6 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         _location: Self::Location,
         range: DownloadRange,
     ) -> BoxFuture<'static, Result<(BytesStream, TotalBytesHint), ClientDownloadError>>;
-  
 }
 
 #[derive(Error, Debug)]
