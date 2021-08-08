@@ -6,6 +6,7 @@ pub struct Config {
     pub max_concurrency: MaxConcurrency,
     pub buffer_size: BufferSize,
     pub buffers_full_delay: BuffersFullDelay,
+    pub always_get_size: AlwaysGetSize,
 }
 
 impl Config {
@@ -26,6 +27,11 @@ impl Config {
 
     pub fn buffers_full_delay<T: Into<BuffersFullDelay>>(mut self, v: T) -> Self {
         self.buffers_full_delay = v.into();
+        self
+    }
+
+    pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, v: T) -> Self {
+        self.always_get_size = v.into();
         self
     }
 }
@@ -105,7 +111,7 @@ impl FromStr for PartSizeBytes {
 
 new_type! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub copy struct MaxConcurrency(usize);
+    pub copy struct MaxConcurrency(usize, env="MAX_CONCURRENCY");
 }
 
 impl Default for MaxConcurrency {
@@ -116,12 +122,23 @@ impl Default for MaxConcurrency {
 
 new_type! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub copy struct BufferSize(usize);
+    pub copy struct BufferSize(usize, env="BUFFER_SIZE");
 }
 
 impl Default for BufferSize {
     fn default() -> Self {
         BufferSize(2)
+    }
+}
+
+new_type! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub copy struct AlwaysGetSize(bool, env="ALWAYS_GET_SIZE");
+}
+
+impl Default for AlwaysGetSize {
+    fn default() -> Self {
+        AlwaysGetSize(true)
     }
 }
 
@@ -153,6 +170,12 @@ impl FromStr for BuffersFullDelay {
 impl From<Duration> for BuffersFullDelay {
     fn from(d: Duration) -> Self {
         BuffersFullDelay(d)
+    }
+}
+
+impl From<Millis> for BuffersFullDelay {
+    fn from(m: Millis) -> Self {
+        Self(Duration::from_millis(m.0))
     }
 }
 
@@ -207,3 +230,6 @@ impl From<Gibi> for usize {
         m.0 * 1_024 * 1_024 * 1_024
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Millis(pub u64);

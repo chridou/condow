@@ -2,18 +2,39 @@ use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToIncl
 
 use crate::errors::DownloadRangeError;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum DownloadRange {
-    FromTo(usize, usize),
-    FromToInclusive(usize, usize),
-    From(usize),
-    To(usize),
-    ToInclusive(usize),
-    Full,
-    Empty,
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct InclusiveRange(pub usize, pub usize);
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ExclusiveOpenRange(pub usize, pub Option<usize>);
+
+impl InclusiveRange {
+    pub fn start(&self) -> usize {
+        self.0
+    }
+
+    pub fn end_incl(&self) -> usize {
+        self.1
+    }
+
+    pub fn byte_len(&self) -> usize {
+        if self.1 < self.0 {
+            return 0;
+        }
+
+        self.1 - self.0 + 1
+    }
 }
 
-impl DownloadRange {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ClosedRange {
+    FromTo(usize, usize),
+    FromToInclusive(usize, usize),
+    To(usize),
+    ToInclusive(usize),
+}
+
+impl ClosedRange {
     pub fn validate(&self) -> Result<(), DownloadRangeError> {
         match self {
             Self::FromTo(a, b) => {
@@ -40,24 +61,27 @@ impl DownloadRange {
         }
     }
 
-    pub fn sanitize(&mut self) {
+    pub fn sanitized(self) -> Option<Self> {
         match self {
             Self::FromTo(a, b) => {
                 if b <= a {
-                    *self = Self::Empty
+                    return None;
                 }
             }
             Self::FromToInclusive(a, b) => {
                 if b < a {
-                    *self = Self::Empty
+                    return None;
                 }
             }
-            Self::To(0) => *self = Self::Empty,
-            _ => {}
+            Self::To(0) => return None,
+            Self::To(_) => {}
+            Self::ToInclusive(_) => {}
         }
+
+        Some(self)
     }
 
-    pub fn boundaries_from_size_incl(self, size: usize) -> Option<(usize, usize)> {
+    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
         if size == 0 {
             return None;
         }
@@ -68,22 +92,19 @@ impl DownloadRange {
                 if b == 0 {
                     return None;
                 }
-                Some((a, (max_inclusive).min(b - 1)))
+                Some(InclusiveRange(a, (max_inclusive).min(b - 1)))
             }
-            Self::FromToInclusive(a, b) => Some((a, (max_inclusive).min(b))),
-            Self::From(a) => Some((a, max_inclusive)),
+            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, (max_inclusive).min(b))),
             Self::To(b) => {
                 if b == 0 {
                     return None;
                 }
-                Some((0, (max_inclusive).min(b - 1)))
+                Some(InclusiveRange(0, (max_inclusive).min(b - 1)))
             }
-            Self::ToInclusive(b) => Some((0, (max_inclusive).min(b))),
-            Self::Full => Some((0, max_inclusive)),
-            Self::Empty => None,
+            Self::ToInclusive(b) => Some(InclusiveRange(0, (max_inclusive).min(b))),
         };
 
-        if let Some((a, b)) = inclusive {
+        if let Some(InclusiveRange(a, b)) = inclusive {
             if b < a {
                 return None;
             }
@@ -92,28 +113,25 @@ impl DownloadRange {
         inclusive
     }
 
-    pub fn boundaries_incl(self) -> Option<(usize, Option<usize>)> {
+    pub fn incl_range(self) -> Option<InclusiveRange> {
         let inclusive = match self {
             Self::FromTo(a, b) => {
                 if b == 0 {
                     return None;
                 }
-                Some((a, Some(b - 1)))
+                Some(InclusiveRange(a, b - 1))
             }
-            Self::FromToInclusive(a, b) => Some((a, Some(b))),
-            Self::From(a) => Some((a, None)),
+            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, b)),
             Self::To(b) => {
                 if b == 0 {
                     return None;
                 }
-                Some((0, Some(b - 1)))
+                Some(InclusiveRange(0, b - 1))
             }
-            Self::ToInclusive(b) => Some((0, Some(b))),
-            Self::Full => Some((0, None)),
-            Self::Empty => None,
+            Self::ToInclusive(b) => Some(InclusiveRange(0, b)),
         };
 
-        if let Some((a, Some(b))) = inclusive {
+        if let Some(InclusiveRange(a, b)) = inclusive {
             if b < a {
                 return None;
             }
@@ -122,95 +140,178 @@ impl DownloadRange {
         inclusive
     }
 
-    pub fn boundaries_excl(self) -> Option<(usize, Option<usize>)> {
-        let inclusive = match self {
-            Self::FromTo(a, b) => Some((a, Some(b))),
-            Self::FromToInclusive(a, b) => Some((a, Some(b + 1))),
-            Self::From(a) => Some((a, None)),
-            Self::To(b) => Some((0, Some(b))),
-            Self::ToInclusive(b) => Some((0, Some(b + 1))),
-            Self::Full => Some((0, None)),
-            Self::Empty => None,
+    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
+        let exclusive = match self {
+            Self::FromTo(a, b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some(ExclusiveOpenRange(a, Some(b)))
+            }
+            Self::FromToInclusive(a, b) => Some(ExclusiveOpenRange(a, Some(b + 1))),
+            Self::To(b) => {
+                if b == 0 {
+                    return None;
+                }
+                Some(ExclusiveOpenRange(0, Some(b)))
+            }
+            Self::ToInclusive(b) => Some(ExclusiveOpenRange(0, Some(b + 1))),
         };
 
-        if let Some((a, Some(b))) = inclusive {
+        if let Some(ExclusiveOpenRange(a, Some(b))) = exclusive {
             if b <= a {
+                return None;
+            }
+        }
+
+        exclusive
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum OpenRange {
+    From(usize),
+    Full,
+}
+
+impl OpenRange {
+    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
+        if size == 0 {
+            return None;
+        }
+
+        let max_inclusive = size - 1;
+        let inclusive = match self {
+            Self::From(a) => Some(InclusiveRange(a, max_inclusive)),
+            Self::Full => Some(InclusiveRange(0, max_inclusive)),
+        };
+
+        if let Some(InclusiveRange(a, b)) = inclusive {
+            if b < a {
                 return None;
             }
         }
 
         inclusive
     }
+
+    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
+        let exclusive = match self {
+            Self::From(a) => Some(ExclusiveOpenRange(a, None)),
+            Self::Full => Some(ExclusiveOpenRange(0, None)),
+        };
+
+        exclusive
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum DownloadRange {
+    Open(OpenRange),
+    Closed(ClosedRange),
+}
+
+impl DownloadRange {
+    pub fn validate(&self) -> Result<(), DownloadRangeError> {
+        match self {
+            DownloadRange::Open(r) => Ok(()),
+            DownloadRange::Closed(r) => r.validate(),
+        }
+    }
+
+    pub fn sanitized(self) -> Option<Self> {
+        match self {
+            DownloadRange::Open(r) => Some(self),
+            DownloadRange::Closed(r) => r.sanitized().map(DownloadRange::Closed),
+        }
+    }
+
+    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
+        match self {
+            DownloadRange::Open(r) => r.incl_range_from_size(size),
+            DownloadRange::Closed(r) => r.incl_range_from_size(size),
+        }
+    }
+
+    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
+        match self {
+            DownloadRange::Open(r) => r.excl_open_range(),
+            DownloadRange::Closed(r) => r.excl_open_range(),
+        }
+    }
 }
 
 impl From<RangeFull> for DownloadRange {
     fn from(_: RangeFull) -> Self {
-        Self::Full
+        Self::Open(OpenRange::Full)
     }
 }
 
 impl From<Range<usize>> for DownloadRange {
     fn from(r: Range<usize>) -> Self {
-        Self::FromTo(r.start, r.end)
+        Self::Closed(ClosedRange::FromTo(r.start, r.end))
     }
 }
 
 impl From<RangeInclusive<usize>> for DownloadRange {
     fn from(r: RangeInclusive<usize>) -> Self {
-        Self::FromToInclusive(*r.start(), *r.end())
+        Self::Closed(ClosedRange::FromToInclusive(*r.start(), *r.end()))
     }
 }
 
 impl From<RangeFrom<usize>> for DownloadRange {
     fn from(r: RangeFrom<usize>) -> Self {
-        Self::From(r.start)
+        Self::Open(OpenRange::From(r.start))
     }
 }
 
 impl From<RangeTo<usize>> for DownloadRange {
     fn from(r: RangeTo<usize>) -> Self {
-        Self::To(r.end)
+        Self::Closed(ClosedRange::To(r.end))
     }
 }
 
 impl From<RangeToInclusive<usize>> for DownloadRange {
     fn from(r: RangeToInclusive<usize>) -> Self {
-        Self::ToInclusive(r.end)
+        Self::Closed(ClosedRange::ToInclusive(r.end))
     }
 }
 
 #[test]
 fn range_full() {
     let result: DownloadRange = (..).into();
-    assert_eq!(result, DownloadRange::Full);
+    assert_eq!(result, DownloadRange::Open(OpenRange::Full));
 }
 
 #[test]
 fn range() {
     let result: DownloadRange = (3..10).into();
-    assert_eq!(result, DownloadRange::FromTo(3, 10));
+    assert_eq!(result, DownloadRange::Closed(ClosedRange::FromTo(3, 10)));
 }
 
 #[test]
 fn range_inclusive() {
     let result: DownloadRange = (3..=10).into();
-    assert_eq!(result, DownloadRange::FromToInclusive(3, 10));
+    assert_eq!(
+        result,
+        DownloadRange::Closed(ClosedRange::FromToInclusive(3, 10))
+    );
 }
 
 #[test]
 fn range_from() {
     let result: DownloadRange = (3..).into();
-    assert_eq!(result, DownloadRange::From(3));
+    assert_eq!(result, DownloadRange::Open(OpenRange::From(3)));
 }
 
 #[test]
 fn range_to() {
     let result: DownloadRange = (..10).into();
-    assert_eq!(result, DownloadRange::To(10));
+    assert_eq!(result, DownloadRange::Closed(ClosedRange::To(10)));
 }
 
 #[test]
 fn range_to_inclusive() {
     let result: DownloadRange = (..=10).into();
-    assert_eq!(result, DownloadRange::ToInclusive(10));
+    assert_eq!(result, DownloadRange::Closed(ClosedRange::ToInclusive(10)));
 }

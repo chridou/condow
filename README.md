@@ -1,5 +1,7 @@
 # CONcurrent DOWnloader
 
+**PROTOTYPING STAGE! DO NOT USE**
+
 Condow is a library which helps downloading parts of files concurrently to speed up the 
 download.
 

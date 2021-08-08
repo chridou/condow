@@ -124,7 +124,8 @@ impl ChunkStream {
         if let Some(total_bytes) = self.bytes_hint.upper_bound() {
             if buffer.len() < total_bytes {
                 return Err(StreamError::Other(format!(
-                    "buffer to small. at least {} bytes required",
+                    "buffer to small ({}). at least {} bytes required",
+                    buffer.len(),
                     total_bytes
                 )));
             }
@@ -147,9 +148,10 @@ impl ChunkStream {
 
             let bytes_offset = offset + chunk_offset;
             let end_excl = bytes_offset + bytes.len();
-            if end_excl >= buffer.len() {
+            if end_excl > buffer.len() {
                 return Err(StreamError::Other(format!(
-                    "buffer to small. at least {} bytes required",
+                    "buffer to small ({}). at least {} bytes required",
+                    buffer.len(),
                     end_excl
                 )));
             }

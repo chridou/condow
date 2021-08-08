@@ -1,5 +1,7 @@
 use futures::Stream;
 
+use crate::InclusiveRange;
+
 pub struct RangeRequest {
     /// Index of the part
     pub part: usize,
@@ -15,24 +17,25 @@ impl RangeRequest {
 }
 
 pub fn create(
+    range: InclusiveRange,
     part_size: usize,
-    mut start: usize,
-    end_incl: usize,
 ) -> (usize, impl Stream<Item = RangeRequest>) {
     if part_size == 0 {
         panic!("part_size must not be 0. This is a bug.");
     }
 
-    let num_parts = calc_num_parts(part_size, start, end_incl);
+    let mut start: usize = range.start();
+
+    let num_parts = calc_num_parts(range, part_size);
 
     let mut counter = 0;
     let iter = std::iter::from_fn(move || {
-        if start > end_incl {
+        if start > range.end_incl() {
             return None;
         }
 
         let current_start = start;
-        let current_end_incl = (current_start + part_size - 1).min(end_incl);
+        let current_end_incl = (current_start + part_size - 1).min(range.end_incl());
         start = current_end_incl + 1;
 
         let res = Some(RangeRequest {
@@ -49,11 +52,9 @@ pub fn create(
     (num_parts, futures::stream::iter(iter))
 }
 
-fn calc_num_parts(part_size: usize, start: usize, end_incl: usize) -> usize {
-    let len = end_incl - start + 1;
-
-    let mut n_parts = len / part_size;
-    if len % part_size != 0 {
+fn calc_num_parts(range: InclusiveRange, part_size: usize) -> usize {
+    let mut n_parts = range.byte_len() / part_size;
+    if range.byte_len() % part_size != 0 {
         n_parts += 1;
     }
 
@@ -66,7 +67,7 @@ fn test_calc_num_parts() {
     let start = 0;
     let end_incl = 0;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         1,
         "size={} start={}, end_incl={}",
         part_size,
@@ -78,7 +79,7 @@ fn test_calc_num_parts() {
     let start = 0;
     let end_incl = 1;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         2,
         "size={} start={}, end_incl={}",
         part_size,
@@ -90,7 +91,7 @@ fn test_calc_num_parts() {
     let start = 1;
     let end_incl = 3;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         3,
         "size={} start={}, end_incl={}",
         part_size,
@@ -102,7 +103,7 @@ fn test_calc_num_parts() {
     let start = 1;
     let end_incl = 3;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         2,
         "size={} start={}, end_incl={}",
         part_size,
@@ -114,7 +115,7 @@ fn test_calc_num_parts() {
     let start = 1;
     let end_incl = 3;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         1,
         "size={} start={}, end_incl={}",
         part_size,
@@ -126,7 +127,7 @@ fn test_calc_num_parts() {
     let start = 1;
     let end_incl = 3;
     assert_eq!(
-        calc_num_parts(part_size, start, end_incl),
+        calc_num_parts(InclusiveRange(start, end_incl), part_size),
         1,
         "size={} start={}, end_incl={}",
         part_size,
@@ -183,7 +184,7 @@ async fn test_n_parts_vs_stream_count() {
         for start in 0..20 {
             for len in 0..20 {
                 let end_incl = start + len;
-                let (n_parts, stream) = create(part_size, start, end_incl);
+                let (n_parts, stream) = create(InclusiveRange(start, end_incl), part_size);
                 let items = stream.collect::<Vec<_>>().await;
 
                 assert_eq!(

@@ -11,14 +11,14 @@ use tokio::time;
 use crate::{
     condow_client::CondowClient,
     streams::{BytesHint, BytesStream},
-    DownloadRange,
+    DownloadRange, ExclusiveOpenRange,
 };
 
 #[derive(Clone)]
 pub struct TestCondowClient {
     pub data: Arc<Vec<u8>>,
-    pub max_jitter_us: usize,
-    pub include_size_hit: bool,
+    pub max_jitter_ms: usize,
+    pub include_size_hint: bool,
     pub max_chunk_size: usize,
 }
 
@@ -44,15 +44,19 @@ impl CondowClient for TestCondowClient {
             crate::errors::DownloadRangeError,
         >,
     > {
-        let range = match range.boundaries_excl() {
+        let range = match range.excl_open_range() {
             None => 0..0,
-            Some((a, None)) => a..self.data.len(),
-            Some((a, Some(b))) => a..b,
+            Some(ExclusiveOpenRange(a, None)) => a..self.data.len(),
+            Some(ExclusiveOpenRange(a, Some(b))) => a..b,
         };
 
         let slice = &self.data[range];
 
-        let bytes_hint = BytesHint::new(slice.len(), Some(slice.len()));
+        let bytes_hint = if self.include_size_hint {
+            BytesHint::new(slice.len(), Some(slice.len()))
+        } else {
+            BytesHint::no_hint()
+        };
 
         let iter = slice
             .chunks(self.max_chunk_size)
@@ -61,11 +65,11 @@ impl CondowClient for TestCondowClient {
 
         let owned_bytes: Vec<_> = iter.collect();
 
-        let jitter = self.max_jitter_us;
+        let jitter = self.max_jitter_ms;
         let stream = stream::iter(owned_bytes).then(move |bytes| async move {
             if jitter > 0 {
                 let jitter = OsRng.gen_range(0..=(jitter as u64));
-                time::sleep(Duration::from_micros(jitter)).await;
+                time::sleep(Duration::from_millis(jitter)).await;
             }
             bytes
         });

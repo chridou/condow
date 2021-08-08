@@ -24,6 +24,18 @@ impl BytesHint {
         BytesHint(lower_bound, upper_bound)
     }
 
+    pub fn exact(bytes: usize) -> Self {
+        Self(bytes, Some(bytes))
+    }
+
+    pub fn at_max(bytes: usize) -> Self {
+        Self(0, Some(bytes))
+    }
+
+    pub fn no_hint() -> Self {
+        Self(0, None)
+    }
+
     pub fn lower_bound(&self) -> usize {
         self.0
     }

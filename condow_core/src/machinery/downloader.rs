@@ -11,9 +11,9 @@ use futures::{
 use crate::{
     condow_client::CondowClient,
     config::Config,
+    download_range::{ClosedRange, DownloadRange},
     errors::{IoError, StreamError},
     streams::{BytesStream, ChunkItem, ChunkItemPayload, ChunkStreamItem},
-    DownloadRange,
 };
 
 use super::range_stream::RangeRequest;
@@ -136,10 +136,10 @@ impl Downloader {
                     match client
                         .download(
                             location.clone(),
-                            DownloadRange::FromToInclusive(
+                            DownloadRange::Closed(ClosedRange::FromToInclusive(
                                 range_request.start,
                                 range_request.end_incl,
-                            ),
+                            )),
                         )
                         .await
                     {
