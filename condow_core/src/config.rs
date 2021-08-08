@@ -1,5 +1,7 @@
 use std::{str::FromStr, time::Duration};
 
+use anyhow::{Error as AnyError, bail};
+
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Config {
     pub part_size_bytes: PartSizeBytes,
@@ -33,6 +35,18 @@ impl Config {
     pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, v: T) -> Self {
         self.always_get_size = v.into();
         self
+    }
+
+    pub fn validated(self) -> Result<Self, AnyError> {
+        if self.max_concurrency.0 == 0 {
+            bail!("'max_concurrency' must not be 0");
+        }
+
+        if self.part_size_bytes.0 == 0 {
+            bail!("'part_size_bytes' must not be 0");
+        }
+
+        Ok(self)
     }
 }
 

@@ -26,6 +26,7 @@ pub struct Condow<C> {
 
 impl<C: CondowClient> Condow<C> {
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
+        let config = config.validated()?;
         Ok(Self { client, config })
     }
 
@@ -35,7 +36,7 @@ impl<C: CondowClient> Condow<C> {
         range: R,
         get_size_mode: GetSizeMode,
     ) -> Result<ChunkStream, DownloadRangeError> {
-        let mut range: DownloadRange = range.into();
+        let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {
             range
