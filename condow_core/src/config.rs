@@ -1,6 +1,6 @@
 use std::{str::FromStr, time::Duration};
 
-use anyhow::{Error as AnyError, bail};
+use anyhow::{bail, Error as AnyError};
 
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Config {

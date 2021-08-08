@@ -142,8 +142,19 @@ impl Default for GetSizeMode {
 
 #[cfg(test)]
 mod tests {
+
+    pub fn create_test_data() -> Vec<u8> {
+        let mut data: Vec<u8> = Vec::new();
+
+        for n in 1u8..=255 {
+            let bytes = n.to_be_bytes();
+            data.extend_from_slice(bytes.as_ref());
+        }
+        data
+    }
+
     mod file {
-        use std::{sync::Arc, time::Duration};
+        use std::sync::Arc;
 
         use crate::{
             config::{Config, Millis},
@@ -151,23 +162,18 @@ mod tests {
             Condow,
         };
 
+        use super::create_test_data;
+
         #[tokio::test]
-        async fn download_file_buff_size_2() {
-            let buffer_size = 2;
+        async fn download_file() {
+            let buffer_size = 10;
 
-            let mut data: Vec<u8> = Vec::new();
-
-            for n in 1u8..=255 {
-                let bytes = n.to_be_bytes();
-                data.extend_from_slice(bytes.as_ref());
-            }
-
-            let data = Arc::new(data);
+            let data = Arc::new(create_test_data());
 
             for chunk_size in [1, 3, 5] {
                 let client = TestCondowClient {
                     data: Arc::clone(&data),
-                    max_jitter_ms: 1,
+                    max_jitter_ms: 0,
                     include_size_hint: true,
                     max_chunk_size: chunk_size,
                 };
@@ -176,7 +182,7 @@ mod tests {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay(Millis(1))
+                            .buffers_full_delay(Millis(0))
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
@@ -190,5 +196,11 @@ mod tests {
                 }
             }
         }
+    }
+
+    mod range {
+        mod open {}
+
+        mod closed {}
     }
 }
