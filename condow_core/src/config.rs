@@ -123,28 +123,27 @@ impl FromStr for PartSizeBytes {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
-        match s.find(|c: char| c.is_alphabetic()) {
-            Some(idx) => {
-                if idx == 0 {
-                    bail!("'{}' needs digits", s)
-                }
-
-                let digits = from_utf8(&s.as_bytes()[0..idx])?.trim();
-                let unit = from_utf8(&s.as_bytes()[idx + 1..])?.trim();
-
-                let bytes = digits.parse::<usize>()?;
-
-                match unit {
-                    "k" => Ok(Kilo(bytes).into()),
-                    "M" => Ok(Mega(bytes).into()),
-                    "G" => Ok(Giga(bytes).into()),
-                    "Ki" => Ok(Kibi(bytes).into()),
-                    "Mi" => Ok(Mebi(bytes).into()),
-                    "Gi" => Ok(Gibi(bytes).into()),
-                    s => bail!("invaid unit: '{}'", s),
-                }
+        if let Some(idx) = s.find(|c: char| c.is_alphabetic()) {
+            if idx == 0 {
+                bail!("'{}' needs digits", s)
             }
-            None => Ok(s.parse()?),
+
+            let digits = from_utf8(&s.as_bytes()[0..idx])?.trim();
+            let unit = from_utf8(&s.as_bytes()[idx + 1..])?.trim();
+
+            let bytes = digits.parse::<usize>()?;
+
+            match unit {
+                "k" => Ok(Kilo(bytes).into()),
+                "M" => Ok(Mega(bytes).into()),
+                "G" => Ok(Giga(bytes).into()),
+                "Ki" => Ok(Kibi(bytes).into()),
+                "Mi" => Ok(Mebi(bytes).into()),
+                "Gi" => Ok(Gibi(bytes).into()),
+                s => bail!("invaid unit: '{}'", s),
+            }
+        } else {
+            Ok(s.parse()?)
         }
     }
 }
