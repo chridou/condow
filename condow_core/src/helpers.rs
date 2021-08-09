@@ -1,4 +1,4 @@
-pub const CONDOW_PREFIX: &str = "CONDOW";
+pub(crate) const CONDOW_PREFIX: &str = "CONDOW";
 
 macro_rules! env_funs {
     ($var:expr) => {
@@ -358,13 +358,13 @@ macro_rules! new_type {
     };
 }
 
-pub fn mandatory<T>(v: Option<T>, field_name: &'static str) -> Result<T, anyhow::Error> {
-    if let Some(v) = v {
-        Ok(v)
-    } else {
-        Err(anyhow::Error::msg(format!(
-            "field '{}' is mandatory",
-            field_name
-        )))
-    }
-}
+// pub fn mandatory<T>(v: Option<T>, field_name: &'static str) -> Result<T, anyhow::Error> {
+//     if let Some(v) = v {
+//         Ok(v)
+//     } else {
+//         Err(anyhow::Error::msg(format!(
+//             "field '{}' is mandatory",
+//             field_name
+//         )))
+//     }
+// }

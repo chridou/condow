@@ -1,11 +1,11 @@
-use std::{fmt, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bytes::Bytes;
 use futures::{
     future::{self, BoxFuture},
     stream, StreamExt as _,
 };
-use rand::{rngs::OsRng, thread_rng, Rng};
+use rand::{rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{

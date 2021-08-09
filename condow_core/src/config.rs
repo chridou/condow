@@ -1,4 +1,7 @@
-use std::{str::FromStr, time::Duration};
+use std::{
+    str::{from_utf8, FromStr},
+    time::Duration,
+};
 
 use anyhow::{bail, Error as AnyError};
 
@@ -119,7 +122,30 @@ impl FromStr for PartSizeBytes {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        let s = s.trim();
+        match s.find(|c: char| c.is_alphabetic()) {
+            Some(idx) => {
+                if idx == 0 {
+                    bail!("'{}' needs digits", s)
+                }
+
+                let digits = from_utf8(&s.as_bytes()[0..idx])?.trim();
+                let unit = from_utf8(&s.as_bytes()[idx + 1..])?.trim();
+
+                let bytes = digits.parse::<usize>()?;
+
+                match unit {
+                    "k" => Ok(Kilo(bytes).into()),
+                    "M" => Ok(Mega(bytes).into()),
+                    "G" => Ok(Giga(bytes).into()),
+                    "Ki" => Ok(Kibi(bytes).into()),
+                    "Mi" => Ok(Mebi(bytes).into()),
+                    "Gi" => Ok(Gibi(bytes).into()),
+                    s => bail!("invaid unit: '{}'", s),
+                }
+            }
+            None => Ok(s.parse()?),
+        }
     }
 }
 
@@ -169,7 +195,7 @@ impl BuffersFullDelay {
 
 impl Default for BuffersFullDelay {
     fn default() -> Self {
-        BuffersFullDelay(Duration::from_millis(10))
+        Millis(10).into()
     }
 }
 
@@ -177,7 +203,8 @@ impl FromStr for BuffersFullDelay {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        let ms = s.parse::<u64>()?;
+        Ok(Millis(ms).into())
     }
 }
 

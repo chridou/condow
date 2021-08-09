@@ -196,12 +196,10 @@ impl OpenRange {
     }
 
     pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
-        let exclusive = match self {
+        match self {
             Self::From(a) => Some(ExclusiveOpenRange(a, None)),
             Self::Full => Some(ExclusiveOpenRange(0, None)),
-        };
-
-        exclusive
+        }
     }
 }
 
@@ -214,14 +212,14 @@ pub enum DownloadRange {
 impl DownloadRange {
     pub fn validate(&self) -> Result<(), DownloadRangeError> {
         match self {
-            DownloadRange::Open(r) => Ok(()),
+            DownloadRange::Open(_) => Ok(()),
             DownloadRange::Closed(r) => r.validate(),
         }
     }
 
     pub fn sanitized(self) -> Option<Self> {
         match self {
-            DownloadRange::Open(r) => Some(self),
+            DownloadRange::Open(_) => Some(self),
             DownloadRange::Closed(r) => r.sanitized().map(DownloadRange::Closed),
         }
     }
