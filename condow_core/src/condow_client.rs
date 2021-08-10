@@ -3,9 +3,14 @@ use futures::future::BoxFuture;
 use crate::{
     errors::{DownloadRangeError, GetSizeError},
     streams::{BytesHint, BytesStream},
-    DownloadRange,
+    InclusiveRange,
 };
 
+#[derive(Debug, Copy, Clone)]
+pub enum DownloadSpec {
+    Complete,
+    Range(InclusiveRange),
+}
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + Clone + Send + Sync + 'static;
 
@@ -13,7 +18,7 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         -> BoxFuture<'static, Result<usize, GetSizeError>>;
     fn download(
         &self,
-        _location: Self::Location,
-        range: DownloadRange,
+        location: Self::Location,
+        spec: DownloadSpec,
     ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadRangeError>>;
 }

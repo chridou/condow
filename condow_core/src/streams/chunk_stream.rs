@@ -14,8 +14,10 @@ pub type ChunkStreamItem = Result<ChunkItem, StreamError>;
 pub struct ChunkItem {
     /// Index of the part this chunk belongs to
     pub part: usize,
-    /// Offset of the part this chunk belongs to
-    pub offset: usize,
+    /// Offset of the part this chunk belongs to within the range
+    pub range_offset: usize,
+    /// Offset of the part this chunk belongs within the file
+    pub file_offset: usize,
     pub payload: ChunkItemPayload,
 }
 
@@ -76,7 +78,8 @@ impl ChunkStream {
                         if sender
                             .unbounded_send(Ok(ChunkItem {
                                 part: 0,
-                                offset: 0,
+                                range_offset: 0,
+                                file_offset: 0,
                                 payload: ChunkItemPayload::Chunk {
                                     bytes,
                                     index: chunk_index,
@@ -135,7 +138,9 @@ impl ChunkStream {
 
         while let Some(next) = self.next().await {
             let ChunkItem {
-                offset, payload, ..
+                range_offset,
+                payload,
+                ..
             } = match next {
                 Err(err) => return Err(err),
                 Ok(next) => next,
@@ -146,11 +151,12 @@ impl ChunkStream {
                 ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
             };
 
-            let bytes_offset = offset + chunk_offset;
+            let bytes_offset = range_offset + chunk_offset;
             let end_excl = bytes_offset + bytes.len();
             if end_excl > buffer.len() {
                 return Err(StreamError::Other(format!(
-                    "buffer to small ({}). at least {} bytes required",
+                    "write attempt beyond buffer end (buffer len = {}). \
+                    attempted to write at index {}",
                     buffer.len(),
                     end_excl
                 )));
@@ -182,7 +188,9 @@ async fn stream_into_vec_with_unknown_size(
 
     while let Some(next) = stream.next().await {
         let ChunkItem {
-            offset, payload, ..
+            range_offset,
+            payload,
+            ..
         } = match next {
             Err(err) => return Err(err),
             Ok(next) => next,
@@ -193,7 +201,7 @@ async fn stream_into_vec_with_unknown_size(
             ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
         };
 
-        let bytes_offset = offset + chunk_offset;
+        let bytes_offset = range_offset + chunk_offset;
         let end_excl = bytes_offset + bytes.len();
         if end_excl >= buffer.len() {
             let missing = end_excl - buffer.len();

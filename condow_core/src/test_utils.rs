@@ -9,9 +9,9 @@ use rand::{rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{CondowClient, DownloadSpec},
     streams::{BytesHint, BytesStream},
-    DownloadRange, ExclusiveOpenRange,
+    InclusiveRange,
 };
 
 #[derive(Clone)]
@@ -36,7 +36,7 @@ impl CondowClient for TestCondowClient {
     fn download(
         &self,
         _location: Self::Location,
-        range: DownloadRange,
+        spec: DownloadSpec,
     ) -> BoxFuture<
         'static,
         Result<
@@ -44,10 +44,9 @@ impl CondowClient for TestCondowClient {
             crate::errors::DownloadRangeError,
         >,
     > {
-        let range = match range.excl_open_range() {
-            None => 0..0,
-            Some(ExclusiveOpenRange(a, None)) => a..self.data.len(),
-            Some(ExclusiveOpenRange(a, Some(b))) => a..b,
+        let range = match spec {
+            DownloadSpec::Complete => 0..self.data.len(),
+            DownloadSpec::Range(InclusiveRange(a, b)) => a..b + 1,
         };
 
         let slice = &self.data[range];

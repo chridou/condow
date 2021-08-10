@@ -17,12 +17,16 @@ impl InclusiveRange {
         self.1
     }
 
-    pub fn byte_len(&self) -> usize {
+    pub fn len(&self) -> usize {
         if self.1 < self.0 {
             return 0;
         }
 
         self.1 - self.0 + 1
+    }
+
+    pub fn to_range(self) -> RangeInclusive<usize> {
+        self.0..=self.1
     }
 }
 

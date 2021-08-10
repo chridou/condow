@@ -9,9 +9,8 @@ use futures::{
 };
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{CondowClient, DownloadSpec},
     config::Config,
-    download_range::{ClosedRange, DownloadRange},
     errors::{IoError, StreamError},
     streams::{BytesStream, ChunkItem, ChunkItemPayload, ChunkStreamItem},
 };
@@ -137,10 +136,7 @@ impl Downloader {
                     match client
                         .download(
                             location.clone(),
-                            DownloadRange::Closed(ClosedRange::FromToInclusive(
-                                range_request.start,
-                                range_request.end_incl,
-                            )),
+                            DownloadSpec::Range(range_request.file_range),
                         )
                         .await
                     {
@@ -208,7 +204,8 @@ async fn consume_and_dispatch_bytes(
                 results_sender
                     .unbounded_send(Ok(ChunkItem {
                         part: range_request.part,
-                        offset: range_request.start,
+                        file_offset: range_request.file_range.start(),
+                        range_offset: range_request.range_offset,
                         payload: ChunkItemPayload::Chunk {
                             bytes,
                             index: chunk_index,
@@ -229,7 +226,8 @@ async fn consume_and_dispatch_bytes(
     results_sender
         .unbounded_send(Ok(ChunkItem {
             part: range_request.part,
-            offset: range_request.start,
+            file_offset: range_request.file_range.start(),
+            range_offset: range_request.range_offset,
             payload: ChunkItemPayload::Terminator,
         }))
         .map_err(|_| ())

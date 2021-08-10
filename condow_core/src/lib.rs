@@ -1,4 +1,4 @@
-use condow_client::CondowClient;
+use condow_client::{CondowClient, DownloadSpec};
 use config::{AlwaysGetSize, Config};
 use errors::{DownloadFileError, DownloadRangeError, GetSizeError};
 
@@ -48,7 +48,7 @@ impl<C: CondowClient> Condow<C> {
             DownloadRange::Open(or) => {
                 let size = self.client.get_size(location.clone()).await?;
                 if let Some(range) = or.incl_range_from_size(size) {
-                    (range, BytesHint::exact(range.byte_len()))
+                    (range, BytesHint::exact(range.len()))
                 } else {
                     return Ok(ChunkStream::empty());
                 }
@@ -57,19 +57,19 @@ impl<C: CondowClient> Condow<C> {
                 if get_size_mode.is_load_size_enforced(self.config.always_get_size) {
                     let size = self.client.get_size(location.clone()).await?;
                     if let Some(range) = cl.incl_range_from_size(size) {
-                        (range, BytesHint::exact(range.byte_len()))
+                        (range, BytesHint::exact(range.len()))
                     } else {
                         return Ok(ChunkStream::empty());
                     }
                 } else if let Some(range) = cl.incl_range() {
-                    (range, BytesHint::at_max(range.byte_len()))
+                    (range, BytesHint::at_max(range.len()))
                 } else {
                     return Ok(ChunkStream::empty());
                 }
             }
         };
 
-        if inclusive_range.byte_len() <= self.config.part_size_bytes.into() {
+        if inclusive_range.len() <= self.config.part_size_bytes.into() {
             let (bytes_stream, bytes_hint) = self
                 .download_file_non_concurrent(location)
                 .await
@@ -105,7 +105,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
     ) -> Result<(BytesStream, BytesHint), DownloadFileError> {
         self.client
-            .download(location, DownloadRange::Open(OpenRange::Full))
+            .download(location, DownloadSpec::Complete)
             .await
             .map_err(DownloadFileError::from)
     }
