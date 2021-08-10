@@ -81,3 +81,13 @@ impl CondowClient for TestCondowClient {
         Box::pin(f)
     }
 }
+
+pub fn create_test_data() -> Vec<u8> {
+    let mut data: Vec<u8> = Vec::new();
+
+    for n in 1u8..=255 {
+        let bytes = n.to_be_bytes();
+        data.extend_from_slice(bytes.as_ref());
+    }
+    data
+}

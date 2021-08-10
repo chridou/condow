@@ -141,26 +141,12 @@ impl Default for GetSizeMode {
 #[cfg(test)]
 mod tests {
 
-    pub fn create_test_data() -> Vec<u8> {
-        let mut data: Vec<u8> = Vec::new();
-
-        for n in 1u8..=255 {
-            let bytes = n.to_be_bytes();
-            data.extend_from_slice(bytes.as_ref());
-        }
-        data
-    }
-
     mod file {
         use std::sync::Arc;
 
-        use crate::{
-            config::{Config, Millis},
-            test_utils::*,
-            Condow,
-        };
+        use crate::{config::Config, test_utils::*, Condow};
 
-        use super::create_test_data;
+        use crate::test_utils::create_test_data;
 
         #[tokio::test]
         async fn download_file() {
@@ -180,7 +166,7 @@ mod tests {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay(Millis(0))
+                            .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
@@ -200,12 +186,7 @@ mod tests {
         mod open {
             use std::sync::Arc;
 
-            use crate::{
-                config::{Config, Millis},
-                test_utils::*,
-                tests::create_test_data,
-                Condow,
-            };
+            use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
             #[tokio::test]
             async fn from_always_get_size() {
@@ -225,7 +206,7 @@ mod tests {
                         for n_concurrency in [1usize, 10] {
                             let config = Config::default()
                                 .buffer_size(buffer_size)
-                                .buffers_full_delay(Millis(0))
+                                .buffers_full_delay_ms(0)
                                 .part_size_bytes(part_size)
                                 .max_concurrency(n_concurrency);
                             let condow = Condow::new(client.clone(), config).unwrap();
@@ -265,7 +246,7 @@ mod tests {
                         for n_concurrency in [1usize, 10] {
                             let config = Config::default()
                                 .buffer_size(buffer_size)
-                                .buffers_full_delay(Millis(0))
+                                .buffers_full_delay_ms(0)
                                 .part_size_bytes(part_size)
                                 .max_concurrency(n_concurrency);
                             let condow = Condow::new(client.clone(), config).unwrap();
@@ -291,12 +272,7 @@ mod tests {
         mod closed {
             use std::sync::Arc;
 
-            use crate::{
-                config::{Config, Millis},
-                test_utils::*,
-                tests::create_test_data,
-                Condow,
-            };
+            use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
             #[tokio::test]
             async fn to_inclusive() {
@@ -316,7 +292,7 @@ mod tests {
                         for n_concurrency in [1usize, 10] {
                             let config = Config::default()
                                 .buffer_size(buffer_size)
-                                .buffers_full_delay(Millis(0))
+                                .buffers_full_delay_ms(0)
                                 .part_size_bytes(part_size)
                                 .max_concurrency(n_concurrency);
                             let condow = Condow::new(client.clone(), config).unwrap();
@@ -357,7 +333,7 @@ mod tests {
                         for n_concurrency in [1usize, 10] {
                             let config = Config::default()
                                 .buffer_size(buffer_size)
-                                .buffers_full_delay(Millis(0))
+                                .buffers_full_delay_ms(0)
                                 .part_size_bytes(part_size)
                                 .max_concurrency(n_concurrency);
                             let condow = Condow::new(client.clone(), config).unwrap();
@@ -385,10 +361,7 @@ mod tests {
                     use std::sync::Arc;
 
                     use crate::{
-                        config::{Config, Millis},
-                        test_utils::*,
-                        tests::create_test_data,
-                        Condow,
+                        config::Config, test_utils::create_test_data, test_utils::*, Condow,
                     };
 
                     #[tokio::test]
@@ -409,7 +382,7 @@ mod tests {
                                 for n_concurrency in [1usize, 10] {
                                     let config = Config::default()
                                         .buffer_size(buffer_size)
-                                        .buffers_full_delay(Millis(0))
+                                        .buffers_full_delay_ms(0)
                                         .part_size_bytes(part_size)
                                         .max_concurrency(n_concurrency);
                                     let condow = Condow::new(client.clone(), config).unwrap();
@@ -450,7 +423,7 @@ mod tests {
                                 for n_concurrency in [1usize, 10] {
                                     let config = Config::default()
                                         .buffer_size(buffer_size)
-                                        .buffers_full_delay(Millis(0))
+                                        .buffers_full_delay_ms(0)
                                         .part_size_bytes(part_size)
                                         .max_concurrency(n_concurrency);
                                     let condow = Condow::new(client.clone(), config).unwrap();
@@ -478,10 +451,7 @@ mod tests {
                     use std::sync::Arc;
 
                     use crate::{
-                        config::{Config, Millis},
-                        test_utils::*,
-                        tests::create_test_data,
-                        Condow,
+                        config::Config, test_utils::create_test_data, test_utils::*, Condow,
                     };
 
                     #[tokio::test]
@@ -502,7 +472,7 @@ mod tests {
                                 for n_concurrency in [1usize, 10] {
                                     let config = Config::default()
                                         .buffer_size(buffer_size)
-                                        .buffers_full_delay(Millis(0))
+                                        .buffers_full_delay_ms(0)
                                         .part_size_bytes(part_size)
                                         .max_concurrency(n_concurrency);
                                     let condow = Condow::new(client.clone(), config).unwrap();
@@ -550,7 +520,7 @@ mod tests {
                                 for n_concurrency in [1usize, 10] {
                                     let config = Config::default()
                                         .buffer_size(buffer_size)
-                                        .buffers_full_delay(Millis(0))
+                                        .buffers_full_delay_ms(0)
                                         .part_size_bytes(part_size)
                                         .max_concurrency(n_concurrency);
                                     let condow = Condow::new(client.clone(), config).unwrap();

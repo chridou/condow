@@ -368,3 +368,48 @@ macro_rules! new_type {
 //         )))
 //     }
 // }
+
+macro_rules! env_ctors {
+    (no_fill) => {
+        #[doc="Initializes all fields from environment variables prefixed with \"CONDOW_PREFIX_\""]
+        pub fn from_env() -> Result<Self, anyhow::Error> {
+            let mut me = Self::default();
+            me.fill_from_env_prefixed_internal($crate::helpers::CONDOW_PREFIX)?;
+            Ok(me)
+        }
+
+        #[doc="Initializes all fields from environment variables prefixed with \"[prefix]_\"\n\n"]
+        #[doc="The underscore is omitted if `prefix` is empty"]
+        pub fn from_env_prefixed<T: AsRef<str>>(prefix: T) -> Result<Self, anyhow::Error> {
+            let mut me = Self::default();
+            me.fill_from_env_prefixed_internal(prefix)?;
+            Ok(me)
+        }
+
+        #[doc="Initializes all fields from environment variables without any prefix"]
+        pub fn from_env_type_names() -> Result<Self, anyhow::Error> {
+            let mut me = Self::default();
+            me.fill_from_env_prefixed_internal("")?;
+            Ok(me)
+        }
+    };
+
+    () => {
+        env_ctors!(no_fill);
+        #[doc="Updates all not yet set fields from environment variables prefixed with \"CONDOW_\""]
+        pub fn fill_from_env(&mut self) -> Result<(), anyhow::Error> {
+            self.fill_from_env_prefixed_internal($crate::helpers::CONDOW_PREFIX)
+        }
+
+        #[doc="Updates all not yet set fields from environment variables prefixed with \"[prefix]_\"\n\n"]
+        #[doc="The underscore is omitted if `prefix` is empty"]
+        pub fn fill_from_env_prefixed<T: AsRef<str>>(&mut self, prefix: T) -> Result<(), anyhow::Error> {
+            self.fill_from_env_prefixed_internal(prefix)
+        }
+
+        #[doc="Updates all not yet set fields from environment variables without any prefix"]
+        pub fn fill_from_env_type_names(&mut self) -> Result<(), anyhow::Error> {
+            self.fill_from_env_prefixed_internal("")
+        }
+    };
+}

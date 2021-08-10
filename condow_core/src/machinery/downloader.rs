@@ -80,11 +80,12 @@ impl ConcurrentDownloader {
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
 
+            let buffers_full_delay = self.config.buffers_full_delay_ms.into();
             let n_downloaders = self.downloaders.len();
 
             loop {
                 if attempt % self.downloaders.len() == 0 {
-                    tokio::time::sleep(self.config.buffers_full_delay.0).await;
+                    tokio::time::sleep(buffers_full_delay).await;
                 }
                 let idx = self.counter + attempt;
                 let downloader = &mut self.downloaders[idx % n_downloaders];

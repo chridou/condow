@@ -10,33 +10,38 @@ pub struct Config {
     pub part_size_bytes: PartSizeBytes,
     pub max_concurrency: MaxConcurrency,
     pub buffer_size: BufferSize,
-    pub buffers_full_delay: BuffersFullDelay,
+    pub buffers_full_delay_ms: BuffersFullDelayMs,
     pub always_get_size: AlwaysGetSize,
 }
 
 impl Config {
-    pub fn part_size_bytes<T: Into<PartSizeBytes>>(mut self, v: T) -> Self {
-        self.part_size_bytes = v.into();
+    env_ctors!();
+
+    pub fn part_size_bytes<T: Into<PartSizeBytes>>(mut self, part_size_bytes: T) -> Self {
+        self.part_size_bytes = part_size_bytes.into();
         self
     }
 
-    pub fn max_concurrency<T: Into<MaxConcurrency>>(mut self, v: T) -> Self {
-        self.max_concurrency = v.into();
+    pub fn max_concurrency<T: Into<MaxConcurrency>>(mut self, max_concurrency: T) -> Self {
+        self.max_concurrency = max_concurrency.into();
         self
     }
 
-    pub fn buffer_size<T: Into<BufferSize>>(mut self, v: T) -> Self {
-        self.buffer_size = v.into();
+    pub fn buffer_size<T: Into<BufferSize>>(mut self, buffer_size: T) -> Self {
+        self.buffer_size = buffer_size.into();
         self
     }
 
-    pub fn buffers_full_delay<T: Into<BuffersFullDelay>>(mut self, v: T) -> Self {
-        self.buffers_full_delay = v.into();
+    pub fn buffers_full_delay_ms<T: Into<BuffersFullDelayMs>>(
+        mut self,
+        buffers_full_delay_ms: T,
+    ) -> Self {
+        self.buffers_full_delay_ms = buffers_full_delay_ms.into();
         self
     }
 
-    pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, v: T) -> Self {
-        self.always_get_size = v.into();
+    pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, always_get_size: T) -> Self {
+        self.always_get_size = always_get_size.into();
         self
     }
 
@@ -50,6 +55,31 @@ impl Config {
         }
 
         Ok(self)
+    }
+
+    fn fill_from_env_prefixed_internal<T: AsRef<str>>(
+        &mut self,
+        prefix: T,
+    ) -> Result<(), AnyError> {
+        if let Some(part_size_bytes) = PartSizeBytes::try_from_env_prefixed(prefix.as_ref())? {
+            self.part_size_bytes = part_size_bytes;
+        }
+        if let Some(max_concurrency) = MaxConcurrency::try_from_env_prefixed(prefix.as_ref())? {
+            self.max_concurrency = max_concurrency;
+        }
+        if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
+            self.buffer_size = buffer_size;
+        }
+        if let Some(buffers_full_delay_ms) =
+            BuffersFullDelayMs::try_from_env_prefixed(prefix.as_ref())?
+        {
+            self.buffers_full_delay_ms = buffers_full_delay_ms;
+        }
+        if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
+            self.always_get_size = always_get_size;
+        }
+
+        Ok(())
     }
 }
 
@@ -181,41 +211,20 @@ impl Default for AlwaysGetSize {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BuffersFullDelay(pub Duration);
-
-impl BuffersFullDelay {
-    env_funs!("BUFFERS_FULL_DELAY_MS");
-
-    pub fn into_inner(self) -> Duration {
-        self.0
-    }
+new_type! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub copy struct BuffersFullDelayMs(u64, env="BUFFERS_FULL_DELAY_MS");
 }
 
-impl Default for BuffersFullDelay {
+impl Default for BuffersFullDelayMs {
     fn default() -> Self {
-        Millis(10).into()
+        Self(10)
     }
 }
 
-impl FromStr for BuffersFullDelay {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let ms = s.parse::<u64>()?;
-        Ok(Millis(ms).into())
-    }
-}
-
-impl From<Duration> for BuffersFullDelay {
-    fn from(d: Duration) -> Self {
-        BuffersFullDelay(d)
-    }
-}
-
-impl From<Millis> for BuffersFullDelay {
-    fn from(m: Millis) -> Self {
-        Self(Duration::from_millis(m.0))
+impl From<BuffersFullDelayMs> for Duration {
+    fn from(m: BuffersFullDelayMs) -> Self {
+        Duration::from_millis(m.0)
     }
 }
 
@@ -270,6 +279,3 @@ impl From<Gibi> for usize {
         m.0 * 1_024 * 1_024 * 1_024
     }
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Millis(pub u64);
