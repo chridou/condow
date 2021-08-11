@@ -12,7 +12,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
     errors::{IoError, StreamError},
-    streams::{BytesStream, Chunk, RangeChunk, RangeChunkPayload, ChunkStreamItem},
+    streams::{BytesStream, Chunk, ChunkStreamItem, RangeChunk, RangeChunkPayload},
 };
 
 use super::range_stream::RangeRequest;
@@ -239,12 +239,17 @@ mod tests {
 
     use futures::StreamExt;
 
-    use crate::{InclusiveRange, config::Config, machinery::{downloader::Downloader, range_stream::RangeStream}, streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload}, test_utils::create_test_data, test_utils::*};
+    use crate::{
+        config::Config,
+        machinery::{downloader::Downloader, range_stream::RangeStream},
+        streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload},
+        test_utils::create_test_data,
+        test_utils::*,
+        InclusiveRange,
+    };
 
     #[tokio::test]
     async fn from_0_to_inclusive_range_larger_than_part_size() {
-        let buffer_size = 10;
-
         let data = Arc::new(create_test_data());
 
         let client = TestCondowClient {
@@ -254,13 +259,22 @@ mod tests {
             max_chunk_size: 3,
         };
 
+        for range in [
+            InclusiveRange(0, 8),
+            InclusiveRange(0, 9),
+            InclusiveRange(0, 10),
+        ] {
+            check(range, client.clone(), 10).await
+        }
+    }
+
+    async fn check(range: InclusiveRange, client: TestCondowClient, part_size_bytes: usize) {
         let config = Config::default()
-            .buffer_size(buffer_size)
+            .buffer_size(10)
             .buffers_full_delay_ms(0)
-            .part_size_bytes(10)
+            .part_size_bytes(part_size_bytes)
             .max_concurrency(1);
 
-        let range = InclusiveRange(0, 10);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
         let (n_parts, mut ranges_stream) =
@@ -280,7 +294,7 @@ mod tests {
             let _ = downloader.enqueue(next).unwrap();
         }
 
-        drop(downloader);
+        drop(downloader); // Ends the stream
 
         let result = result_stream.collect::<Vec<_>>().await;
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
@@ -291,6 +305,8 @@ mod tests {
             .map(|c| c.bytes.len())
             .sum();
         assert_eq!(total_bytes, range.len());
+
+        let mut next_chunk_offset = 0;
 
         result.iter().for_each(|c| {
             let RangeChunk {
@@ -305,10 +321,15 @@ mod tests {
                     bytes,
                     index,
                     offset,
-                };
+                } = chunk;
 
-
-
+                let current_chunk_offset = range_offset + offset;
+                assert_eq!(
+                    current_chunk_offset, next_chunk_offset,
+                    "part {}, chunk_offset: {:?}",
+                    part, range
+                );
+                next_chunk_offset = current_chunk_offset + bytes.len();
             }
         });
     }

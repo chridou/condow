@@ -29,7 +29,7 @@ impl RangeStream {
         }
 
         let mut start: usize = range.start();
-        let mut range_offset: usize = 0;
+        let mut next_range_offset: usize = 0;
 
         let num_parts = calc_num_parts(range, part_size);
 
@@ -41,16 +41,15 @@ impl RangeStream {
 
             let current_end_incl = (start + part_size - 1).min(range.end_incl());
             let file_range = InclusiveRange(start, current_end_incl);
-            let current_range_offset = range_offset;
             start = current_end_incl + 1;
-            range_offset += file_range.len() + 1;
 
             let res = Some(RangeRequest {
                 part: counter,
                 file_range,
-                range_offset: current_range_offset,
+                range_offset: next_range_offset,
             });
 
+            next_range_offset += file_range.len();
             counter += 1;
 
             res
@@ -254,6 +253,26 @@ async fn test_n_parts_vs_stream_count() {
                         end_incl
                     );
                 });
+
+                let mut next_range_offset = 0;
+                let mut next_file_start = range.start();
+                items.iter().for_each(|rr| {
+                    let current_range_offset = rr.range_offset;
+                    assert_eq!(
+                        current_range_offset, next_range_offset,
+                        "range_offset (part {}): part_size={} start={}, end_incl={}",
+                        rr.part, part_size, start, end_incl
+                    );
+                    next_range_offset += rr.file_range.len();
+
+                    let current_file_start = rr.file_range.start();
+                    assert_eq!(
+                        current_file_start, next_file_start,
+                        "file_offset (part {}): part_size={} start={}, end_incl={}",
+                        rr.part, part_size, start, end_incl
+                    );
+                    next_file_start += rr.file_range.len();
+                })
             }
         }
     }
