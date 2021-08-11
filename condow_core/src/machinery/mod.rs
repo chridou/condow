@@ -41,25 +41,15 @@ pub async fn download<C: CondowClient>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use crate::{
-        config::Config, machinery::download, streams::BytesHint, test_utils::create_test_data,
-        test_utils::*, InclusiveRange,
+        config::Config, machinery::download, streams::BytesHint, test_utils::*, InclusiveRange,
     };
 
     #[tokio::test]
     async fn from_0_to_inclusive_range_smaller_than_part_size() {
         let buffer_size = 10;
-
-        let data = Arc::new(create_test_data());
-
-        let client = TestCondowClient {
-            data: Arc::clone(&data),
-            max_jitter_ms: 0,
-            include_size_hint: true,
-            max_chunk_size: 3,
-        };
+        let client = TestCondowClient::new().max_chunk_size(3);
+        let data = client.data();
 
         let config = Config::default()
             .buffer_size(buffer_size)
@@ -82,15 +72,8 @@ mod tests {
     #[tokio::test]
     async fn from_0_to_inclusive_range_equal_size_than_part_size() {
         let buffer_size = 10;
-
-        let data = Arc::new(create_test_data());
-
-        let client = TestCondowClient {
-            data: Arc::clone(&data),
-            max_jitter_ms: 0,
-            include_size_hint: true,
-            max_chunk_size: 3,
-        };
+        let client = TestCondowClient::new().max_chunk_size(3);
+        let data = client.data();
 
         let config = Config::default()
             .buffer_size(buffer_size)
@@ -113,15 +96,8 @@ mod tests {
     #[tokio::test]
     async fn from_0_to_inclusive_range_larger_than_part_size() {
         let buffer_size = 10;
-
-        let data = Arc::new(create_test_data());
-
-        let client = TestCondowClient {
-            data: Arc::clone(&data),
-            max_jitter_ms: 0,
-            include_size_hint: true,
-            max_chunk_size: 3,
-        };
+        let client = TestCondowClient::new().max_chunk_size(3);
+        let data = client.data();
 
         let config = Config::default()
             .buffer_size(buffer_size)

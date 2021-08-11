@@ -22,6 +22,36 @@ pub struct TestCondowClient {
     pub max_chunk_size: usize,
 }
 
+impl TestCondowClient {
+    pub fn new() -> Self {
+        Self {
+            data: Arc::new(create_test_data()),
+            max_jitter_ms: 0,
+            include_size_hint: true,
+            max_chunk_size: 10,
+        }
+    }
+
+    pub fn max_jitter_ms(mut self, max_jitter_ms: usize) -> Self {
+        self.max_jitter_ms = max_jitter_ms;
+        self
+    }
+
+    pub fn max_chunk_size(mut self, max_chunk_size: usize) -> Self {
+        self.max_chunk_size = max_chunk_size;
+        self
+    }
+
+    pub fn include_size_hint(mut self, include_size_hint: bool) -> Self {
+        self.include_size_hint = include_size_hint;
+        self
+    }
+
+    pub fn data(&self) -> Arc<Vec<u8>> {
+        Arc::clone(&self.data)
+    }
+}
+
 impl CondowClient for TestCondowClient {
     type Location = ();
 

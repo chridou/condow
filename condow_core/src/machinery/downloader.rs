@@ -243,21 +243,13 @@ mod tests {
         config::Config,
         machinery::{downloader::Downloader, range_stream::RangeStream},
         streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload},
-        test_utils::create_test_data,
         test_utils::*,
         InclusiveRange,
     };
 
     #[tokio::test]
     async fn from_0_to_inclusive_range_larger_than_part_size() {
-        let data = Arc::new(create_test_data());
-
-        let client = TestCondowClient {
-            data: Arc::clone(&data),
-            max_jitter_ms: 0,
-            include_size_hint: true,
-            max_chunk_size: 3,
-        };
+        let client = TestCondowClient::new().max_chunk_size(3);
 
         for range in [
             InclusiveRange(0, 8),
