@@ -12,7 +12,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
     errors::{IoError, StreamError},
-    streams::{BytesStream, ChunkItem, ChunkItemPayload, ChunkStreamItem},
+    streams::{BytesStream, Chunk, ChunkItem, ChunkItemPayload, ChunkStreamItem},
 };
 
 use super::range_stream::RangeRequest;
@@ -206,11 +206,11 @@ async fn consume_and_dispatch_bytes(
                         part: range_request.part,
                         file_offset: range_request.file_range.start(),
                         range_offset: range_request.range_offset,
-                        payload: ChunkItemPayload::Chunk {
+                        payload: ChunkItemPayload::Chunk(Chunk {
                             bytes,
                             index: chunk_index,
                             offset: chunk_offset,
-                        },
+                        }),
                     }))
                     .map_err(|_| ())?;
                 chunk_index += 1;
@@ -231,4 +231,70 @@ async fn consume_and_dispatch_bytes(
             payload: ChunkItemPayload::Terminator,
         }))
         .map_err(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{atomic::AtomicBool, Arc};
+
+    use futures::StreamExt;
+
+    use crate::{
+        config::Config,
+        machinery::{downloader::Downloader, range_stream::RangeStream},
+        streams::{BytesHint, ChunkStream},
+        test_utils::create_test_data,
+        test_utils::*,
+        InclusiveRange,
+    };
+
+    #[tokio::test]
+    async fn from_0_to_inclusive_range_larger_than_part_size() {
+        let buffer_size = 10;
+
+        let data = Arc::new(create_test_data());
+
+        let client = TestCondowClient {
+            data: Arc::clone(&data),
+            max_jitter_ms: 0,
+            include_size_hint: true,
+            max_chunk_size: 3,
+        };
+
+        let config = Config::default()
+            .buffer_size(buffer_size)
+            .buffers_full_delay_ms(0)
+            .part_size_bytes(10)
+            .max_concurrency(1);
+
+        let range = InclusiveRange(0, 10);
+        let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
+
+        let (n_parts, mut ranges_stream) =
+            RangeStream::create(range, config.part_size_bytes.into());
+
+        let (result_stream, results_sender) = ChunkStream::new(n_parts, bytes_hint);
+
+        let mut downloader = Downloader::new(
+            client,
+            results_sender,
+            Arc::new(AtomicBool::new(false)),
+            (),
+            config.buffer_size.into(),
+        );
+
+        while let Some(next) = ranges_stream.next().await {
+            let _ = downloader.enqueue(next).unwrap();
+        }
+
+        let result = result_stream.collect::<Vec<_>>().await;
+        let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
+
+        let total_bytes: usize = result
+            .iter()
+            .filter_map(|c| c.chunk())
+            .map(|c| c.bytes.len())
+            .sum();
+        assert_eq!(total_bytes, range.len());
+    }
 }

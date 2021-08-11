@@ -16,43 +16,47 @@ impl RangeRequest {
     }
 }
 
-pub fn create(
-    range: InclusiveRange,
-    part_size: usize,
-) -> (usize, impl Stream<Item = RangeRequest>) {
-    if part_size == 0 {
-        panic!("part_size must not be 0. This is a bug.");
-    }
+pub struct RangeStream;
 
-    let mut start: usize = range.start();
-    let mut range_offset: usize = 0;
-
-    let num_parts = calc_num_parts(range, part_size);
-
-    let mut counter = 0;
-    let iter = std::iter::from_fn(move || {
-        if start > range.end_incl() {
-            return None;
+impl RangeStream {
+    pub fn create(
+        range: InclusiveRange,
+        part_size: usize,
+    ) -> (usize, impl Stream<Item = RangeRequest>) {
+        if part_size == 0 {
+            panic!("part_size must not be 0. This is a bug.");
         }
 
-        let current_end_incl = (start + part_size - 1).min(range.end_incl());
-        let file_range = InclusiveRange(start, current_end_incl);
-        let current_range_offset = range_offset;
-        start = current_end_incl + 1;
-        range_offset += file_range.len() + 1;
+        let mut start: usize = range.start();
+        let mut range_offset: usize = 0;
 
-        let res = Some(RangeRequest {
-            part: counter,
-            file_range,
-            range_offset: current_range_offset,
+        let num_parts = calc_num_parts(range, part_size);
+
+        let mut counter = 0;
+        let iter = std::iter::from_fn(move || {
+            if start > range.end_incl() {
+                return None;
+            }
+
+            let current_end_incl = (start + part_size - 1).min(range.end_incl());
+            let file_range = InclusiveRange(start, current_end_incl);
+            let current_range_offset = range_offset;
+            start = current_end_incl + 1;
+            range_offset += file_range.len() + 1;
+
+            let res = Some(RangeRequest {
+                part: counter,
+                file_range,
+                range_offset: current_range_offset,
+            });
+
+            counter += 1;
+
+            res
         });
 
-        counter += 1;
-
-        res
-    });
-
-    (num_parts, futures::stream::iter(iter))
+        (num_parts, futures::stream::iter(iter))
+    }
 }
 
 fn calc_num_parts(range: InclusiveRange, part_size: usize) -> usize {
@@ -188,7 +192,7 @@ async fn test_n_parts_vs_stream_count() {
             for end_offset in 0..40 {
                 let end_incl = start + end_offset;
                 let range = InclusiveRange(start, end_incl);
-                let (n_parts, stream) = create(range, part_size);
+                let (n_parts, stream) = RangeStream::create(range, part_size);
                 let items = stream.collect::<Vec<_>>().await;
 
                 assert_eq!(

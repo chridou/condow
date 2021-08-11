@@ -21,17 +21,29 @@ pub struct ChunkItem {
     pub payload: ChunkItemPayload,
 }
 
+impl ChunkItem {
+    pub fn chunk(&self) -> Option<&Chunk> {
+        match self.payload {
+            ChunkItemPayload::Chunk(ref c) => Some(c),
+            ChunkItemPayload::Terminator => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum ChunkItemPayload {
-    Chunk {
-        bytes: Bytes,
-        /// Index of the chunk within the part
-        index: usize,
-        /// Offset of the chunk relative to the parts offset
-        offset: usize,
-    },
+    Chunk(Chunk),
     /// Last chunk of the part has already been sent.
     Terminator,
+}
+
+#[derive(Debug, Clone)]
+pub struct Chunk {
+    pub bytes: Bytes,
+    /// Index of the chunk within the part
+    pub index: usize,
+    /// Offset of the chunk relative to the parts offset
+    pub offset: usize,
 }
 
 pin_project! {
@@ -80,11 +92,11 @@ impl ChunkStream {
                                 part: 0,
                                 range_offset: 0,
                                 file_offset: 0,
-                                payload: ChunkItemPayload::Chunk {
+                                payload: ChunkItemPayload::Chunk(Chunk {
                                     bytes,
                                     index: chunk_index,
                                     offset,
-                                },
+                                }),
                             }))
                             .is_err()
                         {
@@ -148,7 +160,7 @@ impl ChunkStream {
 
             let (bytes, chunk_offset) = match payload {
                 ChunkItemPayload::Terminator => continue,
-                ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
+                ChunkItemPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
             };
 
             let bytes_offset = range_offset + chunk_offset;
@@ -198,7 +210,7 @@ async fn stream_into_vec_with_unknown_size(
 
         let (bytes, chunk_offset) = match payload {
             ChunkItemPayload::Terminator => continue,
-            ChunkItemPayload::Chunk { bytes, offset, .. } => (bytes, offset),
+            ChunkItemPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
         };
 
         let bytes_offset = range_offset + chunk_offset;

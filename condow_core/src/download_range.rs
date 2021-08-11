@@ -17,6 +17,7 @@ impl InclusiveRange {
         self.1
     }
 
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         if self.1 < self.0 {
             return 0;
