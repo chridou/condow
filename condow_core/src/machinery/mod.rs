@@ -1,3 +1,6 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use crate::condow_client::CondowClient;
 use crate::config::Config;
 use crate::errors::DownloadRangeError;
@@ -115,5 +118,26 @@ mod tests {
         let result = result_stream.into_vec().await.unwrap();
 
         assert_eq!(&result, &data[range.to_range()]);
+    }
+}
+
+#[derive(Clone)]
+struct KillSwitch {
+    is_pushed: Arc<AtomicBool>,
+}
+
+impl KillSwitch {
+    pub fn new() -> Self {
+        Self {
+            is_pushed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn is_pushed(&self) -> bool {
+        self.is_pushed.load(Ordering::Relaxed)
+    }
+
+    pub fn push_the_button(&self) {
+        self.is_pushed.store(true, Ordering::Relaxed)
     }
 }

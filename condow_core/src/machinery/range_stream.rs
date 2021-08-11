@@ -2,6 +2,7 @@ use futures::Stream;
 
 use crate::InclusiveRange;
 
+#[derive(Debug)]
 pub struct RangeRequest {
     /// Index of the part
     pub part: usize,

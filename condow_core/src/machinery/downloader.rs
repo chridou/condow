@@ -1,8 +1,3 @@
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
 use futures::{
     channel::mpsc::{self, Sender, UnboundedSender},
     Stream, StreamExt,
@@ -15,7 +10,7 @@ use crate::{
     streams::{BytesStream, Chunk, ChunkStreamItem, RangeChunk, RangeChunkPayload},
 };
 
-use super::range_stream::RangeRequest;
+use super::{range_stream::RangeRequest, KillSwitch};
 
 pub async fn download_concurrently<C: CondowClient>(
     ranges_stream: impl Stream<Item = RangeRequest>,
@@ -38,7 +33,7 @@ pub async fn download_concurrently<C: CondowClient>(
 struct ConcurrentDownloader {
     downloaders: Vec<Downloader>,
     counter: usize,
-    kill_switch: Arc<AtomicBool>,
+    kill_switch: KillSwitch,
     config: Config,
 }
 
@@ -50,13 +45,13 @@ impl ConcurrentDownloader {
         config: Config,
         location: C::Location,
     ) -> Self {
-        let kill_switch = Arc::new(AtomicBool::new(false));
+        let kill_switch = KillSwitch::new();
         let downloaders: Vec<_> = (0..n_concurrent)
             .map(|_| {
                 Downloader::new(
                     client.clone(),
                     results_sender.clone(),
-                    Arc::clone(&kill_switch),
+                    kill_switch.clone(),
                     location.clone(),
                     config.buffer_size.into(),
                 )
@@ -95,7 +90,7 @@ impl ConcurrentDownloader {
                         range_request = msg;
                     }
                     Err(()) => {
-                        self.kill_switch.store(true, Ordering::Relaxed);
+                        self.kill_switch.push_the_button();
                         return Err(());
                     }
                 }
@@ -111,25 +106,25 @@ impl ConcurrentDownloader {
 
 struct Downloader {
     sender: Sender<RangeRequest>,
-    kill_switch: Arc<AtomicBool>,
+    kill_switch: KillSwitch,
 }
 
 impl Downloader {
     pub fn new<C: CondowClient>(
         client: C,
         results_sender: UnboundedSender<ChunkStreamItem>,
-        kill_switch: Arc<AtomicBool>,
+        kill_switch: KillSwitch,
         location: C::Location,
         buffer_size: usize,
     ) -> Self {
         let (sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
         tokio::spawn({
-            let kill_switch = Arc::clone(&kill_switch);
+            let kill_switch = kill_switch.clone();
             async move {
                 let mut request_receiver = Box::pin(request_receiver);
                 while let Some(range_request) = request_receiver.next().await {
-                    if kill_switch.load(Ordering::Relaxed) {
+                    if kill_switch.is_pushed() {
                         break;
                     }
 
@@ -149,13 +144,13 @@ impl Downloader {
                             .await
                             .is_err()
                             {
-                                kill_switch.store(true, Ordering::Relaxed);
+                                kill_switch.push_the_button();
                                 request_receiver.close();
                                 break;
                             }
                         }
                         Err(err) => {
-                            kill_switch.store(true, Ordering::Relaxed);
+                            kill_switch.push_the_button();
                             request_receiver.close();
                             let _ = results_sender.unbounded_send(Err(err.into()));
                             break;
@@ -172,7 +167,7 @@ impl Downloader {
     }
 
     pub fn enqueue(&mut self, req: RangeRequest) -> Result<Option<RangeRequest>, ()> {
-        if self.kill_switch.load(Ordering::Relaxed) {
+        if self.kill_switch.is_pushed() {
             return Err(());
         }
 
@@ -180,7 +175,7 @@ impl Downloader {
             Ok(()) => Ok(None),
             Err(err) => {
                 if err.is_disconnected() {
-                    self.kill_switch.store(true, Ordering::Relaxed);
+                    self.kill_switch.push_the_button();
                     Err(())
                 } else {
                     Ok(Some(err.into_inner()))
@@ -197,10 +192,13 @@ async fn consume_and_dispatch_bytes(
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
     let mut chunk_offset = 0;
+
+    let mut bytes_received = 0;
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
                 let n_bytes = bytes.len();
+                bytes_received += bytes.len();
                 results_sender
                     .unbounded_send(Ok(RangeChunk {
                         part: range_request.part,
@@ -223,25 +221,34 @@ async fn consume_and_dispatch_bytes(
         }
     }
 
-    results_sender
-        .unbounded_send(Ok(RangeChunk {
+    let msg = if bytes_received == range_request.file_range.len() {
+        Ok(RangeChunk {
             part: range_request.part,
             file_offset: range_request.file_range.start(),
             range_offset: range_request.range_offset,
             payload: RangeChunkPayload::Terminator,
-        }))
-        .map_err(|_| ())
+        })
+    } else {
+        Err(StreamError::Other(format!(
+            "received wrong number of bytes for part {} ({}..={}). expected {}, received {}",
+            range_request.part,
+            range_request.file_range.start(),
+            range_request.file_range.end_incl(),
+            range_request.file_range.len(),
+            bytes_received
+        )))
+    };
+
+    results_sender.unbounded_send(msg).map_err(|_| ())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicBool, Arc};
-
     use futures::StreamExt;
 
     use crate::{
         config::Config,
-        machinery::{downloader::Downloader, range_stream::RangeStream},
+        machinery::{downloader::Downloader, range_stream::RangeStream, KillSwitch},
         streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload},
         test_utils::*,
         InclusiveRange,
@@ -277,7 +284,7 @@ mod tests {
         let mut downloader = Downloader::new(
             client,
             results_sender,
-            Arc::new(AtomicBool::new(false)),
+            KillSwitch::new(),
             (),
             config.buffer_size.into(),
         );
@@ -304,16 +311,12 @@ mod tests {
             let RangeChunk {
                 part,
                 range_offset,
-                file_offset,
                 payload,
+                ..
             } = c;
 
             if let RangeChunkPayload::Chunk(chunk) = payload {
-                let Chunk {
-                    bytes,
-                    index,
-                    offset,
-                } = chunk;
+                let Chunk { bytes, offset, .. } = chunk;
 
                 let current_chunk_offset = range_offset + offset;
                 assert_eq!(

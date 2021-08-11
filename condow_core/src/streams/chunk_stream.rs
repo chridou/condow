@@ -240,7 +240,9 @@ impl Stream for ChunkStream {
 
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
         match next {
-            Some(Ok(chunk_item)) => Poll::Ready(Some(Ok(chunk_item))),
+            Some(Ok(chunk_item)) => {
+ 
+                Poll::Ready(Some(Ok(chunk_item)))},
             Some(Err(err)) => {
                 *this.is_closed = true;
                 this.receiver.close();
@@ -256,5 +258,121 @@ impl Stream for ChunkStream {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
+
+    use crate::streams::{Chunk, ChunkStream};
+
+    use super::{RangeChunk, RangeChunkPayload};
+
+    mod open {
+        use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
+        use std::sync::Arc;
+
+        use super::check_stream;
+
+        #[tokio::test]
+        async fn from_always_get_size() {
+            let buffer_size = 10;
+
+            let data = Arc::new(create_test_data());
+
+            for chunk_size in [1, 3, 5] {
+                let client = TestCondowClient {
+                    data: Arc::clone(&data),
+                    max_jitter_ms: 0,
+                    include_size_hint: true,
+                    max_chunk_size: chunk_size,
+                };
+
+                for part_size in [1usize, 3, 50, 1_000] {
+                    for n_concurrency in [1usize, 10] {
+                        let config = Config::default()
+                            .buffer_size(buffer_size)
+                            .buffers_full_delay_ms(0)
+                            .part_size_bytes(part_size)
+                            .max_concurrency(n_concurrency);
+                        let condow = Condow::new(client.clone(), config).unwrap();
+
+                        for from_idx in [0usize, 101, 255, 256] {
+                            let range = from_idx..;
+
+                            let result_stream = condow
+                                .download_range((), range.clone(), crate::GetSizeMode::Always)
+                                .await
+                                .unwrap();
+
+                                check_stream(result_stream, &data, range.start).await
+                            }
+                    }
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn from_when_required_get_size() {
+            let buffer_size = 10;
+
+            let data = Arc::new(create_test_data());
+
+            for chunk_size in [1, 3, 5] {
+                let client = TestCondowClient {
+                    data: Arc::clone(&data),
+                    max_jitter_ms: 0,
+                    include_size_hint: true,
+                    max_chunk_size: chunk_size,
+                };
+
+                for part_size in [1usize, 3, 50, 1_000] {
+                    for n_concurrency in [1usize, 10] {
+                        let config = Config::default()
+                            .buffer_size(buffer_size)
+                            .buffers_full_delay_ms(0)
+                            .part_size_bytes(part_size)
+                            .max_concurrency(n_concurrency);
+                        let condow = Condow::new(client.clone(), config).unwrap();
+
+                        for from_idx in [0usize, 101, 255, 256] {
+                            let range = from_idx..;
+
+                            let result_stream = condow
+                                .download_range((), range.clone(), crate::GetSizeMode::Required)
+                                .await
+                                .unwrap();
+
+                            check_stream(result_stream, &data, range.start).await
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
+        while let Some(Ok(next)) = result_stream.next().await {
+            let RangeChunk {
+                range_offset,
+                payload,
+                file_offset,
+                ..
+            } = next;
+
+            if let RangeChunkPayload::Chunk(chunk) = payload {
+                let Chunk { bytes, offset, .. } = chunk;
+
+                assert_eq!(
+                    bytes[..],
+                    data[file_offset + offset..file_offset + offset + bytes.len()], "file_offset"
+                );
+                assert_eq!(
+                    bytes[..],
+                    data[file_start + range_offset + offset..file_start + range_offset + offset + bytes.len()], "range_offset"
+                );
+            }
+        }
     }
 }
