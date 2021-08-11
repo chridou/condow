@@ -8,30 +8,30 @@ use crate::errors::{IoError, StreamError};
 
 use super::{BytesHint, BytesStream};
 
-pub type ChunkStreamItem = Result<ChunkItem, StreamError>;
+pub type ChunkStreamItem = Result<RangeChunk, StreamError>;
 
 #[derive(Debug, Clone)]
-pub struct ChunkItem {
+pub struct RangeChunk {
     /// Index of the part this chunk belongs to
     pub part: usize,
     /// Offset of the part this chunk belongs to within the range
     pub range_offset: usize,
     /// Offset of the part this chunk belongs within the file
     pub file_offset: usize,
-    pub payload: ChunkItemPayload,
+    pub payload: RangeChunkPayload,
 }
 
-impl ChunkItem {
+impl RangeChunk {
     pub fn chunk(&self) -> Option<&Chunk> {
         match self.payload {
-            ChunkItemPayload::Chunk(ref c) => Some(c),
-            ChunkItemPayload::Terminator => None,
+            RangeChunkPayload::Chunk(ref c) => Some(c),
+            RangeChunkPayload::Terminator => None,
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ChunkItemPayload {
+pub enum RangeChunkPayload {
     Chunk(Chunk),
     /// Last chunk of the part has already been sent.
     Terminator,
@@ -88,11 +88,11 @@ impl ChunkStream {
                     Ok(bytes) => {
                         let n_bytes = bytes.len();
                         if sender
-                            .unbounded_send(Ok(ChunkItem {
+                            .unbounded_send(Ok(RangeChunk {
                                 part: 0,
                                 range_offset: 0,
                                 file_offset: 0,
-                                payload: ChunkItemPayload::Chunk(Chunk {
+                                payload: RangeChunkPayload::Chunk(Chunk {
                                     bytes,
                                     index: chunk_index,
                                     offset,
@@ -149,7 +149,7 @@ impl ChunkStream {
         let mut bytes_written = 0;
 
         while let Some(next) = self.next().await {
-            let ChunkItem {
+            let RangeChunk {
                 range_offset,
                 payload,
                 ..
@@ -159,8 +159,8 @@ impl ChunkStream {
             };
 
             let (bytes, chunk_offset) = match payload {
-                ChunkItemPayload::Terminator => continue,
-                ChunkItemPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
+                RangeChunkPayload::Terminator => continue,
+                RangeChunkPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
             };
 
             let bytes_offset = range_offset + chunk_offset;
@@ -199,7 +199,7 @@ async fn stream_into_vec_with_unknown_size(
     let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
 
     while let Some(next) = stream.next().await {
-        let ChunkItem {
+        let RangeChunk {
             range_offset,
             payload,
             ..
@@ -209,8 +209,8 @@ async fn stream_into_vec_with_unknown_size(
         };
 
         let (bytes, chunk_offset) = match payload {
-            ChunkItemPayload::Terminator => continue,
-            ChunkItemPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
+            RangeChunkPayload::Terminator => continue,
+            RangeChunkPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
         };
 
         let bytes_offset = range_offset + chunk_offset;

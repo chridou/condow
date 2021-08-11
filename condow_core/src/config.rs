@@ -158,7 +158,7 @@ impl FromStr for PartSizeBytes {
                 bail!("'{}' needs digits", s)
             }
 
-            let digits = from_utf8(&s.as_bytes()[0..idx])?.trim();
+            let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
             let unit = from_utf8(&s.as_bytes()[idx + 1..])?.trim();
 
             let bytes = digits.parse::<usize>()?;

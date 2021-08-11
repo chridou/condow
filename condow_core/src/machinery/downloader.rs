@@ -12,7 +12,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
     errors::{IoError, StreamError},
-    streams::{BytesStream, Chunk, ChunkItem, ChunkItemPayload, ChunkStreamItem},
+    streams::{BytesStream, Chunk, RangeChunk, RangeChunkPayload, ChunkStreamItem},
 };
 
 use super::range_stream::RangeRequest;
@@ -202,11 +202,11 @@ async fn consume_and_dispatch_bytes(
             Ok(bytes) => {
                 let n_bytes = bytes.len();
                 results_sender
-                    .unbounded_send(Ok(ChunkItem {
+                    .unbounded_send(Ok(RangeChunk {
                         part: range_request.part,
                         file_offset: range_request.file_range.start(),
                         range_offset: range_request.range_offset,
-                        payload: ChunkItemPayload::Chunk(Chunk {
+                        payload: RangeChunkPayload::Chunk(Chunk {
                             bytes,
                             index: chunk_index,
                             offset: chunk_offset,
@@ -224,11 +224,11 @@ async fn consume_and_dispatch_bytes(
     }
 
     results_sender
-        .unbounded_send(Ok(ChunkItem {
+        .unbounded_send(Ok(RangeChunk {
             part: range_request.part,
             file_offset: range_request.file_range.start(),
             range_offset: range_request.range_offset,
-            payload: ChunkItemPayload::Terminator,
+            payload: RangeChunkPayload::Terminator,
         }))
         .map_err(|_| ())
 }
@@ -239,14 +239,7 @@ mod tests {
 
     use futures::StreamExt;
 
-    use crate::{
-        config::Config,
-        machinery::{downloader::Downloader, range_stream::RangeStream},
-        streams::{BytesHint, ChunkStream},
-        test_utils::create_test_data,
-        test_utils::*,
-        InclusiveRange,
-    };
+    use crate::{InclusiveRange, config::Config, machinery::{downloader::Downloader, range_stream::RangeStream}, streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload}, test_utils::create_test_data, test_utils::*};
 
     #[tokio::test]
     async fn from_0_to_inclusive_range_larger_than_part_size() {
@@ -287,6 +280,8 @@ mod tests {
             let _ = downloader.enqueue(next).unwrap();
         }
 
+        drop(downloader);
+
         let result = result_stream.collect::<Vec<_>>().await;
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
 
@@ -296,5 +291,25 @@ mod tests {
             .map(|c| c.bytes.len())
             .sum();
         assert_eq!(total_bytes, range.len());
+
+        result.iter().for_each(|c| {
+            let RangeChunk {
+                part,
+                range_offset,
+                file_offset,
+                payload,
+            } = c;
+
+            if let RangeChunkPayload::Chunk(chunk) = payload {
+                let Chunk {
+                    bytes,
+                    index,
+                    offset,
+                };
+
+
+
+            }
+        });
     }
 }

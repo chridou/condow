@@ -10,6 +10,7 @@ pub struct RangeRequest {
     pub range_offset: usize,
 }
 
+#[cfg(test)]
 impl RangeRequest {
     pub fn len(&self) -> usize {
         self.file_range.len()
