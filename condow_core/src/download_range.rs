@@ -26,7 +26,7 @@ impl InclusiveRange {
         self.1 - self.0 + 1
     }
 
-    pub fn to_range(self) -> RangeInclusive<usize> {
+    pub fn to_std_range(self) -> RangeInclusive<usize> {
         self.0..=self.1
     }
 }

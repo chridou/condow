@@ -188,9 +188,9 @@ fn test_calc_num_parts() {
 async fn test_n_parts_vs_stream_count() {
     use futures::StreamExt as _;
 
-    for part_size in 1..30 {
-        for start in 0..20 {
-            for end_offset in 0..40 {
+    for part_size in 1..50 {
+        for start in 0..50 {
+            for end_offset in 0..50 {
                 let end_incl = start + end_offset;
                 let range = InclusiveRange(start, end_incl);
                 let (n_parts, stream) = RangeStream::create(range, part_size);

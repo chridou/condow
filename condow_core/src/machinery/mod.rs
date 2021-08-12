@@ -69,7 +69,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_range()]);
+        assert_eq!(&result, &data[range.to_std_range()]);
     }
 
     #[tokio::test]
@@ -93,7 +93,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_range()]);
+        assert_eq!(&result, &data[range.to_std_range()]);
     }
 
     #[tokio::test]
@@ -117,7 +117,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_range()]);
+        assert_eq!(&result, &data[range.to_std_range()]);
     }
 }
 
