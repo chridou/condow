@@ -68,7 +68,7 @@ impl<C: CondowClient> Condow<C> {
                 }
             }
         };
- 
+
         if inclusive_range.len() <= self.config.part_size_bytes.into() {
             let (bytes_stream, bytes_hint) = self
                 .download_file_non_concurrent(location)

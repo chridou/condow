@@ -240,9 +240,7 @@ impl Stream for ChunkStream {
 
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
         match next {
-            Some(Ok(chunk_item)) => {
- 
-                Poll::Ready(Some(Ok(chunk_item)))},
+            Some(Ok(chunk_item)) => Poll::Ready(Some(Ok(chunk_item))),
             Some(Err(err)) => {
                 *this.is_closed = true;
                 this.receiver.close();
@@ -269,9 +267,37 @@ mod tests {
 
     use super::{RangeChunk, RangeChunkPayload};
 
+    async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
+        while let Some(Ok(next)) = result_stream.next().await {
+            let RangeChunk {
+                range_offset,
+                payload,
+                file_offset,
+                ..
+            } = next;
+
+            if let RangeChunkPayload::Chunk(chunk) = payload {
+                let Chunk { bytes, offset, .. } = chunk;
+
+                assert_eq!(
+                    bytes[..],
+                    data[file_offset + offset..file_offset + offset + bytes.len()],
+                    "file_offset"
+                );
+                assert_eq!(
+                    bytes[..],
+                    data[file_start + range_offset + offset
+                        ..file_start + range_offset + offset + bytes.len()],
+                    "range_offset"
+                );
+            }
+        }
+    }
+
     mod open {
-        use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
         use std::sync::Arc;
+
+        use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
         use super::check_stream;
 
@@ -306,8 +332,8 @@ mod tests {
                                 .await
                                 .unwrap();
 
-                                check_stream(result_stream, &data, range.start).await
-                            }
+                            check_stream(result_stream, &data, range.start).await
+                        }
                     }
                 }
             }
@@ -352,26 +378,280 @@ mod tests {
         }
     }
 
-    async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
-        while let Some(Ok(next)) = result_stream.next().await {
-            let RangeChunk {
-                range_offset,
-                payload,
-                file_offset,
-                ..
-            } = next;
+    mod closed {
+        use std::sync::Arc;
 
-            if let RangeChunkPayload::Chunk(chunk) = payload {
-                let Chunk { bytes, offset, .. } = chunk;
+        use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
-                assert_eq!(
-                    bytes[..],
-                    data[file_offset + offset..file_offset + offset + bytes.len()], "file_offset"
-                );
-                assert_eq!(
-                    bytes[..],
-                    data[file_start + range_offset + offset..file_start + range_offset + offset + bytes.len()], "range_offset"
-                );
+        use super::check_stream;
+
+        #[tokio::test]
+        async fn to_inclusive() {
+            let buffer_size = 10;
+
+            let data = Arc::new(create_test_data());
+
+            for chunk_size in [1, 3, 5] {
+                let client = TestCondowClient {
+                    data: Arc::clone(&data),
+                    max_jitter_ms: 0,
+                    include_size_hint: true,
+                    max_chunk_size: chunk_size,
+                };
+
+                for part_size in [1usize, 3, 50, 1_000] {
+                    for n_concurrency in [1usize, 10] {
+                        let config = Config::default()
+                            .buffer_size(buffer_size)
+                            .buffers_full_delay_ms(0)
+                            .part_size_bytes(part_size)
+                            .max_concurrency(n_concurrency);
+                        let condow = Condow::new(client.clone(), config).unwrap();
+
+                        for end_incl in [0usize, 2, 101, 255] {
+                            let range = 0..=end_incl;
+
+                            let result_stream = condow
+                                .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                .await
+                                .unwrap();
+
+                            check_stream(result_stream, &data, *range.start()).await
+                        }
+                    }
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn to_exclusive() {
+            let buffer_size = 10;
+
+            let data = Arc::new(create_test_data());
+
+            for chunk_size in [1, 3, 5] {
+                let client = TestCondowClient {
+                    data: Arc::clone(&data),
+                    max_jitter_ms: 0,
+                    include_size_hint: true,
+                    max_chunk_size: chunk_size,
+                };
+
+                for part_size in [1usize, 3, 50, 1_000] {
+                    for n_concurrency in [1usize, 10] {
+                        let config = Config::default()
+                            .buffer_size(buffer_size)
+                            .buffers_full_delay_ms(0)
+                            .part_size_bytes(part_size)
+                            .max_concurrency(n_concurrency);
+                        let condow = Condow::new(client.clone(), config).unwrap();
+
+                        for end_excl in [0usize, 2, 101, 255, 256] {
+                            let range = 0..end_excl;
+
+                            let result_stream = condow
+                                .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                .await
+                                .unwrap();
+
+                            check_stream(result_stream, &data, range.start).await
+                        }
+                    }
+                }
+            }
+        }
+
+        mod from_to {
+            mod start_at_0 {
+                use std::sync::Arc;
+
+                use crate::{
+                    config::Config, streams::chunk_stream::tests::check_stream,
+                    test_utils::create_test_data, test_utils::*, Condow,
+                };
+
+                #[tokio::test]
+                async fn from_0_to_inclusive() {
+                    let buffer_size = 10;
+
+                    let data = Arc::new(create_test_data());
+
+                    for chunk_size in [1, 3, 5] {
+                        let client = TestCondowClient {
+                            data: Arc::clone(&data),
+                            max_jitter_ms: 0,
+                            include_size_hint: true,
+                            max_chunk_size: chunk_size,
+                        };
+
+                        for part_size in [1usize, 3, 50, 1_000] {
+                            for n_concurrency in [1usize, 10] {
+                                let config = Config::default()
+                                    .buffer_size(buffer_size)
+                                    .buffers_full_delay_ms(0)
+                                    .part_size_bytes(part_size)
+                                    .max_concurrency(n_concurrency);
+                                let condow = Condow::new(client.clone(), config).unwrap();
+
+                                for end_incl in [0usize, 2, 101, 255, 255] {
+                                    let range = 0..=end_incl;
+
+                                    let result_stream = condow
+                                        .download_range(
+                                            (),
+                                            range.clone(),
+                                            crate::GetSizeMode::Default,
+                                        )
+                                        .await
+                                        .unwrap();
+
+                                    check_stream(result_stream, &data, *range.start()).await
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #[tokio::test]
+                async fn from_0_to_exclusive() {
+                    let buffer_size = 10;
+
+                    let data = Arc::new(create_test_data());
+
+                    for chunk_size in [1, 3, 5] {
+                        let client = TestCondowClient {
+                            data: Arc::clone(&data),
+                            max_jitter_ms: 0,
+                            include_size_hint: true,
+                            max_chunk_size: chunk_size,
+                        };
+
+                        for part_size in [1usize, 3, 50, 1_000] {
+                            for n_concurrency in [1usize, 10] {
+                                let config = Config::default()
+                                    .buffer_size(buffer_size)
+                                    .buffers_full_delay_ms(0)
+                                    .part_size_bytes(part_size)
+                                    .max_concurrency(n_concurrency);
+                                let condow = Condow::new(client.clone(), config).unwrap();
+
+                                for end_excl in [0usize, 2, 101, 255, 256] {
+                                    let range = 0..end_excl;
+
+                                    let result_stream = condow
+                                        .download_range(
+                                            (),
+                                            range.clone(),
+                                            crate::GetSizeMode::Default,
+                                        )
+                                        .await
+                                        .unwrap();
+
+                                    check_stream(result_stream, &data, range.start).await
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            mod start_after_0 {
+                use std::sync::Arc;
+
+                use crate::{
+                    config::Config, streams::chunk_stream::tests::check_stream,
+                    test_utils::create_test_data, test_utils::*, Condow,
+                };
+
+                #[tokio::test]
+                async fn from_to_inclusive() {
+                    let buffer_size = 10;
+
+                    let data = Arc::new(create_test_data());
+
+                    for chunk_size in [3] {
+                        let client = TestCondowClient {
+                            data: Arc::clone(&data),
+                            max_jitter_ms: 0,
+                            include_size_hint: true,
+                            max_chunk_size: chunk_size,
+                        };
+
+                        for part_size in [1usize, 33] {
+                            for n_concurrency in [1usize, 10] {
+                                let config = Config::default()
+                                    .buffer_size(buffer_size)
+                                    .buffers_full_delay_ms(0)
+                                    .part_size_bytes(part_size)
+                                    .max_concurrency(n_concurrency);
+                                let condow = Condow::new(client.clone(), config).unwrap();
+
+                                for start in [1usize, 87, 101, 201] {
+                                    for len in [1, 10, 100] {
+                                        let end_incl = start + len;
+                                        let range = start..=(end_incl);
+
+                                        let result_stream = condow
+                                            .download_range(
+                                                (),
+                                                range.clone(),
+                                                crate::GetSizeMode::Default,
+                                            )
+                                            .await
+                                            .unwrap();
+
+                                        check_stream(result_stream, &data, *range.start()).await
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #[tokio::test]
+                async fn from_to_exclusive() {
+                    let buffer_size = 10;
+
+                    let data = Arc::new(create_test_data());
+
+                    for chunk_size in [3] {
+                        let client = TestCondowClient {
+                            data: Arc::clone(&data),
+                            max_jitter_ms: 0,
+                            include_size_hint: true,
+                            max_chunk_size: chunk_size,
+                        };
+
+                        for part_size in [1usize, 33] {
+                            for n_concurrency in [1usize, 10] {
+                                let config = Config::default()
+                                    .buffer_size(buffer_size)
+                                    .buffers_full_delay_ms(0)
+                                    .part_size_bytes(part_size)
+                                    .max_concurrency(n_concurrency);
+                                let condow = Condow::new(client.clone(), config).unwrap();
+
+                                for start in [1usize, 87, 101, 201] {
+                                    for len in [1, 10, 100] {
+                                        let end_excl = start + len;
+                                        let range = start..(end_excl);
+
+                                        let result_stream = condow
+                                            .download_range(
+                                                (),
+                                                range.clone(),
+                                                crate::GetSizeMode::Default,
+                                            )
+                                            .await
+                                            .unwrap();
+
+                                        check_stream(result_stream, &data, range.start).await
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
