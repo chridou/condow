@@ -1,8 +1,8 @@
-use condow_client::{CondowClient, DownloadSpec};
+use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{DownloadError, GetSizeError};
 
-use streams::{BytesHint, BytesStream, ChunkStream};
+use streams::{BytesHint, ChunkStream};
 
 #[macro_use]
 pub(crate) mod helpers;
@@ -30,7 +30,7 @@ impl<C: CondowClient> Condow<C> {
         Ok(Self { client, config })
     }
 
-    pub async fn download_range<R: Into<DownloadRange>>(
+    pub async fn download<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
         range: R,
@@ -77,22 +77,6 @@ impl<C: CondowClient> Condow<C> {
             self.config.clone(),
         )
         .await
-    }
-
-    pub async fn download_file(&self, location: C::Location) -> Result<ChunkStream, DownloadError> {
-        self.download_range(
-            location,
-            DownloadRange::Open(OpenRange::Full),
-            GetSizeMode::Default,
-        )
-        .await
-    }
-
-    pub async fn download_file_non_concurrent(
-        &self,
-        location: C::Location,
-    ) -> Result<(BytesStream, BytesHint), DownloadError> {
-        self.client.download(location, DownloadSpec::Complete).await
     }
 
     pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
@@ -156,7 +140,8 @@ mod condow_tests {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        let result_stream = condow.download_file(()).await.unwrap();
+                        let result_stream =
+                            condow.download((), .., Default::default()).await.unwrap();
 
                         let result = result_stream.into_vec().await.unwrap();
 
@@ -200,7 +185,7 @@ mod condow_tests {
                                 let range = from_idx..;
 
                                 let result_stream = condow
-                                    .download_range((), range.clone(), crate::GetSizeMode::Always)
+                                    .download((), range.clone(), crate::GetSizeMode::Always)
                                     .await
                                     .unwrap();
 
@@ -241,7 +226,7 @@ mod condow_tests {
                                 let range = from_idx..;
 
                                 let result_stream = condow
-                                    .download_range((), range.clone(), crate::GetSizeMode::Required)
+                                    .download((), range.clone(), crate::GetSizeMode::Required)
                                     .await
                                     .unwrap();
 
@@ -289,7 +274,7 @@ mod condow_tests {
                                 let expected_range_end = (end_incl + 1).min(data.len());
 
                                 let result_stream = condow
-                                    .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                    .download((), range.clone(), crate::GetSizeMode::Default)
                                     .await
                                     .unwrap();
 
@@ -330,7 +315,7 @@ mod condow_tests {
                                 let expected_range_end = end_excl.min(data.len());
 
                                 let result_stream = condow
-                                    .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                    .download((), range.clone(), crate::GetSizeMode::Default)
                                     .await
                                     .unwrap();
 
@@ -379,7 +364,7 @@ mod condow_tests {
                                         let expected_range_end = (end_incl + 1).min(data.len());
 
                                         let result_stream = condow
-                                            .download_range((), range, crate::GetSizeMode::Default)
+                                            .download((), range, crate::GetSizeMode::Default)
                                             .await
                                             .unwrap();
 
@@ -420,7 +405,7 @@ mod condow_tests {
                                         let expected_range_end = end_excl.min(data.len());
 
                                         let result_stream = condow
-                                            .download_range((), range, crate::GetSizeMode::Default)
+                                            .download((), range, crate::GetSizeMode::Default)
                                             .await
                                             .unwrap();
 
@@ -471,11 +456,7 @@ mod condow_tests {
                                             let expected_range_end = (end_incl + 1).min(data.len());
 
                                             let result_stream = condow
-                                                .download_range(
-                                                    (),
-                                                    range,
-                                                    crate::GetSizeMode::Default,
-                                                )
+                                                .download((), range, crate::GetSizeMode::Default)
                                                 .await
                                                 .unwrap();
 
@@ -519,11 +500,7 @@ mod condow_tests {
                                             let expected_range_end = end_excl.min(data.len());
 
                                             let result_stream = condow
-                                                .download_range(
-                                                    (),
-                                                    range,
-                                                    crate::GetSizeMode::Default,
-                                                )
+                                                .download((), range, crate::GetSizeMode::Default)
                                                 .await
                                                 .unwrap();
 

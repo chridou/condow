@@ -326,7 +326,7 @@ mod tests {
                             let range = from_idx..;
 
                             let result_stream = condow
-                                .download_range((), range.clone(), crate::GetSizeMode::Always)
+                                .download((), range.clone(), crate::GetSizeMode::Always)
                                 .await
                                 .unwrap();
 
@@ -364,7 +364,7 @@ mod tests {
                             let range = from_idx..;
 
                             let result_stream = condow
-                                .download_range((), range.clone(), crate::GetSizeMode::Required)
+                                .download((), range.clone(), crate::GetSizeMode::Required)
                                 .await
                                 .unwrap();
 
@@ -410,7 +410,7 @@ mod tests {
                             let range = 0..=end_incl;
 
                             let result_stream = condow
-                                .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                .download((), range.clone(), crate::GetSizeMode::Default)
                                 .await
                                 .unwrap();
 
@@ -448,7 +448,7 @@ mod tests {
                             let range = 0..end_excl;
 
                             let result_stream = condow
-                                .download_range((), range.clone(), crate::GetSizeMode::Default)
+                                .download((), range.clone(), crate::GetSizeMode::Default)
                                 .await
                                 .unwrap();
 
@@ -495,11 +495,7 @@ mod tests {
                                     let range = 0..=end_incl;
 
                                     let result_stream = condow
-                                        .download_range(
-                                            (),
-                                            range.clone(),
-                                            crate::GetSizeMode::Default,
-                                        )
+                                        .download((), range.clone(), crate::GetSizeMode::Default)
                                         .await
                                         .unwrap();
 
@@ -537,11 +533,7 @@ mod tests {
                                     let range = 0..end_excl;
 
                                     let result_stream = condow
-                                        .download_range(
-                                            (),
-                                            range.clone(),
-                                            crate::GetSizeMode::Default,
-                                        )
+                                        .download((), range.clone(), crate::GetSizeMode::Default)
                                         .await
                                         .unwrap();
 
@@ -590,7 +582,7 @@ mod tests {
                                         let range = start..=(end_incl);
 
                                         let result_stream = condow
-                                            .download_range(
+                                            .download(
                                                 (),
                                                 range.clone(),
                                                 crate::GetSizeMode::Default,
@@ -635,7 +627,7 @@ mod tests {
                                         let range = start..(end_excl);
 
                                         let result_stream = condow
-                                            .download_range(
+                                            .download(
                                                 (),
                                                 range.clone(),
                                                 crate::GetSizeMode::Default,
