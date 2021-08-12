@@ -12,7 +12,6 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     errors::DownloadError,
     streams::{BytesHint, BytesStream},
-    InclusiveRange,
 };
 
 #[derive(Clone)]
@@ -77,10 +76,10 @@ impl CondowClient for TestCondowClient {
     > {
         let range = match spec {
             DownloadSpec::Complete => 0..self.data.len(),
-            DownloadSpec::Range(InclusiveRange(a, b)) => a..b + 1,
+            DownloadSpec::Range(r) => r.to_std_range_excl(),
         };
 
-        if range.end >= self.data.len() {
+        if range.end > self.data.len() {
             return Box::pin(future::ready(Err(DownloadError::InvalidRange(format!(
                 "max upper bound is {} but {} was requested",
                 self.data.len(),
@@ -91,9 +90,9 @@ impl CondowClient for TestCondowClient {
         let slice = &self.data[range];
 
         let bytes_hint = if self.include_size_hint {
-            BytesHint::new(slice.len(), Some(slice.len()))
+            BytesHint::new_exact(slice.len())
         } else {
-            BytesHint::no_hint()
+            BytesHint::new_no_hint()
         };
 
         let iter = slice

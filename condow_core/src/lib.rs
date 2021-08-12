@@ -48,7 +48,7 @@ impl<C: CondowClient> Condow<C> {
             DownloadRange::Open(or) => {
                 let size = self.client.get_size(location.clone()).await?;
                 if let Some(range) = or.incl_range_from_size(size) {
-                    (range, BytesHint::exact(range.len()))
+                    (range, BytesHint::new_exact(range.len()))
                 } else {
                     return Ok(ChunkStream::empty());
                 }
@@ -57,12 +57,12 @@ impl<C: CondowClient> Condow<C> {
                 if get_size_mode.is_load_size_enforced(self.config.always_get_size) {
                     let size = self.client.get_size(location.clone()).await?;
                     if let Some(range) = cl.incl_range_from_size(size) {
-                        (range, BytesHint::exact(range.len()))
+                        (range, BytesHint::new_exact(range.len()))
                     } else {
                         return Ok(ChunkStream::empty());
                     }
                 } else if let Some(range) = cl.incl_range() {
-                    (range, BytesHint::at_max(range.len()))
+                    (range, BytesHint::new_at_max(range.len()))
                 } else {
                     return Ok(ChunkStream::empty());
                 }
@@ -206,7 +206,8 @@ mod condow_tests {
 
                                 let result = result_stream.into_vec().await.unwrap();
 
-                                assert_eq!(&result, &data[range]);
+                                let check_range = from_idx.min(data.len())..;
+                                assert_eq!(&result, &data[check_range]);
                             }
                         }
                     }
@@ -246,7 +247,8 @@ mod condow_tests {
 
                                 let result = result_stream.into_vec().await.unwrap();
 
-                                assert_eq!(&result, &data[range]);
+                                let check_range = from_idx.min(data.len())..;
+                                assert_eq!(&result, &data[check_range]);
                             }
                         }
                     }
@@ -284,7 +286,7 @@ mod condow_tests {
 
                             for end_incl in [0usize, 2, 101, 255] {
                                 let range = 0..=end_incl;
-                                let expected_range_end = end_incl.min(data.len() - 1);
+                                let expected_range_end = (end_incl + 1).min(data.len());
 
                                 let result_stream = condow
                                     .download_range((), range.clone(), crate::GetSizeMode::Default)
@@ -325,7 +327,7 @@ mod condow_tests {
 
                             for end_excl in [0usize, 2, 101, 255, 256] {
                                 let range = 0..end_excl;
-                                let expected_range_end = end_excl.min(data.len() - 1);
+                                let expected_range_end = end_excl.min(data.len());
 
                                 let result_stream = condow
                                     .download_range((), range.clone(), crate::GetSizeMode::Default)
@@ -374,7 +376,7 @@ mod condow_tests {
 
                                     for end_incl in [0usize, 2, 101, 255, 255] {
                                         let range = 0..=end_incl;
-                                        let expected_range_end = end_incl.min(data.len());
+                                        let expected_range_end = (end_incl + 1).min(data.len());
 
                                         let result_stream = condow
                                             .download_range((), range, crate::GetSizeMode::Default)
@@ -415,7 +417,7 @@ mod condow_tests {
 
                                     for end_excl in [0usize, 2, 101, 255, 256] {
                                         let range = 0..end_excl;
-                                        let expected_range_end = end_excl.min(data.len() - 1);
+                                        let expected_range_end = end_excl.min(data.len());
 
                                         let result_stream = condow
                                             .download_range((), range, crate::GetSizeMode::Default)
@@ -466,7 +468,7 @@ mod condow_tests {
                                         for len in [1, 10, 100] {
                                             let end_incl = start + len;
                                             let range = start..=(end_incl);
-                                            let expected_range_end = end_incl.min(data.len());
+                                            let expected_range_end = (end_incl + 1).min(data.len());
 
                                             let result_stream = condow
                                                 .download_range(
@@ -479,7 +481,7 @@ mod condow_tests {
 
                                             let result = result_stream.into_vec().await.unwrap();
 
-                                            assert_eq!(&result, &data[0..expected_range_end]);
+                                            assert_eq!(&result, &data[start..expected_range_end]);
                                         }
                                     }
                                 }
@@ -527,7 +529,7 @@ mod condow_tests {
 
                                             let result = result_stream.into_vec().await.unwrap();
 
-                                            assert_eq!(&result, &data[0..expected_range_end]);
+                                            assert_eq!(&result, &data[start..expected_range_end]);
                                         }
                                     }
                                 }

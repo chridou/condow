@@ -29,6 +29,10 @@ impl InclusiveRange {
     pub fn to_std_range(self) -> RangeInclusive<usize> {
         self.0..=self.1
     }
+
+    pub fn to_std_range_excl(self) -> Range<usize> {
+        self.0..self.1 + 1
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

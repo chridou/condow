@@ -136,14 +136,12 @@ impl ChunkStream {
             return Err(StreamError::Other("stream already iterated".to_string()));
         }
 
-        if let Some(total_bytes) = self.bytes_hint.upper_bound() {
-            if buffer.len() < total_bytes {
-                return Err(StreamError::Other(format!(
-                    "buffer to small ({}). at least {} bytes required",
-                    buffer.len(),
-                    total_bytes
-                )));
-            }
+        if buffer.len() < self.bytes_hint.lower_bound() {
+            return Err(StreamError::Other(format!(
+                "buffer to small ({}). at least {} bytes required",
+                buffer.len(),
+                self.bytes_hint.lower_bound()
+            )));
         }
 
         let mut bytes_written = 0;
@@ -183,7 +181,7 @@ impl ChunkStream {
     }
 
     pub async fn into_vec(self) -> Result<Vec<u8>, StreamError> {
-        if let Some(total_bytes) = self.bytes_hint.upper_bound() {
+        if let Some(total_bytes) = self.bytes_hint.exact() {
             let mut buffer = vec![0; total_bytes];
             let _ = self.fill_buffer(buffer.as_mut()).await?;
             Ok(buffer)

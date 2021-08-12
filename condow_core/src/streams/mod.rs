@@ -24,15 +24,15 @@ impl BytesHint {
         BytesHint(lower_bound, upper_bound)
     }
 
-    pub fn exact(bytes: usize) -> Self {
+    pub fn new_exact(bytes: usize) -> Self {
         Self(bytes, Some(bytes))
     }
 
-    pub fn at_max(bytes: usize) -> Self {
+    pub fn new_at_max(bytes: usize) -> Self {
         Self(0, Some(bytes))
     }
 
-    pub fn no_hint() -> Self {
+    pub fn new_no_hint() -> Self {
         Self(0, None)
     }
 
@@ -44,6 +44,22 @@ impl BytesHint {
     /// or the upper bound is larger than usize.
     pub fn upper_bound(&self) -> Option<usize> {
         self.1
+    }
+
+    pub fn is_exact(&self) -> bool {
+        if let Some(upper) = self.1 {
+            upper == self.0
+        } else {
+            false
+        }
+    }
+
+    pub fn exact(&self) -> Option<usize> {
+        if self.is_exact() {
+            self.1
+        } else {
+            None
+        }
     }
 
     pub fn tuple(self) -> (usize, Option<usize>) {
