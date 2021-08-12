@@ -10,6 +10,7 @@ use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
+    errors::DownloadError,
     streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
@@ -71,13 +72,21 @@ impl CondowClient for TestCondowClient {
         'static,
         Result<
             (crate::streams::BytesStream, crate::streams::BytesHint),
-            crate::errors::DownloadRangeError,
+            crate::errors::DownloadError,
         >,
     > {
         let range = match spec {
             DownloadSpec::Complete => 0..self.data.len(),
             DownloadSpec::Range(InclusiveRange(a, b)) => a..b + 1,
         };
+
+        if range.end >= self.data.len() {
+            return Box::pin(future::ready(Err(DownloadError::InvalidRange(format!(
+                "max upper bound is {} but {} was requested",
+                self.data.len(),
+                range.end - 1
+            )))));
+        }
 
         let slice = &self.data[range];
 

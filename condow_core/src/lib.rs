@@ -1,6 +1,6 @@
 use condow_client::{CondowClient, DownloadSpec};
 use config::{AlwaysGetSize, Config};
-use errors::{DownloadFileError, DownloadRangeError, GetSizeError};
+use errors::{DownloadError, GetSizeError};
 
 use streams::{BytesHint, BytesStream, ChunkStream};
 
@@ -35,7 +35,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
         get_size_mode: GetSizeMode,
-    ) -> Result<ChunkStream, DownloadRangeError> {
+    ) -> Result<ChunkStream, DownloadError> {
         let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {
@@ -79,27 +79,20 @@ impl<C: CondowClient> Condow<C> {
         .await
     }
 
-    pub async fn download_file(
-        &self,
-        location: C::Location,
-    ) -> Result<ChunkStream, DownloadFileError> {
+    pub async fn download_file(&self, location: C::Location) -> Result<ChunkStream, DownloadError> {
         self.download_range(
             location,
             DownloadRange::Open(OpenRange::Full),
             GetSizeMode::Default,
         )
         .await
-        .map_err(DownloadFileError::from)
     }
 
     pub async fn download_file_non_concurrent(
         &self,
         location: C::Location,
-    ) -> Result<(BytesStream, BytesHint), DownloadFileError> {
-        self.client
-            .download(location, DownloadSpec::Complete)
-            .await
-            .map_err(DownloadFileError::from)
+    ) -> Result<(BytesStream, BytesHint), DownloadError> {
+        self.client.download(location, DownloadSpec::Complete).await
     }
 
     pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {

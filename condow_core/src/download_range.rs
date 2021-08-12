@@ -1,6 +1,6 @@
 use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
-use crate::errors::DownloadRangeError;
+use crate::errors::DownloadError;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct InclusiveRange(pub usize, pub usize);
@@ -40,11 +40,11 @@ pub enum ClosedRange {
 }
 
 impl ClosedRange {
-    pub fn validate(&self) -> Result<(), DownloadRangeError> {
+    pub fn validate(&self) -> Result<(), DownloadError> {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
-                    Err(DownloadRangeError::InvalidRange(format!(
+                    Err(DownloadError::InvalidRange(format!(
                         "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -54,7 +54,7 @@ impl ClosedRange {
             }
             Self::FromToInclusive(a, b) => {
                 if b < a {
-                    Err(DownloadRangeError::InvalidRange(format!(
+                    Err(DownloadError::InvalidRange(format!(
                         "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -215,7 +215,7 @@ pub enum DownloadRange {
 }
 
 impl DownloadRange {
-    pub fn validate(&self) -> Result<(), DownloadRangeError> {
+    pub fn validate(&self) -> Result<(), DownloadError> {
         match self {
             DownloadRange::Open(_) => Ok(()),
             DownloadRange::Closed(r) => r.validate(),

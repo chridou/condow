@@ -1,7 +1,7 @@
 use futures::future::BoxFuture;
 
 use crate::{
-    errors::{DownloadRangeError, GetSizeError},
+    errors::{DownloadError, GetSizeError},
     streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
@@ -20,5 +20,5 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadRangeError>>;
+    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadError>>;
 }

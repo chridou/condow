@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum DownloadRangeError {
+pub enum DownloadError {
     #[error("invalid range: {0}")]
     InvalidRange(String),
     #[error("not found: {0}")]
@@ -16,53 +16,14 @@ pub enum DownloadRangeError {
     Other(String),
 }
 
-#[derive(Error, Debug)]
-pub enum DownloadFileError {
-    #[error("not found: {0}")]
-    NotFound(String),
-    #[error("access denied: {0}")]
-    AccessDenied(String),
-    #[error("error: {0}")]
-    Remote(String),
-    #[error("io error: {0}")]
-    Io(String),
-    #[error("error: {0}")]
-    Other(String),
-}
-
-impl From<DownloadFileError> for DownloadRangeError {
-    fn from(dfe: DownloadFileError) -> Self {
-        match dfe {
-            DownloadFileError::NotFound(msg) => DownloadRangeError::NotFound(msg),
-            DownloadFileError::AccessDenied(msg) => DownloadRangeError::AccessDenied(msg),
-            DownloadFileError::Remote(msg) => DownloadRangeError::Remote(msg),
-            DownloadFileError::Io(msg) => DownloadRangeError::Io(msg),
-            DownloadFileError::Other(msg) => DownloadRangeError::Other(msg),
-        }
-    }
-}
-
-impl From<DownloadRangeError> for DownloadFileError {
-    fn from(dfe: DownloadRangeError) -> Self {
-        match dfe {
-            DownloadRangeError::InvalidRange(msg) => DownloadFileError::Other(msg),
-            DownloadRangeError::NotFound(msg) => DownloadFileError::NotFound(msg),
-            DownloadRangeError::AccessDenied(msg) => DownloadFileError::AccessDenied(msg),
-            DownloadRangeError::Remote(msg) => DownloadFileError::Remote(msg),
-            DownloadRangeError::Io(msg) => DownloadFileError::Io(msg),
-            DownloadRangeError::Other(msg) => DownloadFileError::Other(msg),
-        }
-    }
-}
-
-impl From<GetSizeError> for DownloadRangeError {
+impl From<GetSizeError> for DownloadError {
     fn from(dfe: GetSizeError) -> Self {
         match dfe {
-            GetSizeError::NotFound(msg) => DownloadRangeError::NotFound(msg),
-            GetSizeError::AccessDenied(msg) => DownloadRangeError::AccessDenied(msg),
-            GetSizeError::Remote(msg) => DownloadRangeError::Remote(msg),
-            GetSizeError::Io(msg) => DownloadRangeError::Io(msg),
-            GetSizeError::Other(msg) => DownloadRangeError::Other(msg),
+            GetSizeError::NotFound(msg) => DownloadError::NotFound(msg),
+            GetSizeError::AccessDenied(msg) => DownloadError::AccessDenied(msg),
+            GetSizeError::Remote(msg) => DownloadError::Remote(msg),
+            GetSizeError::Io(msg) => DownloadError::Io(msg),
+            GetSizeError::Other(msg) => DownloadError::Other(msg),
         }
     }
 }
@@ -83,15 +44,15 @@ pub enum StreamError {
     Other(String),
 }
 
-impl From<DownloadRangeError> for StreamError {
-    fn from(dre: DownloadRangeError) -> Self {
+impl From<DownloadError> for StreamError {
+    fn from(dre: DownloadError) -> Self {
         match dre {
-            DownloadRangeError::InvalidRange(msg) => StreamError::InvalidRange(msg),
-            DownloadRangeError::NotFound(msg) => StreamError::NotFound(msg),
-            DownloadRangeError::AccessDenied(msg) => StreamError::AccessDenied(msg),
-            DownloadRangeError::Remote(msg) => StreamError::Remote(msg),
-            DownloadRangeError::Io(msg) => StreamError::Io(msg),
-            DownloadRangeError::Other(msg) => StreamError::Other(msg),
+            DownloadError::InvalidRange(msg) => StreamError::InvalidRange(msg),
+            DownloadError::NotFound(msg) => StreamError::NotFound(msg),
+            DownloadError::AccessDenied(msg) => StreamError::AccessDenied(msg),
+            DownloadError::Remote(msg) => StreamError::Remote(msg),
+            DownloadError::Io(msg) => StreamError::Io(msg),
+            DownloadError::Other(msg) => StreamError::Other(msg),
         }
     }
 }

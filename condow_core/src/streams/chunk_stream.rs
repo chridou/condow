@@ -644,7 +644,7 @@ mod tests {
                                             )
                                             .await
                                             .unwrap();
-                                       check_stream(result_stream, &data, range.start).await
+                                        check_stream(result_stream, &data, range.start).await
                                     }
                                 }
                             }
