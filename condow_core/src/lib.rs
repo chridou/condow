@@ -30,6 +30,10 @@ impl<C: CondowClient> Condow<C> {
         Ok(Self { client, config })
     }
 
+    pub fn downloader(&self, location: C::Location) -> Downloader<C> {
+        Downloader::new(self.clone(), location)
+    }
+
     pub async fn download<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
@@ -81,6 +85,45 @@ impl<C: CondowClient> Condow<C> {
 
     pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
         self.client.get_size(location).await
+    }
+}
+
+pub struct Downloader<C: CondowClient> {
+    pub location: C::Location,
+    pub range: DownloadRange,
+    pub get_size_mode: GetSizeMode,
+    condow: Condow<C>,
+}
+
+impl<C: CondowClient> Downloader<C> {
+    pub fn new(condow: Condow<C>, location: C::Location) -> Self {
+        Self {
+            condow,
+            location,
+            range: DownloadRange::Open(OpenRange::Full),
+            get_size_mode: GetSizeMode::default(),
+        }
+    }
+
+    pub fn location(mut self, location: C::Location) -> Self {
+        self.location = location;
+        self
+    }
+
+    pub fn range<T: Into<DownloadRange>>(mut self, range: T) -> Self {
+        self.range = range.into();
+        self
+    }
+
+    pub fn get_size_mode<T: Into<GetSizeMode>>(mut self, get_size_mode: T) -> Self {
+        self.get_size_mode = get_size_mode.into();
+        self
+    }
+
+    pub async fn download(&self) -> Result<ChunkStream, DownloadError> {
+        self.condow
+            .download(self.location.clone(), self.range, self.get_size_mode)
+            .await
     }
 }
 
