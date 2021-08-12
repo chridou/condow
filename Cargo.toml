@@ -2,4 +2,5 @@
 
 members = [
     "condow_core",
+    "condow_rusoto",
 ]

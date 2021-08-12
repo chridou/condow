@@ -1,0 +1,13 @@
+[package]
+name = "condow_rusoto"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+condow_core = { path = "../condow_core"}
+
+anyhow = "1.0"
+rusoto_core = "0.47"
+rusoto_s3 = "0.47"
