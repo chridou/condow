@@ -8,6 +8,7 @@ edition = "2018"
 [dependencies]
 condow_core = { path = "../condow_core"}
 
+futures = "0.3"
 anyhow = "1.0"
 rusoto_core = "0.47"
 rusoto_s3 = "0.47"

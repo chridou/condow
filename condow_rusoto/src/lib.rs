@@ -1,8 +1,9 @@
 use anyhow::Error as AnyError;
-use rusoto_core::{Client, Region};
-use rusoto_s3::S3;
+use futures::future::BoxFuture;
+use rusoto_core::Region;
+use rusoto_s3::{S3Client, S3};
 
-use condow_core::condow_client::*;
+use condow_core::{condow_client::*, config::Config, Condow};
 
 #[derive(Debug, Clone)]
 pub struct Bucket(String);
@@ -22,7 +23,7 @@ pub struct ObjectKey(String);
 
 impl ObjectKey {
     pub fn new<T: Into<String>>(key: T) -> Self {
-        Self(bucket.into())
+        Self(key.into())
     }
 
     pub fn in_bucket(self, bucket: Bucket) -> S3Location {
@@ -39,14 +40,17 @@ impl S3Location {
     }
 }
 
+#[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
 
-impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
+impl S3ClientWrapper<S3Client> {
     pub fn new(region: Region) -> Self {
-        let client = Client::new(region);
+        let client = S3Client::new(region);
         Self::from_client(client)
     }
+}
 
+impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
     pub fn from_client(client: C) -> Self {
         Self(client)
     }
