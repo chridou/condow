@@ -28,14 +28,19 @@ impl BytesHint {
         Self(bytes, Some(bytes))
     }
 
+    /// Create a hint of [0..bytes] bytes
     pub fn new_at_max(bytes: usize) -> Self {
         Self(0, Some(bytes))
     }
 
+    /// Creates a new hint which gives no hint at all.
+    ///
+    /// `(0, None)`
     pub fn new_no_hint() -> Self {
         Self(0, None)
     }
 
+    /// Returns the lower bound
     pub fn lower_bound(&self) -> usize {
         self.0
     }
@@ -46,6 +51,9 @@ impl BytesHint {
         self.1
     }
 
+    /// Returns true if this hint is an exact hint.
+    ///
+    /// This means that the lower bound must equal the upper bound: `(a, Some(a))`.
     pub fn is_exact(&self) -> bool {
         if let Some(upper) = self.1 {
             upper == self.0
@@ -54,6 +62,9 @@ impl BytesHint {
         }
     }
 
+    /// Returns the exact bytes if size hint specifies an exact amount of bytes.
+    ///
+    /// This means that the lower bound must equal the upper bound: `(a, Some(a))`.
     pub fn exact(&self) -> Option<usize> {
         if self.is_exact() {
             self.1
@@ -62,7 +73,7 @@ impl BytesHint {
         }
     }
 
-    pub fn tuple(self) -> (usize, Option<usize>) {
+    pub fn into_inner(self) -> (usize, Option<usize>) {
         (self.lower_bound(), self.upper_bound())
     }
 }

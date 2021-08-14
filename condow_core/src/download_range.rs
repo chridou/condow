@@ -33,6 +33,11 @@ impl InclusiveRange {
     pub fn to_std_range_excl(self) -> Range<usize> {
         self.0..self.1 + 1
     }
+
+    /// Returns a value for an  `HTTP-Range` header with bytes as the unit
+    pub fn http_range_value(&self) -> String {
+        format!("bytes={}-{}", self.0, self.1)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

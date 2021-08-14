@@ -1,4 +1,7 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+};
 
 use anyhow::Error as AnyError;
 use futures::future::BoxFuture;
@@ -21,6 +24,12 @@ impl Bucket {
 
     pub fn into_inner(self) -> String {
         self.0
+    }
+}
+
+impl fmt::Display for Bucket {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -52,6 +61,12 @@ impl ObjectKey {
 
     pub fn into_inner(self) -> String {
         self.0
+    }
+}
+
+impl fmt::Display for ObjectKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -87,6 +102,12 @@ impl S3Location {
 
     pub fn into_inner(self) -> (Bucket, ObjectKey) {
         (self.0, self.1)
+    }
+}
+
+impl fmt::Display for S3Location {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "s3://{}/{}", self.0, self.1)
     }
 }
 
