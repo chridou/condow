@@ -93,12 +93,9 @@ impl ChunkStream {
 
         while let Some(next) = self.next().await {
             let Chunk {
-                part_index,
-                chunk_index,
                 range_offset,
-                file_offset,
                 bytes,
-                bytes_left,
+                ..
             } = match next {
                 Err(err) => return Err(err),
                 Ok(next) => next,
@@ -140,12 +137,9 @@ async fn stream_into_vec_with_unknown_size(
 
     while let Some(next) = stream.next().await {
         let Chunk {
-            part_index,
-            chunk_index,
             range_offset,
-            file_offset,
             bytes,
-            bytes_left,
+            ..
         } = match next {
             Err(err) => return Err(err),
             Ok(next) => next,
@@ -205,12 +199,10 @@ mod tests {
     async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
         while let Some(next) = result_stream.next().await {
             let Chunk {
-                part_index,
-                chunk_index,
                 range_offset,
                 file_offset,
                 bytes,
-                bytes_left,
+                ..
             } = match next {
                 Err(err) => panic!("{}", err),
                 Ok(next) => next,
