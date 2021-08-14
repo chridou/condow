@@ -7,7 +7,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
     errors::{IoError, StreamError},
-    streams::{BytesStream, Chunk, ChunkStreamItem, RangeChunk, RangeChunkPayload},
+    streams::{BytesStream, Chunk, ChunkStreamItem},
 };
 
 use super::{range_stream::RangeRequest, KillSwitch};
@@ -191,28 +191,40 @@ async fn consume_and_dispatch_bytes(
     range_request: RangeRequest,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
-    let mut chunk_offset = 0;
-
+    let mut range_offset = range_request.range_offset;
     let mut bytes_received = 0;
+    let bytes_expected = range_request.file_range.len();
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
                 let n_bytes = bytes.len();
                 bytes_received += bytes.len();
+
+                if bytes_received > bytes_expected {
+                    let msg = Err(StreamError::Other(format!(
+                        "received mor ebytes than expected for part {} ({}..={}). expected {}, received {}",
+                        range_request.part,
+                        range_request.file_range.start(),
+                        range_request.file_range.end_incl(),
+                        range_request.file_range.len(),
+                        bytes_received
+                    )));
+                    let _ = results_sender.unbounded_send(msg);
+                    return Err(());
+                }
+
                 results_sender
-                    .unbounded_send(Ok(RangeChunk {
-                        part: range_request.part,
-                        file_offset: range_request.file_range.start(),
-                        range_offset: range_request.range_offset,
-                        payload: RangeChunkPayload::Chunk(Chunk {
-                            bytes,
-                            index: chunk_index,
-                            offset: chunk_offset,
-                        }),
+                    .unbounded_send(Ok(Chunk {
+                        part_index: range_request.part,
+                        chunk_index,
+                        file_offset: range_offset + range_request.file_range.start(),
+                        range_offset,
+                        bytes,
+                        bytes_left: bytes_expected - bytes_received,
                     }))
                     .map_err(|_| ())?;
                 chunk_index += 1;
-                chunk_offset += n_bytes;
+                range_offset += n_bytes;
             }
             Err(IoError(msg)) => {
                 let _ = results_sender.unbounded_send(Err(StreamError::Io(msg)));
@@ -221,25 +233,20 @@ async fn consume_and_dispatch_bytes(
         }
     }
 
-    let msg = if bytes_received == range_request.file_range.len() {
-        Ok(RangeChunk {
-            part: range_request.part,
-            file_offset: range_request.file_range.start(),
-            range_offset: range_request.range_offset,
-            payload: RangeChunkPayload::Terminator,
-        })
-    } else {
-        Err(StreamError::Other(format!(
+    if bytes_received != bytes_expected {
+        let msg = Err(StreamError::Other(format!(
             "received wrong number of bytes for part {} ({}..={}). expected {}, received {}",
             range_request.part,
             range_request.file_range.start(),
             range_request.file_range.end_incl(),
             range_request.file_range.len(),
             bytes_received
-        )))
-    };
-
-    results_sender.unbounded_send(msg).map_err(|_| ())
+        )));
+        let _ = results_sender.unbounded_send(msg);
+        Err(())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -249,7 +256,7 @@ mod tests {
     use crate::{
         config::Config,
         machinery::{downloader::Downloader, range_stream::RangeStream, KillSwitch},
-        streams::{BytesHint, Chunk, ChunkStream, RangeChunk, RangeChunkPayload},
+        streams::{BytesHint, Chunk, ChunkStream},
         test_utils::*,
         InclusiveRange,
     };
@@ -272,7 +279,7 @@ mod tests {
             .buffer_size(10)
             .buffers_full_delay_ms(0)
             .part_size_bytes(part_size_bytes)
-            .max_concurrency(1);
+            .max_concurrency(1); // Won't work otherwise
 
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
@@ -298,34 +305,32 @@ mod tests {
         let result = result_stream.collect::<Vec<_>>().await;
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
 
-        let total_bytes: usize = result
-            .iter()
-            .filter_map(|c| c.chunk())
-            .map(|c| c.bytes.len())
-            .sum();
+        let total_bytes: usize = result.iter().map(|c| c.bytes.len()).sum();
         assert_eq!(total_bytes, range.len());
 
-        let mut next_chunk_offset = 0;
+        let mut next_range_offset = 0;
+        let mut next_file_offset = range.start();
 
         result.iter().for_each(|c| {
-            let RangeChunk {
-                part,
+            let Chunk {
+                part_index,
+                file_offset,
                 range_offset,
-                payload,
+                bytes,
                 ..
             } = c;
-
-            if let RangeChunkPayload::Chunk(chunk) = payload {
-                let Chunk { bytes, offset, .. } = chunk;
-
-                let current_chunk_offset = range_offset + offset;
-                assert_eq!(
-                    current_chunk_offset, next_chunk_offset,
-                    "part {}, chunk_offset: {:?}",
-                    part, range
-                );
-                next_chunk_offset = current_chunk_offset + bytes.len();
-            }
+            assert_eq!(
+                *range_offset, next_range_offset,
+                "part {}, range_offset: {:?}",
+                part_index, range
+            );
+            assert_eq!(
+                *file_offset, next_file_offset,
+                "part {}, file_offset: {:?}",
+                part_index, range
+            );
+            next_range_offset += bytes.len();
+            next_file_offset += bytes.len();
         });
     }
 }

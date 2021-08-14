@@ -4,46 +4,32 @@ use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
-use crate::errors::{IoError, StreamError};
+use crate::errors::StreamError;
 
-use super::{BytesHint, BytesStream};
+use super::BytesHint;
 
-pub type ChunkStreamItem = Result<RangeChunk, StreamError>;
-
-#[derive(Debug, Clone)]
-pub struct RangeChunk {
-    /// Index of the part this chunk belongs to
-    pub part: usize,
-    /// Offset of the part this chunk belongs to within the range
-    pub range_offset: usize,
-    /// Offset of the part this chunk belongs within the file
-    pub file_offset: usize,
-    pub payload: RangeChunkPayload,
-}
-
-impl RangeChunk {
-    pub fn chunk(&self) -> Option<&Chunk> {
-        match self.payload {
-            RangeChunkPayload::Chunk(ref c) => Some(c),
-            RangeChunkPayload::Terminator => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum RangeChunkPayload {
-    Chunk(Chunk),
-    /// Last chunk of the part has already been sent.
-    Terminator,
-}
+pub type ChunkStreamItem = Result<Chunk, StreamError>;
 
 #[derive(Debug, Clone)]
 pub struct Chunk {
-    pub bytes: Bytes,
+    /// Index of the part this chunk belongs to
+    pub part_index: usize,
     /// Index of the chunk within the part
-    pub index: usize,
-    /// Offset of the chunk relative to the parts offset
-    pub offset: usize,
+    pub chunk_index: usize,
+    /// Offset of the chunk within the file
+    pub file_offset: usize,
+    /// Offset of the chunk within the downloaded range
+    pub range_offset: usize,
+    /// The bytes
+    pub bytes: Bytes,
+    /// Bytes left in following chunks. If 0 this is the last chunk of the part.
+    pub bytes_left: usize,
+}
+
+impl Chunk {
+    pub fn is_last(&self) -> bool {
+        self.bytes_left == 0
+    }
 }
 
 pin_project! {
@@ -73,47 +59,6 @@ impl ChunkStream {
         };
 
         (me, tx)
-    }
-
-    pub fn from_full_file(mut bytes_stream: BytesStream, bytes_hint: BytesHint) -> Self {
-        let (me, sender) = Self::new(0, bytes_hint);
-
-        tokio::spawn(async move {
-            let mut chunk_index = 0;
-            let mut offset = 0;
-
-            let mut bytes_stream = bytes_stream.as_mut();
-            while let Some(next) = bytes_stream.next().await {
-                match next {
-                    Ok(bytes) => {
-                        let n_bytes = bytes.len();
-                        if sender
-                            .unbounded_send(Ok(RangeChunk {
-                                part: 0,
-                                range_offset: 0,
-                                file_offset: 0,
-                                payload: RangeChunkPayload::Chunk(Chunk {
-                                    bytes,
-                                    index: chunk_index,
-                                    offset,
-                                }),
-                            }))
-                            .is_err()
-                        {
-                            break;
-                        }
-                        chunk_index += 1;
-                        offset += n_bytes;
-                    }
-                    Err(IoError(msg)) => {
-                        let _ = sender.unbounded_send(Err(StreamError::Io(msg)));
-                        break;
-                    }
-                }
-            }
-        });
-
-        me
     }
 
     pub fn empty() -> Self {
@@ -147,22 +92,19 @@ impl ChunkStream {
         let mut bytes_written = 0;
 
         while let Some(next) = self.next().await {
-            let RangeChunk {
+            let Chunk {
+                part_index,
+                chunk_index,
                 range_offset,
-                payload,
-                ..
+                file_offset,
+                bytes,
+                bytes_left,
             } = match next {
                 Err(err) => return Err(err),
                 Ok(next) => next,
             };
 
-            let (bytes, chunk_offset) = match payload {
-                RangeChunkPayload::Terminator => continue,
-                RangeChunkPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
-            };
-
-            let bytes_offset = range_offset + chunk_offset;
-            let end_excl = bytes_offset + bytes.len();
+            let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
                 return Err(StreamError::Other(format!(
                     "write attempt beyond buffer end (buffer len = {}). \
@@ -172,7 +114,7 @@ impl ChunkStream {
                 )));
             }
 
-            buffer[bytes_offset..end_excl].copy_from_slice(&bytes[..]);
+            buffer[range_offset..end_excl].copy_from_slice(&bytes[..]);
 
             bytes_written += bytes.len();
         }
@@ -197,28 +139,25 @@ async fn stream_into_vec_with_unknown_size(
     let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
 
     while let Some(next) = stream.next().await {
-        let RangeChunk {
+        let Chunk {
+            part_index,
+            chunk_index,
             range_offset,
-            payload,
-            ..
+            file_offset,
+            bytes,
+            bytes_left,
         } = match next {
             Err(err) => return Err(err),
             Ok(next) => next,
         };
 
-        let (bytes, chunk_offset) = match payload {
-            RangeChunkPayload::Terminator => continue,
-            RangeChunkPayload::Chunk(Chunk { bytes, offset, .. }) => (bytes, offset),
-        };
-
-        let bytes_offset = range_offset + chunk_offset;
-        let end_excl = bytes_offset + bytes.len();
+        let end_excl = range_offset + bytes.len();
         if end_excl >= buffer.len() {
             let missing = end_excl - buffer.len();
             buffer.extend((0..missing).map(|_| 0));
         }
 
-        buffer[bytes_offset..end_excl].copy_from_slice(&bytes[..]);
+        buffer[range_offset..end_excl].copy_from_slice(&bytes[..]);
     }
 
     Ok(buffer)
@@ -263,32 +202,30 @@ mod tests {
 
     use crate::streams::{Chunk, ChunkStream};
 
-    use super::{RangeChunk, RangeChunkPayload};
-
     async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
-        while let Some(Ok(next)) = result_stream.next().await {
-            let RangeChunk {
+        while let Some(next) = result_stream.next().await {
+            let Chunk {
+                part_index,
+                chunk_index,
                 range_offset,
-                payload,
                 file_offset,
-                ..
-            } = next;
+                bytes,
+                bytes_left,
+            } = match next {
+                Err(err) => panic!("{}", err),
+                Ok(next) => next,
+            };
 
-            if let RangeChunkPayload::Chunk(chunk) = payload {
-                let Chunk { bytes, offset, .. } = chunk;
-
-                assert_eq!(
-                    bytes[..],
-                    data[file_offset + offset..file_offset + offset + bytes.len()],
-                    "file_offset"
-                );
-                assert_eq!(
-                    bytes[..],
-                    data[file_start + range_offset + offset
-                        ..file_start + range_offset + offset + bytes.len()],
-                    "range_offset"
-                );
-            }
+            assert_eq!(
+                bytes[..],
+                data[file_offset..file_offset + bytes.len()],
+                "file_offset"
+            );
+            assert_eq!(
+                bytes[..],
+                data[file_start + range_offset..file_start + range_offset + bytes.len()],
+                "range_offset"
+            );
         }
     }
 
