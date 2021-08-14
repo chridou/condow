@@ -191,7 +191,7 @@ async fn consume_and_dispatch_bytes(
     range_request: RangeRequest,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
-    let mut range_offset = range_request.range_offset;
+    let mut offset_in_range = 0;
     let mut bytes_received = 0;
     let bytes_expected = range_request.file_range.len();
     while let Some(bytes_res) = bytes_stream.next().await {
@@ -217,14 +217,14 @@ async fn consume_and_dispatch_bytes(
                     .unbounded_send(Ok(Chunk {
                         part_index: range_request.part,
                         chunk_index,
-                        file_offset: range_offset + range_request.file_range.start(),
-                        range_offset,
+                        file_offset: range_request.file_range.start() + offset_in_range,
+                        range_offset: range_request.range_offset + offset_in_range,
                         bytes,
                         bytes_left: bytes_expected - bytes_received,
                     }))
                     .map_err(|_| ())?;
                 chunk_index += 1;
-                range_offset += n_bytes;
+                offset_in_range += n_bytes;
             }
             Err(IoError(msg)) => {
                 let _ = results_sender.unbounded_send(Err(StreamError::Io(msg)));
@@ -306,7 +306,7 @@ mod tests {
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
 
         let total_bytes: usize = result.iter().map(|c| c.bytes.len()).sum();
-        assert_eq!(total_bytes, range.len());
+        assert_eq!(total_bytes, range.len(), "total_bytes");
 
         let mut next_range_offset = 0;
         let mut next_file_offset = range.start();

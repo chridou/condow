@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use anyhow::Error as AnyError;
 use futures::future::BoxFuture;
 use rusoto_core::Region;
@@ -5,7 +7,7 @@ use rusoto_s3::{S3Client, S3};
 
 use condow_core::{condow_client::*, config::Config, Condow};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bucket(String);
 
 impl Bucket {
@@ -16,9 +18,27 @@ impl Bucket {
     pub fn object(self, key: ObjectKey) -> S3Location {
         S3Location(self, key)
     }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
-#[derive(Debug, Clone)]
+impl Deref for Bucket {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Bucket {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectKey(String);
 
 impl ObjectKey {
@@ -29,14 +49,44 @@ impl ObjectKey {
     pub fn in_bucket(self, bucket: Bucket) -> S3Location {
         S3Location(bucket, self)
     }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
 }
 
-#[derive(Debug, Clone)]
+impl Deref for ObjectKey {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ObjectKey {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct S3Location(Bucket, ObjectKey);
 
 impl S3Location {
     pub fn new(bucket: Bucket, key: ObjectKey) -> Self {
         Self(bucket, key)
+    }
+
+    pub fn bucket(&self) -> &Bucket {
+        &self.0
+    }
+
+    pub fn key(&self) -> &ObjectKey {
+        &self.1
+    }
+
+    pub fn into_inner(self) -> (Bucket, ObjectKey) {
+        (self.0, self.1)
     }
 }
 
