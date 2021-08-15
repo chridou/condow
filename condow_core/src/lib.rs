@@ -1,3 +1,26 @@
+//! # Condow
+//!
+//! ## Overview
+//!
+//! Condow is a CONcurrent DOWnloader which downloads files
+//! by splitting the download into parts and downloading them
+//! concurrently.
+//!
+//! Some services/technologies/backends can have their download
+//! speed improved, if files are downloaded concurrently by
+//! "opening multiple connections". An example for this is AWS S3.
+//!
+//! This crate provides the core functionality only. To actually
+//! use it, use one of the implementation crates:
+//!
+//! * `condow_rusoto`: AWS S3
+//!
+//! All that is required to add more "services" is to implement
+//! the [CondowClient] trait.
+//!
+//! ## How it works
+//!
+//!
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{DownloadError, GetSizeError};
@@ -44,8 +67,8 @@ impl<C: CondowClient> Condow<C> {
 
     /// Download a file (potentially) concurrently
     ///
-    /// Returns a stream of [streams::Chunk]s.
-    /// The [streams::Chunk]s are ordered for each individually downloaded
+    /// Returns a stream of [Chunk](streams::Chunk)s.
+    /// The [Chunk](streams::Chunk)s are ordered for each individually downloaded
     /// part of the whole download. But the parts themselves are downloaded
     /// with no defined ordering due to the concurrency.
     pub async fn download<R: Into<DownloadRange>>(

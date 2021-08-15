@@ -1,3 +1,9 @@
+//! Configuration items
+//!
+//! Many of the fields of [Config] are
+//! implemented with the new type pattern.
+//! This is mainly to allow them to be
+//! initialized from the envirinment.
 use std::{
     str::{from_utf8, FromStr},
     time::Duration,
@@ -105,6 +111,7 @@ impl Config {
     }
 }
 
+/// Size of the parts in bytes a download is split into
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PartSizeBytes(usize);
 
@@ -201,6 +208,7 @@ impl FromStr for PartSizeBytes {
 }
 
 new_type! {
+    #[doc="Maximum concurrency of a single download"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub copy struct MaxConcurrency(usize, env="MAX_CONCURRENCY");
 }
@@ -212,6 +220,7 @@ impl Default for MaxConcurrency {
 }
 
 new_type! {
+    #[doc="Buffer size of a concurrent download task"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub copy struct BufferSize(usize, env="BUFFER_SIZE");
 }
@@ -223,6 +232,7 @@ impl Default for BufferSize {
 }
 
 new_type! {
+    #[doc="Behaviour for get size requests"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub copy struct AlwaysGetSize(bool, env="ALWAYS_GET_SIZE");
 }
@@ -234,6 +244,7 @@ impl Default for AlwaysGetSize {
 }
 
 new_type! {
+    #[doc="Time to wait for download buffers when all were full in ms"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub copy struct BuffersFullDelayMs(u64, env="BUFFERS_FULL_DELAY_MS");
 }
@@ -250,6 +261,7 @@ impl From<BuffersFullDelayMs> for Duration {
     }
 }
 
+/// Multiplies by 1_000_000 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mega(pub usize);
 
@@ -259,6 +271,7 @@ impl From<Mega> for usize {
     }
 }
 
+/// Multiplies by 1_000 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kilo(pub usize);
 
@@ -267,6 +280,8 @@ impl From<Kilo> for usize {
         m.0 * 1_000
     }
 }
+
+/// Multiplies by 1_000_000_000 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Giga(pub usize);
 
@@ -276,6 +291,7 @@ impl From<Giga> for usize {
     }
 }
 
+/// Multiplies by 1_024 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kibi(pub usize);
 
@@ -284,6 +300,7 @@ impl From<Kibi> for usize {
         m.0 * 1_024
     }
 }
+/// Multiplies by 1_048_576 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mebi(pub usize);
 
@@ -293,6 +310,7 @@ impl From<Mebi> for usize {
     }
 }
 
+/// Multiplies by 1_073_741_824 when converted to a usize
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Gibi(pub usize);
 
