@@ -1,3 +1,4 @@
+//! Adapter for [crate::Condow] to access files to be downloaded
 use futures::future::BoxFuture;
 
 use crate::{

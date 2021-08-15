@@ -212,7 +212,7 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> DownloadErro
     match err {
         RusotoError::Service(err) => DownloadError::Remote(format!("Rusoto: {}", err)),
         RusotoError::Validation(cause) => DownloadError::Other(format!("Rusoto: {}", cause)),
-        RusotoError::Credentials(err) => DownloadError::AccessDenied(format!("Rusoto: {:?}", err)),
+        RusotoError::Credentials(err) => DownloadError::Other(format!("Rusoto: {:?}", err)),
         RusotoError::HttpDispatch(dispatch_error) => {
             DownloadError::Other(format!("Rusoto: {:?}", dispatch_error))
         }
@@ -228,7 +228,7 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> GetSizeErr
     match err {
         RusotoError::Service(err) => GetSizeError::Remote(format!("Rusoto: {}", err)),
         RusotoError::Validation(cause) => GetSizeError::Other(format!("Rusoto: {}", cause)),
-        RusotoError::Credentials(err) => GetSizeError::AccessDenied(format!("Rusoto: {:?}", err)),
+        RusotoError::Credentials(err) => GetSizeError::Other(format!("Rusoto: {:?}", err)),
         RusotoError::HttpDispatch(dispatch_error) => {
             GetSizeError::Other(format!("Rusoto: {:?}", dispatch_error))
         }

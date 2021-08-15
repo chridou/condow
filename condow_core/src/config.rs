@@ -5,12 +5,34 @@ use std::{
 
 use anyhow::{bail, Error as AnyError};
 
+/// A configuration for [Condow](super::Condow).
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Config {
+    /// Size in bytes of the parts the download is split into
     pub part_size_bytes: PartSizeBytes,
+    /// The maximum concurrency for a single download.
+    ///
+    /// Actual concurrency can be lower if less parts
+    /// than `max_concurrency` are to be
+    /// downloaded
     pub max_concurrency: MaxConcurrency,
+    /// Size of the buffer for each download task.
+    ///
+    /// If set to 0 (not advised) there will be now buffer at all.
+    /// This should be configured so that none of the tasks runs ever empty
+    ///
+    /// Default is 2
     pub buffer_size: BufferSize,
+    /// I all buffers of all download tasks are full, this is the time
+    /// to pause until the next attempt.
+    ///
+    /// Default is 10ms
     pub buffers_full_delay_ms: BuffersFullDelayMs,
+    /// If `true` [Condow](super::Condow) will also request the
+    /// soize information of a file to verify the range supplied
+    /// by a user.
+    ///
+    /// The default is `true`.
     pub always_get_size: AlwaysGetSize,
 }
 

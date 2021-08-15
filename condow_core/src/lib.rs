@@ -18,6 +18,10 @@ pub use download_range::*;
 #[cfg(test)]
 pub mod test_utils;
 
+/// The CONcurrent DOWnloader
+///
+/// Downloads files by splitting the download into parts
+/// which are downloaded concurrently.
 #[derive(Clone)]
 pub struct Condow<C> {
     client: C,
@@ -25,15 +29,25 @@ pub struct Condow<C> {
 }
 
 impl<C: CondowClient> Condow<C> {
+    /// Create a new CONcurrent DOWnloader.
+    ///
+    /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
         Ok(Self { client, config })
     }
 
+    /// Create a reusable [Downloader] which is just an alternate form to use the API.
     pub fn downloader(&self, location: C::Location) -> Downloader<C> {
         Downloader::new(self.clone(), location)
     }
 
+    /// Download a file (potentially) concurrently
+    ///
+    /// Returns a stream of [streams::Chunk]s.
+    /// The [streams::Chunk]s are ordered for each individually downloaded
+    /// part of the whole download. But the parts themselves are downloaded
+    /// with no defined ordering due to the concurrency.
     pub async fn download<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
@@ -83,14 +97,25 @@ impl<C: CondowClient> Condow<C> {
         .await
     }
 
+    /// Get the size of a file at the given location
     pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
         self.client.get_size(location).await
     }
 }
 
+/// A configured downloader.
+///
+/// This struct has state which configures a download.
 pub struct Downloader<C: CondowClient> {
+    /// The location of the file to be downloaded
     pub location: C::Location,
+    /// The range of the fle to be downloaded
+    ///
+    /// Default: Download the whole file
     pub range: DownloadRange,
+    /// Mode for handling upper bounds of a range and open ranges
+    ///
+    /// Default: As configured with [Condow] itself
     pub get_size_mode: GetSizeMode,
     condow: Condow<C>,
 }
@@ -105,21 +130,27 @@ impl<C: CondowClient> Downloader<C> {
         }
     }
 
+    /// Change the location of the download
     pub fn location(mut self, location: C::Location) -> Self {
         self.location = location;
         self
     }
 
+    /// Set the range of the download
     pub fn range<T: Into<DownloadRange>>(mut self, range: T) -> Self {
         self.range = range.into();
         self
     }
 
+    /// Change the behaviour on when to query the file size
     pub fn get_size_mode<T: Into<GetSizeMode>>(mut self, get_size_mode: T) -> Self {
         self.get_size_mode = get_size_mode.into();
         self
     }
 
+    /// Download the file.
+    ///
+    /// See also [Condow::download]
     pub async fn download(&self) -> Result<ChunkStream, DownloadError> {
         self.condow
             .download(self.location.clone(), self.range, self.get_size_mode)
@@ -127,10 +158,17 @@ impl<C: CondowClient> Downloader<C> {
     }
 }
 
+/// Overide the behaviour when [Condow] does a request to get
+/// the size of a file
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GetSizeMode {
+    /// Request a size on open ranges and also closed ranges
+    /// so that a given upper bound can be adjusted/corrected
     Always,
+    /// Only request the size of a file when required. This is when an open
+    /// range (e.g. complete file or from x to end)
     Required,
+    /// As configured with [Condow] itself.
     Default,
 }
 
