@@ -73,6 +73,43 @@ impl BytesHint {
         }
     }
 
+    pub fn reduce_by(&mut self, by: usize) {
+        if by == 0 {
+            return;
+        }
+
+        match self {
+            BytesHint(0, None) => {}
+            BytesHint(min, None) => {
+                if *min >= by {
+                    *min = *min - by;
+                } else {
+                    *self = BytesHint::new_no_hint()
+                }
+            }
+            BytesHint(0, Some(max)) => {
+                if *max >= by {
+                    *max = *max - by;
+                } else {
+                    *self = BytesHint::new_no_hint()
+                }
+            }
+            BytesHint(min, Some(max)) => {
+                if *min >= by {
+                    *min = *min - by;
+                } else {
+                    *min = 0;
+                }
+
+                if *max >= by {
+                    *max = *max - by;
+                } else {
+                    self.1 = None
+                }
+            }
+        }
+    }
+
     pub fn into_inner(self) -> (usize, Option<usize>) {
         (self.lower_bound(), self.upper_bound())
     }

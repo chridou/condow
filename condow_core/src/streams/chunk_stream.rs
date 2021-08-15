@@ -30,6 +30,10 @@ impl Chunk {
     pub fn is_last(&self) -> bool {
         self.bytes_left == 0
     }
+
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
 }
 
 pin_project! {
@@ -72,6 +76,7 @@ impl ChunkStream {
         self.n_parts
     }
 
+    /// Hint on the remaining bytes on this stream.
     pub fn bytes_hint(&self) -> BytesHint {
         self.bytes_hint
     }
@@ -171,10 +176,14 @@ impl Stream for ChunkStream {
 
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
         match next {
-            Some(Ok(chunk_item)) => Poll::Ready(Some(Ok(chunk_item))),
+            Some(Ok(chunk_item)) => {
+                this.bytes_hint.reduce_by(chunk_item.len());
+                Poll::Ready(Some(Ok(chunk_item)))
+            }
             Some(Err(err)) => {
                 *this.is_closed = true;
                 this.receiver.close();
+                *this.bytes_hint = BytesHint::new_exact(0);
                 Poll::Ready(Some(Err(err)))
             }
             None => {

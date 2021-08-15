@@ -1,12 +1,11 @@
+//! Ranges for specifying downloads
 use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
 use crate::errors::DownloadError;
 
+/// An inclusive range which can not have a length of 0.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct InclusiveRange(pub usize, pub usize);
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ExclusiveOpenRange(pub usize, pub Option<usize>);
 
 impl InclusiveRange {
     pub fn start(&self) -> usize {
@@ -40,6 +39,19 @@ impl InclusiveRange {
     }
 }
 
+/// An exclusive range which can have a length of 0.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct ExclusiveOpenRange(pub usize, pub Option<usize>);
+
+/// A closed range
+///
+/// A closed range has a "defined end".
+/// This does not require [Condow](crate::Condow) to do a size request.
+/// [Condow](crate::Condow) can be configured to do a size request anyways
+/// which allows to adjust the end of the range so that the whole range
+/// is part of the file. This is the default behaviour. If this
+/// behaviour is disabled, it is up to the caller to ensure a valid
+/// range which does not exceed the end of the file is supplied.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClosedRange {
     FromTo(usize, usize),
@@ -182,9 +194,16 @@ impl ClosedRange {
     }
 }
 
+/// An open range
+///
+/// An open range has no "defined end".
+/// This always requires [Condow](crate::Condow) to do a size request
+/// so that the download can be split into parts of known size.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OpenRange {
+    /// Download from the specified byte to the end
     From(usize),
+    /// Download the whole file
     Full,
 }
 
@@ -217,6 +236,9 @@ impl OpenRange {
     }
 }
 
+/// A range which specifies a download
+///
+/// Conversions for the standard Rust range syntax exist.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadRange {
     Open(OpenRange),
