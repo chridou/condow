@@ -4,11 +4,19 @@ use std::{
 };
 
 use anyhow::Error as AnyError;
-use futures::future::BoxFuture;
-use rusoto_core::Region;
-use rusoto_s3::{S3Client, S3};
+use futures::{future::BoxFuture, stream::TryStreamExt};
+use rusoto_core::{Region, RusotoError};
+use rusoto_s3::{
+    GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3Client, S3,
+};
 
-use condow_core::{condow_client::*, config::Config, Condow};
+use condow_core::{
+    condow_client::*,
+    config::Config,
+    errors::{DownloadError, GetSizeError, IoError},
+    streams::{BytesHint, BytesStream},
+    Condow,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bucket(String);
@@ -137,24 +145,97 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
     fn get_size(
         &self,
         location: Self::Location,
-    ) -> BoxFuture<'static, Result<usize, condow_core::errors::GetSizeError>> {
-        todo!()
+    ) -> BoxFuture<'static, Result<usize, GetSizeError>> {
+        let client = self.0.clone();
+        let f = async move {
+            let (bucket, object_key) = location.into_inner();
+            let mut head_object_request = HeadObjectRequest::default();
+            head_object_request.bucket = bucket.into_inner();
+            head_object_request.key = object_key.into_inner();
+
+            let response = client
+                .head_object(head_object_request)
+                .await
+                .map_err(head_obj_err_to_get_size_err)?;
+
+            if let Some(size) = response.content_length {
+                Ok(size as usize)
+            } else {
+                Err(GetSizeError::Other(format!(
+                    "response had no content length"
+                )))
+            }
+        };
+
+        Box::pin(f)
     }
 
     fn download(
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<
-        'static,
-        Result<
-            (
-                condow_core::streams::BytesStream,
-                condow_core::streams::BytesHint,
-            ),
-            condow_core::errors::DownloadError,
-        >,
-    > {
-        todo!()
+    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadError>> {
+        let client = self.0.clone();
+        let f = async move {
+            let (bucket, object_key) = location.into_inner();
+            let mut get_object_request = GetObjectRequest::default();
+            get_object_request.bucket = bucket.into_inner();
+            get_object_request.key = object_key.into_inner();
+            get_object_request.range = spec.http_range_value();
+
+            let response = client
+                .get_object(get_object_request)
+                .await
+                .map_err(get_obj_err_to_download_err)?;
+
+            let bytes_hint = response
+                .content_length
+                .map(|s| BytesHint::new_exact(s as usize))
+                .unwrap_or(BytesHint::new_no_hint());
+
+            let stream = if let Some(stream) = response.body {
+                stream
+            } else {
+                return Err(DownloadError::Other(format!("response had no body")));
+            };
+
+            let stream: BytesStream = Box::pin(stream.map_err(|err| IoError(err.to_string())));
+
+            Ok((stream, bytes_hint))
+        };
+
+        Box::pin(f)
+    }
+}
+
+fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> DownloadError {
+    match err {
+        RusotoError::Service(err) => DownloadError::Remote(format!("Rusoto: {}", err)),
+        RusotoError::Validation(cause) => DownloadError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Credentials(err) => DownloadError::AccessDenied(format!("Rusoto: {:?}", err)),
+        RusotoError::HttpDispatch(dispatch_error) => {
+            DownloadError::Other(format!("Rusoto: {:?}", dispatch_error))
+        }
+        RusotoError::ParseError(cause) => DownloadError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Unknown(cause) => DownloadError::Other(format!("Rusoto: {:?}", cause)),
+        RusotoError::Blocking => {
+            DownloadError::Other("Rusoto: Failed to run blocking future".into())
+        }
+    }
+}
+
+fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> GetSizeError {
+    match err {
+        RusotoError::Service(err) => GetSizeError::Remote(format!("Rusoto: {}", err)),
+        RusotoError::Validation(cause) => GetSizeError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Credentials(err) => GetSizeError::AccessDenied(format!("Rusoto: {:?}", err)),
+        RusotoError::HttpDispatch(dispatch_error) => {
+            GetSizeError::Other(format!("Rusoto: {:?}", dispatch_error))
+        }
+        RusotoError::ParseError(cause) => GetSizeError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Unknown(cause) => GetSizeError::Other(format!("Rusoto: {:?}", cause)),
+        RusotoError::Blocking => {
+            GetSizeError::Other("Rusoto: Failed to run blocking future".into())
+        }
     }
 }
