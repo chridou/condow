@@ -25,7 +25,7 @@ pub async fn download<C: CondowClient>(
         panic!("n_parts must not be 0. This is a bug");
     }
 
-    let (chunk_stream, sender) = ChunkStream::new(n_parts, bytes_hint);
+    let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
 
     tokio::spawn(async move {
         downloader::download_concurrently(

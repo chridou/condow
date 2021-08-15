@@ -283,10 +283,10 @@ mod tests {
 
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let (n_parts, mut ranges_stream) =
+        let (_n_parts, mut ranges_stream) =
             RangeStream::create(range, config.part_size_bytes.into());
 
-        let (result_stream, results_sender) = ChunkStream::new(n_parts, bytes_hint);
+        let (result_stream, results_sender) = ChunkStream::new(bytes_hint);
 
         let mut downloader = Downloader::new(
             client,

@@ -17,10 +17,6 @@
 //!
 //! All that is required to add more "services" is to implement
 //! the [CondowClient] trait.
-//!
-//! ## How it works
-//!
-//!
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{DownloadError, GetSizeError};
@@ -213,7 +209,6 @@ impl Default for GetSizeMode {
 
 #[cfg(test)]
 mod condow_tests {
-
     mod file {
         use std::sync::Arc;
 

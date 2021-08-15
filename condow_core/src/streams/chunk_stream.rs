@@ -38,7 +38,6 @@ impl Chunk {
 
 pin_project! {
     pub struct ChunkStream {
-        n_parts: usize,
         bytes_hint: BytesHint,
         #[pin]
         receiver: mpsc::UnboundedReceiver<ChunkStreamItem>,
@@ -48,14 +47,10 @@ pin_project! {
 }
 
 impl ChunkStream {
-    pub fn new(
-        n_parts: usize,
-        bytes_hint: BytesHint,
-    ) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
+    pub fn new(bytes_hint: BytesHint) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
         let (tx, receiver) = mpsc::unbounded();
 
         let me = Self {
-            n_parts,
             bytes_hint,
             receiver,
             is_closed: false,
@@ -66,14 +61,10 @@ impl ChunkStream {
     }
 
     pub fn empty() -> Self {
-        let (mut me, _) = Self::new(0, BytesHint(0, Some(0)));
+        let (mut me, _) = Self::new(BytesHint(0, Some(0)));
         me.is_closed = true;
         me.receiver.close();
         me
-    }
-
-    pub fn n_parts(&self) -> usize {
-        self.n_parts
     }
 
     /// Hint on the remaining bytes on this stream.
@@ -81,6 +72,12 @@ impl ChunkStream {
         self.bytes_hint
     }
 
+    /// Writes all received bytes into the provided buffer
+    ///
+    /// Fails if the buffer is too small or if the stream was already iterated.
+    ///
+    /// Since the parts and therefore the chunks are not ordered we can
+    /// not know, whether we can fill the buffer in a contiguous way.
     pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, StreamError> {
         if !self.is_fresh {
             return Err(StreamError::Other("stream already iterated".to_string()));
@@ -124,6 +121,12 @@ impl ChunkStream {
         Ok(bytes_written)
     }
 
+    /// Creates a Vec filled with the bytes from the stream.
+    ///
+    /// Fails if the stream was already iterated.
+    ///
+    /// Since the parts and therefore the chunks are not ordered we can
+    /// not know, whether we can fill the `Vec` in a contiguous way.
     pub async fn into_vec(self) -> Result<Vec<u8>, StreamError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
             let mut buffer = vec![0; total_bytes];
@@ -138,6 +141,10 @@ impl ChunkStream {
 async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
 ) -> Result<Vec<u8>, StreamError> {
+    if !stream.is_fresh {
+        return Err(StreamError::Other("stream already iterated".to_string()));
+    }
+
     let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
 
     while let Some(next) = stream.next().await {
