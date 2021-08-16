@@ -52,6 +52,12 @@ impl TestCondowClient {
     }
 }
 
+impl Default for TestCondowClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CondowClient for TestCondowClient {
     type Location = ();
 
