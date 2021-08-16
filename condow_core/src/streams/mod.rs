@@ -8,6 +8,7 @@ mod parts_stream;
 pub use chunk_stream::*;
 pub use parts_stream::*;
 
+/// A stream of [Bytes]
 pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
 
 /// Returns the bounds on the remaining bytes of the stream.
@@ -76,6 +77,7 @@ impl BytesHint {
         }
     }
 
+    /// Bytes have been send and `by` less will be received from now on
     pub fn reduce_by(&mut self, by: usize) {
         if by == 0 {
             return;

@@ -34,20 +34,21 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    /// Returns true if this is the last chunk of the part
+    ///
+    /// Same as `len()==0`
     pub fn is_last(&self) -> bool {
         self.bytes_left == 0
     }
 
+    /// returns the number of bytes in this chunk
     pub fn len(&self) -> usize {
         self.bytes.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
     }
 }
 
 pin_project! {
+    /// A stream of [Chunk]s received from the network
     pub struct ChunkStream {
         bytes_hint: BytesHint,
         #[pin]
@@ -71,6 +72,9 @@ impl ChunkStream {
         (me, tx)
     }
 
+    /// Returns true if no more items can be pulled from this stream.
+    ///
+    /// Also `true` if an error occured
     pub fn empty() -> Self {
         let (mut me, _) = Self::new(BytesHint(0, Some(0)));
         me.is_closed = true;
@@ -83,6 +87,7 @@ impl ChunkStream {
         self.bytes_hint
     }
 
+    /// Returns `true`, if this stream was not iterated before
     pub fn is_fresh(&self) -> bool {
         self.is_fresh
     }
@@ -286,7 +291,7 @@ mod tests {
                             let range = from_idx..;
 
                             let result_stream = condow
-                                .download((), range.clone(), crate::GetSizeMode::Always)
+                                .download_chunks((), range.clone(), crate::GetSizeMode::Always)
                                 .await
                                 .unwrap();
 
@@ -324,7 +329,7 @@ mod tests {
                             let range = from_idx..;
 
                             let result_stream = condow
-                                .download((), range.clone(), crate::GetSizeMode::Required)
+                                .download_chunks((), range.clone(), crate::GetSizeMode::Required)
                                 .await
                                 .unwrap();
 
@@ -370,7 +375,7 @@ mod tests {
                             let range = 0..=end_incl;
 
                             let result_stream = condow
-                                .download((), range.clone(), crate::GetSizeMode::Default)
+                                .download_chunks((), range.clone(), crate::GetSizeMode::Default)
                                 .await
                                 .unwrap();
 
@@ -408,7 +413,7 @@ mod tests {
                             let range = 0..end_excl;
 
                             let result_stream = condow
-                                .download((), range.clone(), crate::GetSizeMode::Default)
+                                .download_chunks((), range.clone(), crate::GetSizeMode::Default)
                                 .await
                                 .unwrap();
 
@@ -455,7 +460,11 @@ mod tests {
                                     let range = 0..=end_incl;
 
                                     let result_stream = condow
-                                        .download((), range.clone(), crate::GetSizeMode::Default)
+                                        .download_chunks(
+                                            (),
+                                            range.clone(),
+                                            crate::GetSizeMode::Default,
+                                        )
                                         .await
                                         .unwrap();
 
@@ -493,7 +502,11 @@ mod tests {
                                     let range = 0..end_excl;
 
                                     let result_stream = condow
-                                        .download((), range.clone(), crate::GetSizeMode::Default)
+                                        .download_chunks(
+                                            (),
+                                            range.clone(),
+                                            crate::GetSizeMode::Default,
+                                        )
                                         .await
                                         .unwrap();
 
@@ -542,7 +555,7 @@ mod tests {
                                         let range = start..=(end_incl);
 
                                         let result_stream = condow
-                                            .download(
+                                            .download_chunks(
                                                 (),
                                                 range.clone(),
                                                 crate::GetSizeMode::Default,
@@ -587,7 +600,7 @@ mod tests {
                                         let range = start..(end_excl);
 
                                         let result_stream = condow
-                                            .download(
+                                            .download_chunks(
                                                 (),
                                                 range.clone(),
                                                 crate::GetSizeMode::Default,

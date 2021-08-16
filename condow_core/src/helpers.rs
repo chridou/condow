@@ -371,7 +371,7 @@ macro_rules! new_type {
 
 macro_rules! env_ctors {
     (no_fill) => {
-        #[doc="Initializes all fields from environment variables prefixed with \"CONDOW_PREFIX_\""]
+        #[doc="Initializes all fields from environment variables prefixed with \"CONDOW_\""]
         pub fn from_env() -> Result<Self, anyhow::Error> {
             let mut me = Self::default();
             me.fill_from_env_prefixed_internal($crate::helpers::CONDOW_PREFIX)?;

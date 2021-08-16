@@ -21,7 +21,7 @@ use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{DownloadError, GetSizeError};
 
-use streams::{BytesHint, ChunkStream};
+use streams::{BytesHint, ChunkStream, PartStream};
 
 #[macro_use]
 pub(crate) mod helpers;
@@ -67,7 +67,7 @@ impl<C: CondowClient> Condow<C> {
     /// The [Chunk](streams::Chunk)s are ordered for each individually downloaded
     /// part of the whole download. But the parts themselves are downloaded
     /// with no defined ordering due to the concurrency.
-    pub async fn download<R: Into<DownloadRange>>(
+    pub async fn download_chunks<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
         range: R,
@@ -167,13 +167,30 @@ impl<C: CondowClient> Downloader<C> {
         self
     }
 
-    /// Download the file.
+    /// Download the chunks of a file/range as received
+    /// from the concurrently downloaded parts.
+    ///
+    /// The parts and the chunks streamed have no specific ordering.
+    /// Chunks of the same part still have the correct ordering as they are
+    /// downloaded sequentially.
     ///
     /// See also [Condow::download]
-    pub async fn download(&self) -> Result<ChunkStream, DownloadError> {
+    pub async fn download_chunks(&self) -> Result<ChunkStream, DownloadError> {
         self.condow
-            .download(self.location.clone(), self.range, self.get_size_mode)
+            .download_chunks(self.location.clone(), self.range, self.get_size_mode)
             .await
+    }
+
+    /// Download the file/range.
+    ///
+    /// The parts and the chunks streamed have the same ordering as
+    /// within the file/range downloaded.
+    ///
+    /// See also [Condow::download]
+    pub async fn download(&self) -> Result<PartStream<ChunkStream>, DownloadError> {
+        let chunk_stream = self.download_chunks().await?;
+        PartStream::from_chunk_stream(chunk_stream)
+            .map_err(|stream_err| DownloadError::Other(stream_err.to_string()))
     }
 }
 
@@ -239,8 +256,10 @@ mod condow_tests {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        let result_stream =
-                            condow.download((), .., Default::default()).await.unwrap();
+                        let result_stream = condow
+                            .download_chunks((), .., Default::default())
+                            .await
+                            .unwrap();
 
                         let result = result_stream.into_vec().await.unwrap();
 
@@ -284,7 +303,7 @@ mod condow_tests {
                                 let range = from_idx..;
 
                                 let result_stream = condow
-                                    .download((), range.clone(), crate::GetSizeMode::Always)
+                                    .download_chunks((), range.clone(), crate::GetSizeMode::Always)
                                     .await
                                     .unwrap();
 
@@ -325,7 +344,11 @@ mod condow_tests {
                                 let range = from_idx..;
 
                                 let result_stream = condow
-                                    .download((), range.clone(), crate::GetSizeMode::Required)
+                                    .download_chunks(
+                                        (),
+                                        range.clone(),
+                                        crate::GetSizeMode::Required,
+                                    )
                                     .await
                                     .unwrap();
 
@@ -373,7 +396,7 @@ mod condow_tests {
                                 let expected_range_end = (end_incl + 1).min(data.len());
 
                                 let result_stream = condow
-                                    .download((), range.clone(), crate::GetSizeMode::Default)
+                                    .download_chunks((), range.clone(), crate::GetSizeMode::Default)
                                     .await
                                     .unwrap();
 
@@ -414,7 +437,7 @@ mod condow_tests {
                                 let expected_range_end = end_excl.min(data.len());
 
                                 let result_stream = condow
-                                    .download((), range.clone(), crate::GetSizeMode::Default)
+                                    .download_chunks((), range.clone(), crate::GetSizeMode::Default)
                                     .await
                                     .unwrap();
 
@@ -463,7 +486,7 @@ mod condow_tests {
                                         let expected_range_end = (end_incl + 1).min(data.len());
 
                                         let result_stream = condow
-                                            .download((), range, crate::GetSizeMode::Default)
+                                            .download_chunks((), range, crate::GetSizeMode::Default)
                                             .await
                                             .unwrap();
 
@@ -504,7 +527,7 @@ mod condow_tests {
                                         let expected_range_end = end_excl.min(data.len());
 
                                         let result_stream = condow
-                                            .download((), range, crate::GetSizeMode::Default)
+                                            .download_chunks((), range, crate::GetSizeMode::Default)
                                             .await
                                             .unwrap();
 
@@ -555,7 +578,11 @@ mod condow_tests {
                                             let expected_range_end = (end_incl + 1).min(data.len());
 
                                             let result_stream = condow
-                                                .download((), range, crate::GetSizeMode::Default)
+                                                .download_chunks(
+                                                    (),
+                                                    range,
+                                                    crate::GetSizeMode::Default,
+                                                )
                                                 .await
                                                 .unwrap();
 
@@ -599,7 +626,11 @@ mod condow_tests {
                                             let expected_range_end = end_excl.min(data.len());
 
                                             let result_stream = condow
-                                                .download((), range, crate::GetSizeMode::Default)
+                                                .download_chunks(
+                                                    (),
+                                                    range,
+                                                    crate::GetSizeMode::Default,
+                                                )
                                                 .await
                                                 .unwrap();
 

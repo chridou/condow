@@ -1,3 +1,11 @@
+//! # CONcurrent DOWnloads from AWS S3
+//!
+//! Download speed from S3 can be significantly improved by
+//! downloading parts of the file concurrently. This crate
+//! does exactly that.
+//!
+//! Unlike e.g. the AWS Java SDK this library does not download
+//! the parts as upladed but ranges.
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -18,6 +26,9 @@ use condow_core::{
     Condow,
 };
 
+pub use condow_core::*;
+
+/// S3 bucket name
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Bucket(String);
 
@@ -55,6 +66,7 @@ impl DerefMut for Bucket {
     }
 }
 
+/// S3 object key
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ObjectKey(String);
 
@@ -92,6 +104,7 @@ impl DerefMut for ObjectKey {
     }
 }
 
+/// Full "path" to an S3 object
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct S3Location(Bucket, ObjectKey);
 
@@ -108,6 +121,7 @@ impl S3Location {
         &self.1
     }
 
+    /// Turn this into its two components
     pub fn into_inner(self) -> (Bucket, ObjectKey) {
         (self.0, self.1)
     }
@@ -119,10 +133,14 @@ impl fmt::Display for S3Location {
     }
 }
 
+/// Just a wrapper around a clietn
+/// to implement the trait [CondowClient](condow_client::CondowClient) on.
 #[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
 
 impl S3ClientWrapper<S3Client> {
+    /// Create a new wrapper wrapping the default [S3Client](rusoto_s3::S3Client)
+    /// for the given [Region](rusoto_core::Region).
     pub fn new(region: Region) -> Self {
         let client = S3Client::new(region);
         Self::from_client(client)
@@ -130,10 +148,12 @@ impl S3ClientWrapper<S3Client> {
 }
 
 impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
+    /// Create a new wrapper wrapping given an implementor of [S3](rusoto_s3::S3).
     pub fn from_client(client: C) -> Self {
         Self(client)
     }
 
+    /// Create a concurrent downloader from this adapter and the given [Config]
     pub fn condow(self, config: Config) -> Result<Condow<Self>, AnyError> {
         Condow::new(self, config)
     }

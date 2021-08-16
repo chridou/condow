@@ -43,7 +43,7 @@ pub struct Config {
 }
 
 impl Config {
-    env_ctors!();
+    env_ctors!(no_fill);
 
     pub fn part_size_bytes<T: Into<PartSizeBytes>>(mut self, part_size_bytes: T) -> Self {
         self.part_size_bytes = part_size_bytes.into();
