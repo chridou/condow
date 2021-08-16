@@ -149,9 +149,11 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
-            let mut head_object_request = HeadObjectRequest::default();
-            head_object_request.bucket = bucket.into_inner();
-            head_object_request.key = object_key.into_inner();
+            let head_object_request = HeadObjectRequest {
+                bucket: bucket.into_inner(),
+                key: object_key.into_inner(),
+                ..Default::default()
+            };
 
             let response = client
                 .head_object(head_object_request)
@@ -161,9 +163,9 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             if let Some(size) = response.content_length {
                 Ok(size as usize)
             } else {
-                Err(GetSizeError::Other(format!(
-                    "response had no content length"
-                )))
+                Err(GetSizeError::Other(
+                    "response had no content length".to_string(),
+                ))
             }
         };
 
@@ -178,10 +180,12 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
-            let mut get_object_request = GetObjectRequest::default();
-            get_object_request.bucket = bucket.into_inner();
-            get_object_request.key = object_key.into_inner();
-            get_object_request.range = spec.http_range_value();
+            let get_object_request = GetObjectRequest {
+                bucket: bucket.into_inner(),
+                key: object_key.into_inner(),
+                range: spec.http_range_value(),
+                ..Default::default()
+            };
 
             let response = client
                 .get_object(get_object_request)
@@ -191,12 +195,12 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let bytes_hint = response
                 .content_length
                 .map(|s| BytesHint::new_exact(s as usize))
-                .unwrap_or(BytesHint::new_no_hint());
+                .unwrap_or_else(BytesHint::new_no_hint);
 
             let stream = if let Some(stream) = response.body {
                 stream
             } else {
-                return Err(DownloadError::Other(format!("response had no body")));
+                return Err(DownloadError::Other("response had no body".to_string()));
             };
 
             let stream: BytesStream = Box::pin(stream.map_err(|err| IoError(err.to_string())));

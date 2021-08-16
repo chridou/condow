@@ -82,27 +82,27 @@ impl BytesHint {
             BytesHint(0, None) => {}
             BytesHint(min, None) => {
                 if *min >= by {
-                    *min = *min - by;
+                    *min -= by;
                 } else {
                     *self = BytesHint::new_no_hint()
                 }
             }
             BytesHint(0, Some(max)) => {
                 if *max >= by {
-                    *max = *max - by;
+                    *max -= by;
                 } else {
                     *self = BytesHint::new_no_hint()
                 }
             }
             BytesHint(min, Some(max)) => {
                 if *min >= by {
-                    *min = *min - by;
+                    *min -= by;
                 } else {
                     *min = 0;
                 }
 
                 if *max >= by {
-                    *max = *max - by;
+                    *max -= by;
                 } else {
                     self.1 = None
                 }

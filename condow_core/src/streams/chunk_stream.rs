@@ -34,6 +34,10 @@ impl Chunk {
     pub fn len(&self) -> usize {
         self.bytes.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 pin_project! {
