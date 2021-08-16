@@ -4,12 +4,12 @@ use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
-use crate::errors::StreamError;
+use crate::errors::CondowError;
 
 use super::BytesHint;
 
 /// The type of the elements returned by a [ChunkStream]
-pub type ChunkStreamItem = Result<Chunk, StreamError>;
+pub type ChunkStreamItem = Result<Chunk, CondowError>;
 
 /// A chunk belonging to a downloaded part
 ///
@@ -23,8 +23,8 @@ pub struct Chunk {
     pub part_index: usize,
     /// Index of the chunk within the part
     pub chunk_index: usize,
-    /// Offset of the chunk within the file
-    pub file_offset: usize,
+    /// Offset of the chunk within the BLOB
+    pub blob_offset: usize,
     /// Offset of the chunk within the downloaded range
     pub range_offset: usize,
     /// The bytes
@@ -98,13 +98,13 @@ impl ChunkStream {
     ///
     /// Since the parts and therefore the chunks are not ordered we can
     /// not know, whether we can fill the buffer in a contiguous way.
-    pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, StreamError> {
+    pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if !self.is_fresh {
-            return Err(StreamError::Other("stream already iterated".to_string()));
+            return Err(CondowError::Other("stream already iterated".to_string()));
         }
 
         if buffer.len() < self.bytes_hint.lower_bound() {
-            return Err(StreamError::Other(format!(
+            return Err(CondowError::Other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
                 self.bytes_hint.lower_bound()
@@ -125,7 +125,7 @@ impl ChunkStream {
 
             let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
-                return Err(StreamError::Other(format!(
+                return Err(CondowError::Other(format!(
                     "write attempt beyond buffer end (buffer len = {}). \
                     attempted to write at index {}",
                     buffer.len(),
@@ -141,13 +141,13 @@ impl ChunkStream {
         Ok(bytes_written)
     }
 
-    /// Creates a Vec filled with the bytes from the stream.
+    /// Creates a `Vec<u8>` filled with the bytes from the stream.
     ///
     /// Fails if the stream was already iterated.
     ///
     /// Since the parts and therefore the chunks are not ordered we can
     /// not know, whether we can fill the `Vec` in a contiguous way.
-    pub async fn into_vec(self) -> Result<Vec<u8>, StreamError> {
+    pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
             let mut buffer = vec![0; total_bytes];
             let _ = self.fill_buffer(buffer.as_mut()).await?;
@@ -160,9 +160,9 @@ impl ChunkStream {
 
 async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
-) -> Result<Vec<u8>, StreamError> {
+) -> Result<Vec<u8>, CondowError> {
     if !stream.is_fresh {
-        return Err(StreamError::Other("stream already iterated".to_string()));
+        return Err(CondowError::Other("stream already iterated".to_string()));
     }
 
     let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
@@ -236,7 +236,7 @@ mod tests {
         while let Some(next) = result_stream.next().await {
             let Chunk {
                 range_offset,
-                file_offset,
+                blob_offset: file_offset,
                 bytes,
                 ..
             } = match next {

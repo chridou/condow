@@ -1,18 +1,18 @@
-//! Adapter for [crate::Condow] to access files to be downloaded
+//! Adapter for [crate::Condow] to access BLOBs to be downloaded
 use futures::future::BoxFuture;
 
 use crate::{
-    errors::{DownloadError, GetSizeError},
+    errors::{CondowError, GetSizeError},
     streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
 
-/// Specifies whether a whole file or part of it should be downloaded
+/// Specifies whether a whole BLOB or part of it should be downloaded
 #[derive(Debug, Copy, Clone)]
 pub enum DownloadSpec {
-    /// Download the complete file
+    /// Download the complete BLOB
     Complete,
-    /// Download part of the file given by an [InclusiveRange]
+    /// Download part of the BLOB given by an [InclusiveRange]
     Range(InclusiveRange),
 }
 
@@ -34,11 +34,11 @@ impl DownloadSpec {
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + Clone + Send + Sync + 'static;
 
-    /// Returns the size of the file at the given location
+    /// Returns the size of the BLOB at the given location
     fn get_size(&self, location: Self::Location)
         -> BoxFuture<'static, Result<usize, GetSizeError>>;
 
-    /// Download a file or part of a file from the given location as specified by the [DownloadSpec]
+    /// Download a BLOB or part of a BLOB from the given location as specified by the [DownloadSpec]
     ///
     /// A valid [BytesHint] must be returned alongside the stream.
     /// A concurrent download will fail if the [BytesHint] does not match
@@ -47,5 +47,5 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadError>>;
+    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>;
 }

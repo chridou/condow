@@ -1,11 +1,11 @@
 # Condow
 
-Condow is a CONcurrent DOWnloader which downloads files
+Condow is a CONcurrent DOWnloader which downloads BLOBs
 by splitting the download into parts and downloading them 
 concurrently.
 
 Some services/technologies/backends can have their download
-speed improved, if files are downloaded concurrently by 
+speed improved, if BLOBs are downloaded concurrently by 
 "opening multiple connections". An example for this is AWS S3.
 
 This crate provides the core functionality only. To actually

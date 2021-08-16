@@ -21,7 +21,7 @@ use rusoto_s3::{
 use condow_core::{
     condow_client::*,
     config::Config,
-    errors::{DownloadError, GetSizeError, IoError},
+    errors::{CondowError, GetSizeError, IoError},
     streams::{BytesHint, BytesStream},
     Condow,
 };
@@ -196,7 +196,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), DownloadError>> {
+    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
@@ -220,7 +220,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let stream = if let Some(stream) = response.body {
                 stream
             } else {
-                return Err(DownloadError::Other("response had no body".to_string()));
+                return Err(CondowError::Other("response had no body".to_string()));
             };
 
             let stream: BytesStream = Box::pin(stream.map_err(|err| IoError(err.to_string())));
@@ -232,19 +232,17 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
     }
 }
 
-fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> DownloadError {
+fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError {
     match err {
-        RusotoError::Service(err) => DownloadError::Remote(format!("Rusoto: {}", err)),
-        RusotoError::Validation(cause) => DownloadError::Other(format!("Rusoto: {}", cause)),
-        RusotoError::Credentials(err) => DownloadError::Other(format!("Rusoto: {:?}", err)),
+        RusotoError::Service(err) => CondowError::Remote(format!("Rusoto: {}", err)),
+        RusotoError::Validation(cause) => CondowError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Credentials(err) => CondowError::Other(format!("Rusoto: {:?}", err)),
         RusotoError::HttpDispatch(dispatch_error) => {
-            DownloadError::Other(format!("Rusoto: {:?}", dispatch_error))
+            CondowError::Other(format!("Rusoto: {:?}", dispatch_error))
         }
-        RusotoError::ParseError(cause) => DownloadError::Other(format!("Rusoto: {}", cause)),
-        RusotoError::Unknown(cause) => DownloadError::Other(format!("Rusoto: {:?}", cause)),
-        RusotoError::Blocking => {
-            DownloadError::Other("Rusoto: Failed to run blocking future".into())
-        }
+        RusotoError::ParseError(cause) => CondowError::Other(format!("Rusoto: {}", cause)),
+        RusotoError::Unknown(cause) => CondowError::Other(format!("Rusoto: {:?}", cause)),
+        RusotoError::Blocking => CondowError::Other("Rusoto: Failed to run blocking future".into()),
     }
 }
 

@@ -10,7 +10,7 @@ use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
-    errors::DownloadError,
+    errors::CondowError,
     streams::{BytesHint, BytesStream},
 };
 
@@ -77,7 +77,7 @@ impl CondowClient for TestCondowClient {
         'static,
         Result<
             (crate::streams::BytesStream, crate::streams::BytesHint),
-            crate::errors::DownloadError,
+            crate::errors::CondowError,
         >,
     > {
         let range = match spec {
@@ -86,7 +86,7 @@ impl CondowClient for TestCondowClient {
         };
 
         if range.end > self.data.len() {
-            return Box::pin(future::ready(Err(DownloadError::InvalidRange(format!(
+            return Box::pin(future::ready(Err(CondowError::InvalidRange(format!(
                 "max upper bound is {} but {} was requested",
                 self.data.len(),
                 range.end - 1

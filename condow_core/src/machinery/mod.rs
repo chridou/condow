@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::condow_client::CondowClient;
 use crate::config::Config;
-use crate::errors::DownloadError;
+use crate::errors::CondowError;
 use crate::streams::{BytesHint, ChunkStream};
 use crate::InclusiveRange;
 
@@ -19,7 +19,7 @@ pub async fn download<C: CondowClient>(
     range: InclusiveRange,
     bytes_hint: BytesHint,
     config: Config,
-) -> Result<ChunkStream, DownloadError> {
+) -> Result<ChunkStream, CondowError> {
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
 
     if n_parts == 0 {

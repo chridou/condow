@@ -6,7 +6,7 @@ use futures::{
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
-    errors::{IoError, StreamError},
+    errors::{CondowError, IoError},
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
 
@@ -131,7 +131,7 @@ impl Downloader {
                     match client
                         .download(
                             location.clone(),
-                            DownloadSpec::Range(range_request.file_range),
+                            DownloadSpec::Range(range_request.blob_range),
                         )
                         .await
                     {
@@ -193,7 +193,7 @@ async fn consume_and_dispatch_bytes(
     let mut chunk_index = 0;
     let mut offset_in_range = 0;
     let mut bytes_received = 0;
-    let bytes_expected = range_request.file_range.len();
+    let bytes_expected = range_request.blob_range.len();
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
@@ -201,12 +201,12 @@ async fn consume_and_dispatch_bytes(
                 bytes_received += bytes.len();
 
                 if bytes_received > bytes_expected {
-                    let msg = Err(StreamError::Other(format!(
+                    let msg = Err(CondowError::Other(format!(
                         "received mor ebytes than expected for part {} ({}..={}). expected {}, received {}",
                         range_request.part,
-                        range_request.file_range.start(),
-                        range_request.file_range.end_incl(),
-                        range_request.file_range.len(),
+                        range_request.blob_range.start(),
+                        range_request.blob_range.end_incl(),
+                        range_request.blob_range.len(),
                         bytes_received
                     )));
                     let _ = results_sender.unbounded_send(msg);
@@ -217,7 +217,7 @@ async fn consume_and_dispatch_bytes(
                     .unbounded_send(Ok(Chunk {
                         part_index: range_request.part,
                         chunk_index,
-                        file_offset: range_request.file_range.start() + offset_in_range,
+                        blob_offset: range_request.blob_range.start() + offset_in_range,
                         range_offset: range_request.range_offset + offset_in_range,
                         bytes,
                         bytes_left: bytes_expected - bytes_received,
@@ -227,19 +227,19 @@ async fn consume_and_dispatch_bytes(
                 offset_in_range += n_bytes;
             }
             Err(IoError(msg)) => {
-                let _ = results_sender.unbounded_send(Err(StreamError::Io(msg)));
+                let _ = results_sender.unbounded_send(Err(CondowError::Io(msg)));
                 return Err(());
             }
         }
     }
 
     if bytes_received != bytes_expected {
-        let msg = Err(StreamError::Other(format!(
+        let msg = Err(CondowError::Other(format!(
             "received wrong number of bytes for part {} ({}..={}). expected {}, received {}",
             range_request.part,
-            range_request.file_range.start(),
-            range_request.file_range.end_incl(),
-            range_request.file_range.len(),
+            range_request.blob_range.start(),
+            range_request.blob_range.end_incl(),
+            range_request.blob_range.len(),
             bytes_received
         )));
         let _ = results_sender.unbounded_send(msg);
@@ -309,12 +309,12 @@ mod tests {
         assert_eq!(total_bytes, range.len(), "total_bytes");
 
         let mut next_range_offset = 0;
-        let mut next_file_offset = range.start();
+        let mut next_blob_offset = range.start();
 
         result.iter().for_each(|c| {
             let Chunk {
                 part_index,
-                file_offset,
+                blob_offset,
                 range_offset,
                 bytes,
                 ..
@@ -325,12 +325,12 @@ mod tests {
                 part_index, range
             );
             assert_eq!(
-                *file_offset, next_file_offset,
-                "part {}, file_offset: {:?}",
+                *blob_offset, next_blob_offset,
+                "part {}, blob_offset: {:?}",
                 part_index, range
             );
             next_range_offset += bytes.len();
-            next_file_offset += bytes.len();
+            next_blob_offset += bytes.len();
         });
     }
 }

@@ -6,7 +6,7 @@ use crate::InclusiveRange;
 pub struct RangeRequest {
     /// Index of the part
     pub part: usize,
-    pub file_range: InclusiveRange,
+    pub blob_range: InclusiveRange,
     /// Offset of the part within the downloaded range
     pub range_offset: usize,
 }
@@ -14,7 +14,7 @@ pub struct RangeRequest {
 #[cfg(test)]
 impl RangeRequest {
     pub fn len(&self) -> usize {
-        self.file_range.len()
+        self.blob_range.len()
     }
 }
 
@@ -41,16 +41,16 @@ impl RangeStream {
             }
 
             let current_end_incl = (start + part_size - 1).min(range.end_incl());
-            let file_range = InclusiveRange(start, current_end_incl);
+            let blob_range = InclusiveRange(start, current_end_incl);
             start = current_end_incl + 1;
 
             let res = Some(RangeRequest {
                 part: counter,
-                file_range,
+                blob_range,
                 range_offset: next_range_offset,
             });
 
-            next_range_offset += file_range.len();
+            next_range_offset += blob_range.len();
             counter += 1;
 
             res
@@ -227,7 +227,7 @@ async fn test_n_parts_vs_stream_count() {
                     end_incl
                 );
                 assert_eq!(
-                    items[0].file_range,
+                    items[0].blob_range,
                     InclusiveRange(start, (start + end_offset).min(start + part_size - 1)),
                     "first item file range: part_size={} start={}, end_incl={}",
                     part_size,
@@ -246,7 +246,7 @@ async fn test_n_parts_vs_stream_count() {
                 });
                 items.windows(2).for_each(|window| {
                     assert_eq!(
-                        window[1].file_range.start() - window[0].file_range.end_incl(),
+                        window[1].blob_range.start() - window[0].blob_range.end_incl(),
                         1,
                         "first item file range: part_size={} start={}, end_incl={}",
                         part_size,
@@ -264,15 +264,15 @@ async fn test_n_parts_vs_stream_count() {
                         "range_offset (part {}): part_size={} start={}, end_incl={}",
                         rr.part, part_size, start, end_incl
                     );
-                    next_range_offset += rr.file_range.len();
+                    next_range_offset += rr.blob_range.len();
 
-                    let current_file_start = rr.file_range.start();
+                    let current_file_start = rr.blob_range.start();
                     assert_eq!(
                         current_file_start, next_file_start,
                         "file_offset (part {}): part_size={} start={}, end_incl={}",
                         rr.part, part_size, start, end_incl
                     );
-                    next_file_start += rr.file_range.len();
+                    next_file_start += rr.blob_range.len();
                 })
             }
         }

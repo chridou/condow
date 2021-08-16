@@ -1,6 +1,6 @@
 # CONcurrent DOWnloader
 
-Condow is a library which helps downloading parts of files concurrently to speed up the 
+Condow is a library which helps downloading parts of BLOBs concurrently to speed up the 
 download.
 
 This is the top level repository.

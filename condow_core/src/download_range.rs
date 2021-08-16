@@ -1,7 +1,7 @@
 //! Ranges for specifying downloads
 use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
 
-use crate::errors::DownloadError;
+use crate::errors::CondowError;
 
 /// An inclusive range which can not have a length of 0.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -61,11 +61,11 @@ pub enum ClosedRange {
 }
 
 impl ClosedRange {
-    pub fn validate(&self) -> Result<(), DownloadError> {
+    pub fn validate(&self) -> Result<(), CondowError> {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
-                    Err(DownloadError::InvalidRange(format!(
+                    Err(CondowError::InvalidRange(format!(
                         "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -75,7 +75,7 @@ impl ClosedRange {
             }
             Self::FromToInclusive(a, b) => {
                 if b < a {
-                    Err(DownloadError::InvalidRange(format!(
+                    Err(CondowError::InvalidRange(format!(
                         "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -246,7 +246,7 @@ pub enum DownloadRange {
 }
 
 impl DownloadRange {
-    pub fn validate(&self) -> Result<(), DownloadError> {
+    pub fn validate(&self) -> Result<(), CondowError> {
         match self {
             DownloadRange::Open(_) => Ok(()),
             DownloadRange::Closed(r) => r.validate(),

@@ -2,12 +2,12 @@
 //!
 //! ## Overview
 //!
-//! Condow is a CONcurrent DOWnloader which downloads files
+//! Condow is a CONcurrent DOWnloader which downloads BLOBs
 //! by splitting the download into parts and downloading them
 //! concurrently.
 //!
 //! Some services/technologies/backends can have their download
-//! speed improved, if files are downloaded concurrently by
+//! speed improved, if BLOBs are downloaded concurrently by
 //! "opening multiple connections". An example for this is AWS S3.
 //!
 //! This crate provides the core functionality only. To actually
@@ -19,7 +19,7 @@
 //! the [CondowClient] trait.
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
-use errors::{DownloadError, GetSizeError};
+use errors::{CondowError, GetSizeError};
 
 use streams::{BytesHint, ChunkStream, PartStream};
 
@@ -39,8 +39,14 @@ pub mod test_utils;
 
 /// The CONcurrent DOWnloader
 ///
-/// Downloads files by splitting the download into parts
+/// Downloads BLOBs by splitting the download into parts
 /// which are downloaded concurrently.
+///
+/// ## Wording
+///
+/// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
+/// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
+/// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
 #[derive(Clone)]
 pub struct Condow<C> {
     client: C,
@@ -72,7 +78,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
         get_size_mode: GetSizeMode,
-    ) -> Result<ChunkStream, DownloadError> {
+    ) -> Result<ChunkStream, CondowError> {
         let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {
@@ -130,7 +136,7 @@ pub struct Downloader<C: CondowClient> {
     pub location: C::Location,
     /// The range of the fle to be downloaded
     ///
-    /// Default: Download the whole file
+    /// Default: Download the whole BLOB
     pub range: DownloadRange,
     /// Mode for handling upper bounds of a range and open ranges
     ///
@@ -167,42 +173,41 @@ impl<C: CondowClient> Downloader<C> {
         self
     }
 
-    /// Download the chunks of a file/range as received
+    /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts.
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are
     /// downloaded sequentially.
     ///
-    /// See also [Condow::download]
-    pub async fn download_chunks(&self) -> Result<ChunkStream, DownloadError> {
+    /// See also [download](Condow::download)
+    pub async fn download_chunks(&self) -> Result<ChunkStream, CondowError> {
         self.condow
             .download_chunks(self.location.clone(), self.range, self.get_size_mode)
             .await
     }
 
-    /// Download the file/range.
+    /// Download the BLOB/range.
     ///
     /// The parts and the chunks streamed have the same ordering as
-    /// within the file/range downloaded.
+    /// within the BLOB/range downloaded.
     ///
-    /// See also [Condow::download]
-    pub async fn download(&self) -> Result<PartStream<ChunkStream>, DownloadError> {
+    /// See also [download](Condow::download)
+    pub async fn download(&self) -> Result<PartStream<ChunkStream>, CondowError> {
         let chunk_stream = self.download_chunks().await?;
         PartStream::from_chunk_stream(chunk_stream)
-            .map_err(|stream_err| DownloadError::Other(stream_err.to_string()))
     }
 }
 
 /// Overide the behaviour when [Condow] does a request to get
-/// the size of a file
+/// the size of a BLOB
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum GetSizeMode {
     /// Request a size on open ranges and also closed ranges
     /// so that a given upper bound can be adjusted/corrected
     Always,
-    /// Only request the size of a file when required. This is when an open
-    /// range (e.g. complete file or from x to end)
+    /// Only request the size of a BLOB when required. This is when an open
+    /// range (e.g. complete BLOB or from x to end)
     Required,
     /// As configured with [Condow] itself.
     Default,
@@ -234,7 +239,7 @@ mod condow_tests {
         use crate::test_utils::create_test_data;
 
         #[tokio::test]
-        async fn download_file() {
+        async fn download_blob() {
             let buffer_size = 10;
 
             let data = Arc::new(create_test_data());

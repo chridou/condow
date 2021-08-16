@@ -15,6 +15,8 @@ use anyhow::{bail, Error as AnyError};
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Config {
     /// Size in bytes of the parts the download is split into
+    ///
+    /// Default is 4 Mebi.
     pub part_size_bytes: PartSizeBytes,
     /// The maximum concurrency for a single download.
     ///
@@ -29,13 +31,13 @@ pub struct Config {
     ///
     /// Default is 2
     pub buffer_size: BufferSize,
-    /// I all buffers of all download tasks are full, this is the time
+    /// If all buffers of all download tasks are full, this is the time
     /// to pause until the next attempt.
     ///
     /// Default is 10ms
     pub buffers_full_delay_ms: BuffersFullDelayMs,
     /// If `true` [Condow](super::Condow) will also request the
-    /// soize information of a file to verify the range supplied
+    /// size information of a BLOB to verify the range supplied
     /// by a user.
     ///
     /// The default is `true`.
@@ -45,21 +47,26 @@ pub struct Config {
 impl Config {
     env_ctors!(no_fill);
 
+    /// Set the size of the parts the download is split into in bytes
     pub fn part_size_bytes<T: Into<PartSizeBytes>>(mut self, part_size_bytes: T) -> Self {
         self.part_size_bytes = part_size_bytes.into();
         self
     }
 
+    /// Set the maximum concurrency of a download
     pub fn max_concurrency<T: Into<MaxConcurrency>>(mut self, max_concurrency: T) -> Self {
         self.max_concurrency = max_concurrency.into();
         self
     }
 
+    /// Set the size of the buffer for each download task.
     pub fn buffer_size<T: Into<BufferSize>>(mut self, buffer_size: T) -> Self {
         self.buffer_size = buffer_size.into();
         self
     }
 
+    /// Set the delay in case all task buffers are full before a retry
+    /// to enqueue the next downlod part is made.
     pub fn buffers_full_delay_ms<T: Into<BuffersFullDelayMs>>(
         mut self,
         buffers_full_delay_ms: T,
@@ -68,11 +75,13 @@ impl Config {
         self
     }
 
+    /// Set whether a size request should always be made
     pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, always_get_size: T) -> Self {
         self.always_get_size = always_get_size.into();
         self
     }
 
+    /// Validate this [Config]
     pub fn validated(self) -> Result<Self, AnyError> {
         if self.max_concurrency.0 == 0 {
             bail!("'max_concurrency' must not be 0");
@@ -125,7 +134,7 @@ impl PartSizeBytes {
 
 impl Default for PartSizeBytes {
     fn default() -> Self {
-        PartSizeBytes::new(Mebi(2))
+        PartSizeBytes::new(Mebi(4))
     }
 }
 
