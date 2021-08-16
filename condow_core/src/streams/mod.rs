@@ -26,11 +26,12 @@ impl BytesHint {
         BytesHint(lower_bound, upper_bound)
     }
 
+    /// An exact number of bytes will be returned.
     pub fn new_exact(bytes: usize) -> Self {
         Self(bytes, Some(bytes))
     }
 
-    /// Create a hint of [0..bytes] bytes
+    /// Create a hint of `min=0` and `max=bytes` bytes
     pub fn new_at_max(bytes: usize) -> Self {
         Self(0, Some(bytes))
     }
@@ -112,6 +113,7 @@ impl BytesHint {
         }
     }
 
+    /// Turns this into the inner tuple
     pub fn into_inner(self) -> (usize, Option<usize>) {
         (self.lower_bound(), self.upper_bound())
     }

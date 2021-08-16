@@ -8,8 +8,15 @@ use crate::errors::StreamError;
 
 use super::BytesHint;
 
+/// The type of the elements returned by a [ChunkStream]
 pub type ChunkStreamItem = Result<Chunk, StreamError>;
 
+/// A chunk belonging to a downloaded part
+///
+/// All chunks of a part will have the correct order
+/// for a part with the same `part_index` but the chunks
+/// of different parts can be intermingled due
+/// to the nature of a concurrent download.
 #[derive(Debug, Clone)]
 pub struct Chunk {
     /// Index of the part this chunk belongs to
@@ -74,6 +81,10 @@ impl ChunkStream {
     /// Hint on the remaining bytes on this stream.
     pub fn bytes_hint(&self) -> BytesHint {
         self.bytes_hint
+    }
+
+    pub fn is_fresh(&self) -> bool {
+        self.is_fresh
     }
 
     /// Writes all received bytes into the provided buffer
