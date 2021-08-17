@@ -1,6 +1,14 @@
 [package]
 name = "condow_rusoto"
 version = "0.1.0"
+authors = ["Christian Douven <chridou@users.noreply.github.com>"]
+readme = "README.md"
+license = "Apache-2.0/MIT"
+description = "Concurrent downloads from AWS S3"
+documentation = "https://docs.rs/condow_rusoto"
+homepage = "https://github.com/chridou/condow"
+repository = "https://github.com/chridou/condow"
+keywords = [ "AWS", "S3", "download", "parallel", "rusoto"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

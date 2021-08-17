@@ -34,16 +34,24 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    /// Returns true if this is the last chunk of the part
+    /// Returns `true` if this is the last chunk of the part
     ///
     /// Same as `len()==0`
     pub fn is_last(&self) -> bool {
         self.bytes_left == 0
     }
 
-    /// returns the number of bytes in this chunk
+    /// Returns the number of bytes in this chunk
     pub fn len(&self) -> usize {
         self.bytes.len()
+    }
+
+    /// Returns `true` if there are no bytes in this chunk.
+    ///
+    /// This should not happen since we would not expect
+    /// "no bytes" being sent over the network.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 

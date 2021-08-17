@@ -1,6 +1,14 @@
 [package]
 name = "condow_core"
 version = "0.1.0"
+authors = ["Christian Douven <chridou@users.noreply.github.com>"]
+readme = "README.md"
+license = "Apache-2.0/MIT"
+description = "Framework for concurrent downloads"
+documentation = "https://docs.rs/condow_core"
+homepage = "https://github.com/chridou/condow"
+repository = "https://github.com/chridou/condow"
+keywords = [ "download", "network", "parallel", "files"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
