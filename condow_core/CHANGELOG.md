@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ADDED
 
 * tests and doc for byte units
+* methods to fill buffers from `PartStream`
+
+### CHANGED
+
+* deprecated "fill_buffer" in favour of "write_buffer"
 
 ## [0.1.1] - 2021/08/17
 

@@ -106,7 +106,18 @@ impl ChunkStream {
     ///
     /// Since the parts and therefore the chunks are not ordered we can
     /// not know, whether we can fill the buffer in a contiguous way.
-    pub async fn fill_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
+    #[deprecated]
+    pub async fn fill_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
+        self.write_buffer(buffer).await
+    }
+
+    /// Writes all received bytes into the provided buffer
+    ///
+    /// Fails if the buffer is too small or if the stream was already iterated.
+    ///
+    /// Since the parts and therefore the chunks are not ordered we can
+    /// not know, whether we can fill the buffer in a contiguous way.
+    pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if !self.is_fresh {
             return Err(CondowError::Other("stream already iterated".to_string()));
         }
@@ -158,7 +169,7 @@ impl ChunkStream {
     pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
             let mut buffer = vec![0; total_bytes];
-            let _ = self.fill_buffer(buffer.as_mut()).await?;
+            let _ = self.write_buffer(buffer.as_mut()).await?;
             Ok(buffer)
         } else {
             stream_into_vec_with_unknown_size(self).await

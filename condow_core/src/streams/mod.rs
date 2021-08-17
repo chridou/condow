@@ -3,10 +3,10 @@ use bytes::Bytes;
 use futures::stream::BoxStream;
 
 mod chunk_stream;
-mod parts_stream;
+mod part_stream;
 
 pub use chunk_stream::*;
-pub use parts_stream::*;
+pub use part_stream::*;
 
 /// A stream of [Bytes]
 pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
