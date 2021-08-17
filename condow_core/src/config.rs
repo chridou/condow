@@ -121,6 +121,47 @@ impl Config {
 }
 
 /// Size of the parts in bytes a download is split into
+///
+/// # Examples
+///
+/// ### Parsing
+/// ```rust
+/// # use condow_core::config::PartSizeBytes;
+///
+/// let n_bytes: PartSizeBytes = "34".parse().unwrap();
+/// assert_eq!(n_bytes, 34.into());
+///
+/// let n_bytes: PartSizeBytes = "1k".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000.into());
+///
+/// let n_bytes: PartSizeBytes = "1 k".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000.into());
+///
+/// let n_bytes: PartSizeBytes = "1M".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000_000.into());
+///
+/// let n_bytes: PartSizeBytes = "1G".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000_000_000.into());
+///
+/// let n_bytes: PartSizeBytes = "1Ki".parse().unwrap();
+/// assert_eq!(n_bytes, 1_024.into());
+///
+/// let n_bytes: PartSizeBytes = "1Mi".parse().unwrap();
+/// assert_eq!(n_bytes, 1_048_576.into());
+///
+/// let n_bytes: PartSizeBytes = "1Gi".parse().unwrap();
+/// assert_eq!(n_bytes, 1_073_741_824.into());
+///
+/// // Case sensitive
+/// let res = "1K".parse::<PartSizeBytes>();
+/// assert!(res.is_err());
+///
+/// let res = "x".parse::<PartSizeBytes>();
+/// assert!(res.is_err());
+///
+/// let res = "".parse::<PartSizeBytes>();
+/// assert!(res.is_err());
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct PartSizeBytes(usize);
 
@@ -197,7 +238,7 @@ impl FromStr for PartSizeBytes {
             }
 
             let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
-            let unit = from_utf8(&s.as_bytes()[idx + 1..])?.trim();
+            let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
 
             let bytes = digits.parse::<usize>()?;
 
@@ -208,10 +249,10 @@ impl FromStr for PartSizeBytes {
                 "Ki" => Ok(Kibi(bytes).into()),
                 "Mi" => Ok(Mebi(bytes).into()),
                 "Gi" => Ok(Gibi(bytes).into()),
-                s => bail!("invaid unit: '{}'", s),
+                s => bail!("invalid unit: '{}'", s),
             }
         } else {
-            Ok(s.parse()?)
+            Ok(Self::new(s.parse::<usize>()?))
         }
     }
 }
