@@ -1,6 +1,6 @@
 [package]
 name = "condow_rusoto"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
@@ -18,5 +18,5 @@ condow_core = { version = "0.1", path = "../condow_core"}
 
 futures = "0.3"
 anyhow = "1.0"
-rusoto_core = "0.47"
-rusoto_s3 = "0.47"
+rusoto_core = { version = "0.47", default_features = false }
+rusoto_s3 = { version = "0.47", default_features = false }
