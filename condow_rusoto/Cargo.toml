@@ -20,3 +20,9 @@ futures = "0.3"
 anyhow = "1.0"
 rusoto_core = { version = "0.47", default_features = false }
 rusoto_s3 = { version = "0.47", default_features = false }
+
+[features]
+default = ["native-tls"]
+rustls = ["rusoto_core/rustls", "rusoto_s3/rustls"]
+native-tls = ["rusoto_core/native-tls", "rusoto_s3/native-tls"]
+

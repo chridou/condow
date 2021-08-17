@@ -37,8 +37,8 @@ impl Bucket {
         Self(bucket.into())
     }
 
-    pub fn object(self, key: ObjectKey) -> S3Location {
-        S3Location(self, key)
+    pub fn object<O: Into<ObjectKey>>(self, key: O) -> S3Location {
+        S3Location(self, key.into())
     }
 
     pub fn into_inner(self) -> String {
@@ -75,8 +75,8 @@ impl ObjectKey {
         Self(key.into())
     }
 
-    pub fn in_bucket(self, bucket: Bucket) -> S3Location {
-        S3Location(bucket, self)
+    pub fn in_bucket<B: Into<Bucket>>(self, bucket: B) -> S3Location {
+        S3Location(bucket.into(), self)
     }
 
     pub fn into_inner(self) -> String {
@@ -109,8 +109,8 @@ impl DerefMut for ObjectKey {
 pub struct S3Location(Bucket, ObjectKey);
 
 impl S3Location {
-    pub fn new(bucket: Bucket, key: ObjectKey) -> Self {
-        Self(bucket, key)
+    pub fn new<B: Into<Bucket>, O: Into<ObjectKey>>(bucket: B, key: O) -> Self {
+        Self(bucket.into(), key.into())
     }
 
     pub fn bucket(&self) -> &Bucket {
