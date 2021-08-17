@@ -5,13 +5,13 @@ use futures::{
     future::{self, BoxFuture},
     stream, StreamExt as _,
 };
-use rand::{rngs::OsRng, Rng};
+use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     errors::CondowError,
-    streams::{BytesHint, BytesStream},
+    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
 };
 
 #[derive(Clone)]
@@ -133,4 +133,84 @@ pub fn create_test_data() -> Vec<u8> {
         data.extend_from_slice(bytes.as_ref());
     }
     data
+}
+
+pub fn create_chunk_stream(
+    n_parts: usize,
+    n_chunks: usize,
+    exact_hint: bool,
+) -> (ChunkStream, Vec<u8>) {
+    let total_chunks = n_parts * n_chunks;
+    let mut rng = rand::thread_rng();
+    let blob_offset: usize = rng.gen_range(0..1_000);
+
+    let mut parts: Vec<Vec<ChunkStreamItem>> = Vec::new();
+
+    let mut values = Vec::new();
+
+    let mut value = 1u8;
+    let mut range_offset = 0;
+    for part_index in 0usize..n_parts {
+        let mut chunks = Vec::new();
+        for chunk_index in 0usize..n_chunks {
+            let chunk = Chunk {
+                part_index,
+                chunk_index,
+                blob_offset: blob_offset + range_offset,
+                range_offset,
+                bytes: Bytes::from(vec![value]),
+                bytes_left: n_chunks - 1 - chunk_index,
+            };
+            chunks.push(Ok(chunk));
+            values.push(value);
+            range_offset += 1;
+            value += 1;
+        }
+        parts.push(chunks);
+    }
+
+    let bytes_hint = if exact_hint {
+        BytesHint::new_exact(total_chunks)
+    } else {
+        BytesHint::new_at_max(total_chunks)
+    };
+
+    parts.shuffle(&mut rng);
+
+    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+
+    loop {
+        let n = rng.gen_range(0..parts.len());
+
+        let part = &mut parts[n];
+        let chunk = part.remove(0);
+        let _ = tx.unbounded_send(chunk);
+        if part.is_empty() {
+            parts.remove(n);
+        }
+
+        if parts.is_empty() {
+            break;
+        }
+    }
+
+    (chunk_stream, values)
+}
+
+pub fn create_part_stream(
+    n_parts: usize,
+    n_chunks: usize,
+    exact_hint: bool,
+) -> (PartStream<ChunkStream>, Vec<u8>) {
+    let (stream, values) = create_chunk_stream(n_parts, n_chunks, exact_hint);
+    (PartStream::from_chunk_stream(stream).unwrap(), values)
+}
+
+#[tokio::test]
+async fn check_chunk_stream() {
+    let (stream, expected) = create_chunk_stream(10, 10, true);
+
+    let result = stream.into_vec().await.unwrap();
+
+    assert_eq!(result, expected);
 }
