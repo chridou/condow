@@ -3,7 +3,7 @@
 //! Many of the fields of [Config] are
 //! implemented with the new type pattern.
 //! This is mainly to allow them to be
-//! initialized from the envirinment.
+//! initialized from the environment.
 use std::{
     str::{from_utf8, FromStr},
     time::Duration,
