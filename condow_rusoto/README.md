@@ -1,5 +1,7 @@
 # CONcurrent DOWnloads from AWS S3
 
+**WARNING! Not yet for production usage**
+
 Download speed from S3 can be significantly improved by
 downloading parts of the file concurrently. This crate
 does exactly that.

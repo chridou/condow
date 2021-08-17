@@ -1,5 +1,7 @@
 # Condow
 
+**WARNING! Not yet for production usage**
+
 Condow is a CONcurrent DOWnloader which downloads BLOBs
 by splitting the download into parts and downloading them 
 concurrently.
