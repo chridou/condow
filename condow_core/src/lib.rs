@@ -21,6 +21,7 @@ use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{CondowError, GetSizeError};
 
+use request_reporter::{MakesReporter, Reporter};
 use streams::{BytesHint, ChunkStream, PartStream};
 
 #[macro_use]
@@ -30,6 +31,7 @@ pub mod config;
 mod download_range;
 pub mod errors;
 mod machinery;
+pub mod request_reporter;
 pub mod streams;
 
 pub use download_range::*;
@@ -48,7 +50,7 @@ pub mod test_utils;
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
 #[derive(Clone)]
-pub struct Condow<C> {
+pub struct Condow<C, MR = ()> {
     client: C,
     config: Config,
 }
@@ -63,7 +65,7 @@ impl<C: CondowClient> Condow<C> {
     }
 
     /// Create a reusable [Downloader] which is just an alternate form to use the API.
-    pub fn downloader(&self, location: C::Location) -> Downloader<C> {
+    pub fn downloader(&self, location: C::Location) -> Downloader<C, ()> {
         Downloader::new(self.clone(), location)
     }
 
@@ -78,6 +80,22 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
         get_size_mode: GetSizeMode,
+    ) -> Result<ChunkStream, CondowError> {
+        self.download_chunks_internal(location, range, get_size_mode, ())
+            .await
+    }
+
+    /// Get the size of a file at the given location
+    pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
+        self.client.get_size(location).await
+    }
+
+    async fn download_chunks_internal<R: Into<DownloadRange>, RP: Reporter>(
+        &self,
+        location: C::Location,
+        range: R,
+        get_size_mode: GetSizeMode,
+        reporter: RP,
     ) -> Result<ChunkStream, CondowError> {
         let range: DownloadRange = range.into();
         range.validate()?;
@@ -121,17 +139,12 @@ impl<C: CondowClient> Condow<C> {
         )
         .await
     }
-
-    /// Get the size of a file at the given location
-    pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
-        self.client.get_size(location).await
-    }
 }
 
 /// A configured downloader.
 ///
 /// This struct has state which configures a download.
-pub struct Downloader<C: CondowClient> {
+pub struct Downloader<C: CondowClient, MR: MakesReporter> {
     /// The location of the file to be downloaded
     pub location: C::Location,
     /// The range of the fle to be downloaded
@@ -142,19 +155,22 @@ pub struct Downloader<C: CondowClient> {
     ///
     /// Default: As configured with [Condow] itself
     pub get_size_mode: GetSizeMode,
+    pub reporter_maker: MR,
     condow: Condow<C>,
 }
 
-impl<C: CondowClient> Downloader<C> {
+impl<C: CondowClient> Downloader<C, ()> {
     pub fn new(condow: Condow<C>, location: C::Location) -> Self {
         Self {
             condow,
             location,
             range: DownloadRange::Open(OpenRange::Full),
             get_size_mode: GetSizeMode::default(),
+            reporter_maker: (),
         }
     }
-
+}
+impl<C: CondowClient, MR: MakesReporter> Downloader<C, MR> {
     /// Change the location of the download
     pub fn location(mut self, location: C::Location) -> Self {
         self.location = location;
@@ -173,6 +189,16 @@ impl<C: CondowClient> Downloader<C> {
         self
     }
 
+    pub fn instrumentation<II>(self, instrumentation: II) -> Downloader<C, II> where II: RequestInstrumentation {
+        Downloader {
+            condow: self.condow,
+            location: self.location,
+            range: self.range,
+            get_size_mode:self.get_size_mode,
+            instrumentation,
+        }
+    }
+
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts.
     ///
@@ -183,7 +209,7 @@ impl<C: CondowClient> Downloader<C> {
     /// See also [download](Condow::download)
     pub async fn download_chunks(&self) -> Result<ChunkStream, CondowError> {
         self.condow
-            .download_chunks(self.location.clone(), self.range, self.get_size_mode)
+            .download_chunks_internal(self.location.clone(), self.range, self.get_size_mode, self.instrumentation.clone())
             .await
     }
 
