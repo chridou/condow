@@ -27,6 +27,18 @@ pub struct Part {
     pub chunks: Vec<Bytes>,
 }
 
+impl Part {
+    /// Length of this [Part] in bytes
+    pub fn len(&self) -> usize {
+        self.chunks.iter().map(|b| b.len()).sum()
+    }
+
+    /// Returns `true` if there are no bytes in this [Part]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
 /// A struct to collect and aggregate received chunks for a part
 struct PartEntry {
     part_index: usize,
