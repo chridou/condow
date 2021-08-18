@@ -5,7 +5,7 @@ use crate::InclusiveRange;
 #[derive(Debug)]
 pub struct RangeRequest {
     /// Index of the part
-    pub part: usize,
+    pub part_index: usize,
     pub blob_range: InclusiveRange,
     /// Offset of the part within the downloaded range
     pub range_offset: usize,
@@ -45,7 +45,7 @@ impl RangeStream {
             start = current_end_incl + 1;
 
             let res = Some(RangeRequest {
-                part: counter,
+                part_index: counter,
                 blob_range,
                 range_offset: next_range_offset,
             });
@@ -214,12 +214,12 @@ async fn test_n_parts_vs_stream_count() {
                     end_incl
                 );
                 assert_eq!(
-                    items[0].part, 0,
+                    items[0].part_index, 0,
                     "first item part index: part_size={} start={}, end_incl={}",
                     part_size, start, end_incl
                 );
                 assert_eq!(
-                    items[items.len() - 1].part,
+                    items[items.len() - 1].part_index,
                     n_parts - 1,
                     "last item part index: part_size={} start={}, end_incl={}",
                     part_size,
@@ -236,7 +236,7 @@ async fn test_n_parts_vs_stream_count() {
                 );
                 items.windows(2).for_each(|window| {
                     assert_eq!(
-                        window[1].part - window[0].part,
+                        window[1].part_index - window[0].part_index,
                         1,
                         "first item file range: part_size={} start={}, end_incl={}",
                         part_size,
@@ -262,7 +262,7 @@ async fn test_n_parts_vs_stream_count() {
                     assert_eq!(
                         current_range_offset, next_range_offset,
                         "range_offset (part {}): part_size={} start={}, end_incl={}",
-                        rr.part, part_size, start, end_incl
+                        rr.part_index, part_size, start, end_incl
                     );
                     next_range_offset += rr.blob_range.len();
 
@@ -270,7 +270,7 @@ async fn test_n_parts_vs_stream_count() {
                     assert_eq!(
                         current_file_start, next_file_start,
                         "file_offset (part {}): part_size={} start={}, end_incl={}",
-                        rr.part, part_size, start, end_incl
+                        rr.part_index, part_size, start, end_incl
                     );
                     next_file_start += rr.blob_range.len();
                 })

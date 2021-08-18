@@ -7,19 +7,23 @@ use crate::config::Config;
 use crate::errors::CondowError;
 use crate::streams::{BytesHint, ChunkStream};
 use crate::InclusiveRange;
+use crate::Reporter;
 
 use self::range_stream::RangeStream;
 
-mod downloader;
+mod downloaders;
 mod range_stream;
 
-pub async fn download<C: CondowClient>(
+pub async fn download<C: CondowClient, R: Reporter>(
     client: C,
     location: C::Location,
     range: InclusiveRange,
     bytes_hint: BytesHint,
     config: Config,
+    reporter: R,
 ) -> Result<ChunkStream, CondowError> {
+    reporter.effective_range(range);
+
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
 
     if n_parts == 0 {
@@ -29,13 +33,14 @@ pub async fn download<C: CondowClient>(
     let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
 
     tokio::spawn(async move {
-        downloader::download_concurrently(
+        downloaders::download_concurrently(
             ranges_stream,
             config.max_concurrency.into_inner().min(n_parts),
             sender,
             client,
             config,
             location,
+            reporter,
         )
         .await
     });
@@ -46,7 +51,8 @@ pub async fn download<C: CondowClient>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::Config, machinery::download, streams::BytesHint, test_utils::*, InclusiveRange,
+        config::Config, machinery::download, reporter::NoReporter, streams::BytesHint,
+        test_utils::*, InclusiveRange,
     };
 
     #[tokio::test]
@@ -64,7 +70,7 @@ mod tests {
         let range = InclusiveRange(0, 8);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config)
+        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 
@@ -88,7 +94,7 @@ mod tests {
         let range = InclusiveRange(0, 9);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config)
+        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 
@@ -112,7 +118,7 @@ mod tests {
         let range = InclusiveRange(0, 10);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config)
+        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 

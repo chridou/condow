@@ -1,6 +1,6 @@
 [package]
 name = "condow_rusoto"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
@@ -14,7 +14,7 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-condow_core = { version = "0.1", path = "../condow_core"}
+condow_core = { version = "0.2", path = "../condow_core"}
 
 futures = "0.3"
 anyhow = "1.0"
