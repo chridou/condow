@@ -197,6 +197,11 @@ impl<C: CondowClient> Downloader<C> {
         let chunk_stream = self.download_chunks().await?;
         PartStream::from_chunk_stream(chunk_stream)
     }
+
+    /// Get the size of a file at the current location
+    pub async fn get_size(&self) -> Result<usize, GetSizeError> {
+        self.condow.get_size(self.location.clone()).await
+    }
 }
 
 /// Overide the behaviour when [Condow] does a request to get

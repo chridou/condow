@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.4] - 2021/08/18
 
+### ADDED
+
+* get_size method for downloader
+
+## [0.1.4] - 2021/08/18
+
 ### FIXED
 
 * removed leftover dbg!() usage
