@@ -173,7 +173,6 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
         let next = ready!(this.stream.poll_next(cx));
         match next {
             Some(Ok(chunk)) => {
-                dbg!(&chunk);
                 if chunk.chunk_index == 0
                     && chunk.is_last()
                     && chunk.part_index == *this.next_part_idx
