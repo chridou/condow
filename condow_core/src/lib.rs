@@ -55,7 +55,7 @@ pub struct Condow<C, MR = ()> {
     config: Config,
 }
 
-impl<C: CondowClient> Condow<C> {
+impl<C: CondowClient, MR: MakesReporter> Condow<C> {
     /// Create a new CONcurrent DOWnloader.
     ///
     /// Fails if the [Config] is not valid.
