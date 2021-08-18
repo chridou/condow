@@ -5,7 +5,7 @@
 //! does exactly that.
 //!
 //! Unlike e.g. the AWS Java SDK this library does not download
-//! the parts as upladed but ranges.
+//! the parts as uploaded but ranges.
 use std::{
     fmt,
     ops::{Deref, DerefMut},
