@@ -5,7 +5,7 @@ use futures::{
     future::{self, BoxFuture},
     stream, StreamExt as _,
 };
-use rand::{prelude::SliceRandom, rngs::OsRng, thread_rng, Rng};
+use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{

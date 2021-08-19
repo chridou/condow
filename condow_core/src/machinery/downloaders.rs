@@ -172,11 +172,12 @@ impl Downloader {
                         Err(err) => {
                             kill_switch.push_the_button();
                             request_receiver.close();
-                            let _ = results_sender.unbounded_send(Err(err.into()));
+                            let _ = results_sender.unbounded_send(Err(err));
                             break;
                         }
                     };
                 }
+                drop(watcher);
             }
         });
 

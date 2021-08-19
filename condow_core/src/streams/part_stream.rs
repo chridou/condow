@@ -272,7 +272,7 @@ mod tests {
         while let Some(next) = stream.next().await {
             let next = next.unwrap();
 
-            next.chunks.iter().flat_map(|chunks| chunks).for_each(|&v| {
+            next.chunks.iter().flatten().for_each(|&v| {
                 collected.push(v);
             });
         }
