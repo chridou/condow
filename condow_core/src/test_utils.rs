@@ -142,19 +142,16 @@ pub fn create_chunk_stream(
     max_variable_chunk_size: Option<usize>,
 ) -> (ChunkStream, Vec<u8>) {
     let mut values = Vec::new();
-    let mut value = &mut 1u8;
+    let value = &mut 1u8;
     let mut get_next = || {
+        let v = *value;
         if *value == 255 {
-            let v = *value;
-            values.push(v);
             *value = 1;
-            v
         } else {
-            let v = *value;
-            values.push(v);
             *value += 1;
-            v
         }
+        values.push(v);
+        v
     };
 
     let mut rng = rand::thread_rng();
