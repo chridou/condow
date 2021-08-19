@@ -1,3 +1,11 @@
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+
 use futures::{
     channel::mpsc::{self, Sender, UnboundedSender},
     Stream, StreamExt,
@@ -7,18 +15,20 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::Config,
     errors::{CondowError, IoError},
+    reporter::Reporter,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
 
 use super::{range_stream::RangeRequest, KillSwitch};
 
-pub async fn download_concurrently<C: CondowClient>(
+pub async fn download_concurrently<C: CondowClient, R: Reporter>(
     ranges_stream: impl Stream<Item = RangeRequest>,
     n_concurrent: usize,
     results_sender: UnboundedSender<ChunkStreamItem>,
     client: C,
     config: Config,
     location: C::Location,
+    reporter: R,
 ) -> Result<(), ()> {
     let mut downloader = ConcurrentDownloader::new(
         n_concurrent,
@@ -26,26 +36,30 @@ pub async fn download_concurrently<C: CondowClient>(
         client,
         config.clone(),
         location,
+        reporter,
     );
     downloader.download(ranges_stream).await
 }
 
-struct ConcurrentDownloader {
+struct ConcurrentDownloader<R: Reporter> {
     downloaders: Vec<Downloader>,
     counter: usize,
     kill_switch: KillSwitch,
     config: Config,
+    reporter: R,
 }
 
-impl ConcurrentDownloader {
+impl<R: Reporter> ConcurrentDownloader<R> {
     pub fn new<C: CondowClient>(
         n_concurrent: usize,
         results_sender: UnboundedSender<ChunkStreamItem>,
         client: C,
         config: Config,
         location: C::Location,
+        reporter: R,
     ) -> Self {
         let kill_switch = KillSwitch::new();
+        let counter = Arc::new(AtomicUsize::new(0));
         let downloaders: Vec<_> = (0..n_concurrent)
             .map(|_| {
                 Downloader::new(
@@ -54,6 +68,7 @@ impl ConcurrentDownloader {
                     kill_switch.clone(),
                     location.clone(),
                     config.buffer_size.into(),
+                    DownloadersWatcher::new(Arc::clone(&counter), reporter.clone()),
                 )
             })
             .collect();
@@ -63,6 +78,7 @@ impl ConcurrentDownloader {
             counter: 0,
             kill_switch,
             config,
+            reporter,
         }
     }
 
@@ -70,6 +86,7 @@ impl ConcurrentDownloader {
         &mut self,
         ranges_stream: impl Stream<Item = RangeRequest>,
     ) -> Result<(), ()> {
+        self.reporter.download_started();
         let mut ranges_stream = Box::pin(ranges_stream);
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
@@ -79,6 +96,7 @@ impl ConcurrentDownloader {
 
             loop {
                 if attempt % self.downloaders.len() == 0 {
+                    self.reporter.queue_full();
                     tokio::time::sleep(buffers_full_delay).await;
                 }
                 let idx = self.counter + attempt;
@@ -110,12 +128,13 @@ struct Downloader {
 }
 
 impl Downloader {
-    pub fn new<C: CondowClient>(
+    pub fn new<C: CondowClient, R: Reporter>(
         client: C,
         results_sender: UnboundedSender<ChunkStreamItem>,
         kill_switch: KillSwitch,
         location: C::Location,
         buffer_size: usize,
+        watcher: DownloadersWatcher<R>,
     ) -> Self {
         let (sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
@@ -140,6 +159,7 @@ impl Downloader {
                                 bytes_stream,
                                 &results_sender,
                                 range_request,
+                                watcher.reporter.clone(),
                             )
                             .await
                             .is_err()
@@ -152,11 +172,12 @@ impl Downloader {
                         Err(err) => {
                             kill_switch.push_the_button();
                             request_receiver.close();
-                            let _ = results_sender.unbounded_send(Err(err.into()));
+                            let _ = results_sender.unbounded_send(Err(err));
                             break;
                         }
                     };
                 }
+                drop(watcher);
             }
         });
 
@@ -185,25 +206,54 @@ impl Downloader {
     }
 }
 
-async fn consume_and_dispatch_bytes(
+struct DownloadersWatcher<R: Reporter> {
+    counter: Arc<AtomicUsize>,
+    reporter: R,
+}
+
+impl<R: Reporter> DownloadersWatcher<R> {
+    pub fn new(counter: Arc<AtomicUsize>, reporter: R) -> Self {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Self { counter, reporter }
+    }
+}
+
+impl<R: Reporter> Drop for DownloadersWatcher<R> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::SeqCst);
+        if self.counter.load(Ordering::SeqCst) == 0 {
+            self.reporter.download_finished()
+        }
+    }
+}
+
+async fn consume_and_dispatch_bytes<R: Reporter>(
     mut bytes_stream: BytesStream,
     results_sender: &UnboundedSender<ChunkStreamItem>,
     range_request: RangeRequest,
+    reporter: R,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
     let mut offset_in_range = 0;
     let mut bytes_received = 0;
     let bytes_expected = range_request.blob_range.len();
+    let part_start = Instant::now();
+    let mut chunk_start = Instant::now();
+
+    reporter.part_started(range_request.part_index, range_request.blob_range);
+
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
+                let t_chunk = chunk_start.elapsed();
+                chunk_start = Instant::now();
                 let n_bytes = bytes.len();
                 bytes_received += bytes.len();
 
                 if bytes_received > bytes_expected {
                     let msg = Err(CondowError::Other(format!(
-                        "received mor ebytes than expected for part {} ({}..={}). expected {}, received {}",
-                        range_request.part,
+                        "received more bytes than expected for part {} ({}..={}). expected {}, received {}",
+                        range_request.part_index,
                         range_request.blob_range.start(),
                         range_request.blob_range.end_incl(),
                         range_request.blob_range.len(),
@@ -213,9 +263,11 @@ async fn consume_and_dispatch_bytes(
                     return Err(());
                 }
 
+                reporter.chunk_completed(range_request.part_index, n_bytes, t_chunk);
+
                 results_sender
                     .unbounded_send(Ok(Chunk {
-                        part_index: range_request.part,
+                        part_index: range_request.part_index,
                         chunk_index,
                         blob_offset: range_request.blob_range.start() + offset_in_range,
                         range_offset: range_request.range_offset + offset_in_range,
@@ -233,10 +285,17 @@ async fn consume_and_dispatch_bytes(
         }
     }
 
+    reporter.part_completed(
+        range_request.part_index,
+        chunk_index,
+        bytes_received,
+        part_start.elapsed(),
+    );
+
     if bytes_received != bytes_expected {
         let msg = Err(CondowError::Other(format!(
             "received wrong number of bytes for part {} ({}..={}). expected {}, received {}",
-            range_request.part,
+            range_request.part_index,
             range_request.blob_range.start(),
             range_request.blob_range.end_incl(),
             range_request.blob_range.len(),
@@ -251,11 +310,18 @@ async fn consume_and_dispatch_bytes(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{atomic::AtomicUsize, Arc};
+
     use futures::StreamExt;
 
     use crate::{
         config::Config,
-        machinery::{downloader::Downloader, range_stream::RangeStream, KillSwitch},
+        machinery::{
+            downloaders::{Downloader, DownloadersWatcher},
+            range_stream::RangeStream,
+            KillSwitch,
+        },
+        reporter::NoReporter,
         streams::{BytesHint, Chunk, ChunkStream},
         test_utils::*,
         InclusiveRange,
@@ -294,6 +360,7 @@ mod tests {
             KillSwitch::new(),
             (),
             config.buffer_size.into(),
+            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporter),
         );
 
         while let Some(next) = ranges_stream.next().await {

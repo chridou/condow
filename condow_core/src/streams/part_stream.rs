@@ -265,14 +265,14 @@ mod tests {
 
     #[tokio::test]
     async fn check_iter_one_part_one_chunk() {
-        let (mut stream, expected) = create_part_stream(1, 1, true);
+        let (mut stream, expected) = create_part_stream(1, 1, true, Some(10));
 
         let mut collected = Vec::new();
 
         while let Some(next) = stream.next().await {
             let next = next.unwrap();
 
-            next.chunks.iter().flat_map(|chunks| chunks).for_each(|&v| {
+            next.chunks.iter().flatten().for_each(|&v| {
                 collected.push(v);
             });
         }
@@ -282,7 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn check_iter_one_part_two_chunks() {
-        let (mut stream, expected) = create_part_stream(1, 2, true);
+        let (mut stream, expected) = create_part_stream(1, 2, true, Some(10));
 
         let mut collected = Vec::new();
 
@@ -299,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn check_iter_two_parts_one_chunk() {
-        let (mut stream, expected) = create_part_stream(2, 1, true);
+        let (mut stream, expected) = create_part_stream(2, 1, true, Some(10));
 
         let mut collected = Vec::new();
 
@@ -318,7 +318,7 @@ mod tests {
     async fn check_iter_multiple() {
         for parts in 1..10 {
             for chunks in 1..10 {
-                let (mut stream, expected) = create_part_stream(parts, chunks, true);
+                let (mut stream, expected) = create_part_stream(parts, chunks, true, Some(10));
 
                 let mut collected = Vec::new();
 
@@ -342,7 +342,7 @@ mod tests {
         async fn with_exact_hint() {
             for parts in 1..10 {
                 for chunks in 1..10 {
-                    let (stream, expected) = create_part_stream(parts, chunks, true);
+                    let (stream, expected) = create_part_stream(parts, chunks, true, Some(10));
 
                     let result = stream.into_vec().await.unwrap();
 
@@ -355,7 +355,7 @@ mod tests {
         async fn with_at_max_hint() {
             for parts in 1..10 {
                 for chunks in 1..10 {
-                    let (stream, expected) = create_part_stream(parts, chunks, false);
+                    let (stream, expected) = create_part_stream(parts, chunks, false, Some(10));
 
                     let result = stream.into_vec().await.unwrap();
 

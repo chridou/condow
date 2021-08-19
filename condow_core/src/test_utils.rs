@@ -139,40 +139,70 @@ pub fn create_chunk_stream(
     n_parts: usize,
     n_chunks: usize,
     exact_hint: bool,
+    max_variable_chunk_size: Option<usize>,
 ) -> (ChunkStream, Vec<u8>) {
-    let total_chunks = n_parts * n_chunks;
+    let mut values = Vec::new();
+    let mut value = &mut 1u8;
+    let mut get_next = || {
+        if *value == 255 {
+            let v = *value;
+            values.push(v);
+            *value = 1;
+            v
+        } else {
+            let v = *value;
+            values.push(v);
+            *value += 1;
+            v
+        }
+    };
+
     let mut rng = rand::thread_rng();
     let blob_offset: usize = rng.gen_range(0..1_000);
 
     let mut parts: Vec<Vec<ChunkStreamItem>> = Vec::new();
 
-    let mut values = Vec::new();
-
-    let mut value = 1u8;
     let mut range_offset = 0;
     for part_index in 0usize..n_parts {
-        let mut chunks = Vec::new();
+        let mut chunks = Vec::with_capacity(n_chunks);
+
+        let mut chunks_bytes = Vec::with_capacity(n_chunks);
+
         for chunk_index in 0usize..n_chunks {
+            let bytes = if let Some(max) = max_variable_chunk_size {
+                let n = rng.gen_range(1..=max);
+                let mut items = Vec::with_capacity(n);
+                (0..n).for_each(|_| items.push(get_next()));
+                Bytes::from(items)
+            } else {
+                Bytes::from(vec![get_next()])
+            };
+            chunks_bytes.push((chunk_index, bytes));
+        }
+
+        let mut bytes_left_in_part = chunks_bytes.iter().map(|(_, bytes)| bytes.len()).sum();
+
+        for (chunk_index, bytes) in chunks_bytes {
+            let n_bytes = bytes.len();
+            bytes_left_in_part -= n_bytes;
             let chunk = Chunk {
                 part_index,
                 chunk_index,
                 blob_offset: blob_offset + range_offset,
                 range_offset,
-                bytes: Bytes::from(vec![value]),
-                bytes_left: n_chunks - 1 - chunk_index,
+                bytes: bytes,
+                bytes_left: bytes_left_in_part,
             };
             chunks.push(Ok(chunk));
-            values.push(value);
-            range_offset += 1;
-            value += 1;
+            range_offset += n_bytes;
         }
         parts.push(chunks);
     }
 
     let bytes_hint = if exact_hint {
-        BytesHint::new_exact(total_chunks)
+        BytesHint::new_exact(values.len())
     } else {
-        BytesHint::new_at_max(total_chunks)
+        BytesHint::new_at_max(values.len())
     };
 
     parts.shuffle(&mut rng);
@@ -201,14 +231,25 @@ pub fn create_part_stream(
     n_parts: usize,
     n_chunks: usize,
     exact_hint: bool,
+    max_variable_chunk_size: Option<usize>,
 ) -> (PartStream<ChunkStream>, Vec<u8>) {
-    let (stream, values) = create_chunk_stream(n_parts, n_chunks, exact_hint);
+    let (stream, values) =
+        create_chunk_stream(n_parts, n_chunks, exact_hint, max_variable_chunk_size);
     (PartStream::from_chunk_stream(stream).unwrap(), values)
 }
 
 #[tokio::test]
-async fn check_chunk_stream() {
-    let (stream, expected) = create_chunk_stream(10, 10, true);
+async fn check_chunk_stream_fixed_chunk_size() {
+    let (stream, expected) = create_chunk_stream(10, 10, true, None);
+
+    let result = stream.into_vec().await.unwrap();
+
+    assert_eq!(result, expected);
+}
+
+#[tokio::test]
+async fn check_chunk_stream_variable_chunk_size() {
+    let (stream, expected) = create_chunk_stream(10, 10, true, Some(10));
 
     let result = stream.into_vec().await.unwrap();
 
