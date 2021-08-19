@@ -76,8 +76,12 @@ mod simple_reporter {
             let inner = self.inner.as_ref();
             let download_time = *inner.download_finished_at.lock().unwrap()
                 - *inner.download_finished_at.lock().unwrap();
-            let bytes_per_second_f64 =
-                inner.n_bytes_received.load(Ordering::SeqCst) as f64 / download_time.as_secs_f64();
+            let n_bytes_received = inner.n_bytes_received.load(Ordering::SeqCst);
+            let bytes_per_second_f64 = if n_bytes_received > 0 {
+                n_bytes_received as f64 / download_time.as_secs_f64()
+            } else {
+                0.0
+            };
 
             SimpleReport {
                 download_time,
@@ -87,7 +91,7 @@ mod simple_reporter {
                 gigabits_per_second: (bytes_per_second_f64 / 1_000_000_000.0) as u64 * 8,
                 gibibits_per_second: ((bytes_per_second_f64 * 8.0) / 1_073_741_824.0) as u64,
                 n_queue_full: inner.n_queue_full.load(Ordering::SeqCst),
-                n_bytes_received: inner.n_bytes_received.load(Ordering::SeqCst),
+                n_bytes_received,
                 n_chunks_received: inner.n_chunks_received.load(Ordering::SeqCst),
                 n_parts_received: inner.n_parts_received.load(Ordering::SeqCst),
                 min_chunk_bytes: inner.min_chunk_bytes.load(Ordering::SeqCst),
