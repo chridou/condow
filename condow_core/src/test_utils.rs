@@ -187,7 +187,7 @@ pub fn create_chunk_stream(
                 chunk_index,
                 blob_offset: blob_offset + range_offset,
                 range_offset,
-                bytes: bytes,
+                bytes,
                 bytes_left: bytes_left_in_part,
             };
             chunks.push(Ok(chunk));

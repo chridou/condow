@@ -99,19 +99,32 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         Downloader::new(self.clone())
     }
 
-    /// Download a file (potentially) concurrently
+    /// Download a BLOB range (potentially) concurrently
     ///
     /// Returns a stream of [Chunk](streams::Chunk)s.
-    /// The [Chunk](streams::Chunk)s are ordered for each individually downloaded
-    /// part of the whole download. But the parts themselves are downloaded
-    /// with no defined ordering due to the concurrency.
     pub async fn download_chunks<R: Into<DownloadRange>>(
         &self,
         location: C::Location,
         range: R,
-    ) -> Result<Outcome<ChunkStream, RF::ReporterType>, CondowError> {
-        self.download_chunks_internal(location, range, GetSizeMode::Default)
+    ) -> Result<ChunkStream, CondowError> {
+        self.download_chunks_internal(location, range, GetSizeMode::Default, NoReporter)
             .await
+            .map(|o| o.into_stream())
+    }
+
+    /// Download a BLOB range (potentially) concurrently
+    ///
+    /// Returns a stream of [Parts](streams::Part)s.
+    pub async fn download<R: Into<DownloadRange>>(
+        &self,
+        location: C::Location,
+        range: R,
+    ) -> Result<PartStream<ChunkStream>, CondowError> {
+        let chunk_stream = self
+            .download_chunks_internal(location, range, GetSizeMode::Default, NoReporter)
+            .await
+            .map(|o| o.into_stream())?;
+        PartStream::from_chunk_stream(chunk_stream)
     }
 
     /// Get the size of a file at the given location
@@ -119,13 +132,13 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         self.client.get_size(location).await
     }
 
-    async fn download_chunks_internal<R: Into<DownloadRange>>(
+    async fn download_chunks_internal<R: Into<DownloadRange>, RP: Reporter>(
         &self,
         location: C::Location,
         range: R,
         get_size_mode: GetSizeMode,
-    ) -> Result<Outcome<ChunkStream, RF::ReporterType>, CondowError> {
-        let reporter = self.reporter_factory.make();
+        reporter: RP,
+    ) -> Result<Outcome<ChunkStream, RP>, CondowError> {
         let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {

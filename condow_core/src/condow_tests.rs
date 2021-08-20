@@ -1,5 +1,6 @@
-mod file {
+mod blob {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use crate::reporter::SimpleReporterFactory;
     use crate::{config::Config, test_utils::*, Condow};
@@ -7,7 +8,7 @@ mod file {
     use crate::test_utils::create_test_data;
 
     #[tokio::test]
-    async fn download_blob() {
+    async fn download_complete_blob_with_reporter() {
         let buffer_size = 10;
 
         let data = Arc::new(create_test_data());
@@ -31,14 +32,49 @@ mod file {
                         Condow::new_with_reporting(client.clone(), config, SimpleReporterFactory)
                             .unwrap();
 
-                    let result_stream = condow
-                        .download_chunks_internal((), .., Default::default())
-                        .await
-                        .unwrap();
+                    let downloader = condow.downloader();
+
+                    let result_stream = downloader.download_rep((), ..).await.unwrap();
 
                     let result = result_stream.into_stream().into_vec().await.unwrap();
 
                     assert_eq!(&result, data.as_ref());
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn check_simple_reporter() {
+        let buffer_size = 10;
+
+        let data = Arc::new(create_test_data());
+
+        for chunk_size in [1, 3, 5] {
+            let client = TestCondowClient {
+                data: Arc::clone(&data),
+                max_jitter_ms: 0,
+                include_size_hint: true,
+                max_chunk_size: chunk_size,
+            };
+
+            for part_size in [1usize, 3, 50, 1_000] {
+                for n_concurrency in [1usize, 10] {
+                    let config = Config::default()
+                        .buffer_size(buffer_size)
+                        .buffers_full_delay_ms(0)
+                        .part_size_bytes(part_size)
+                        .max_concurrency(n_concurrency);
+                    let condow =
+                        Condow::new_with_reporting(client.clone(), config, SimpleReporterFactory)
+                            .unwrap();
+
+                    let downloader = condow.downloader();
+
+                    let result_stream = downloader.download_rep((), ..).await.unwrap();
+
+                    let report = result_stream.reporter.report();
+                    assert!(report.download_time > Duration::ZERO);
                 }
             }
         }
@@ -49,7 +85,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
-        use crate::reporter::SimpleReporterFactory;
+        use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
         #[tokio::test]
@@ -73,12 +109,7 @@ mod range {
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
-                        let condow = Condow::new_with_reporting(
-                            client.clone(),
-                            config,
-                            SimpleReporterFactory,
-                        )
-                        .unwrap();
+                        let condow = Condow::new(client.clone(), config).unwrap();
 
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
@@ -88,6 +119,7 @@ mod range {
                                     (),
                                     range.clone(),
                                     crate::GetSizeMode::Always,
+                                    SimpleReporter::default(),
                                 )
                                 .await
                                 .unwrap();
@@ -123,12 +155,7 @@ mod range {
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
-                        let condow = Condow::new_with_reporting(
-                            client.clone(),
-                            config,
-                            SimpleReporterFactory,
-                        )
-                        .unwrap();
+                        let condow = Condow::new(client.clone(), config).unwrap();
 
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
@@ -138,6 +165,7 @@ mod range {
                                     (),
                                     range.clone(),
                                     crate::GetSizeMode::Required,
+                                    SimpleReporter::default(),
                                 )
                                 .await
                                 .unwrap();
@@ -156,7 +184,7 @@ mod range {
     mod closed {
         use std::sync::Arc;
 
-        use crate::reporter::SimpleReporterFactory;
+        use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
         #[tokio::test]
@@ -180,12 +208,7 @@ mod range {
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
-                        let condow = Condow::new_with_reporting(
-                            client.clone(),
-                            config,
-                            SimpleReporterFactory,
-                        )
-                        .unwrap();
+                        let condow = Condow::new(client.clone(), config).unwrap();
 
                         for end_incl in [0usize, 2, 101, 255] {
                             let range = 0..=end_incl;
@@ -196,6 +219,7 @@ mod range {
                                     (),
                                     range.clone(),
                                     crate::GetSizeMode::Default,
+                                    SimpleReporter::default(),
                                 )
                                 .await
                                 .unwrap();
@@ -230,12 +254,7 @@ mod range {
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
-                        let condow = Condow::new_with_reporting(
-                            client.clone(),
-                            config,
-                            SimpleReporterFactory,
-                        )
-                        .unwrap();
+                        let condow = Condow::new(client.clone(), config).unwrap();
 
                         for end_excl in [0usize, 2, 101, 255, 256] {
                             let range = 0..end_excl;
@@ -246,6 +265,7 @@ mod range {
                                     (),
                                     range.clone(),
                                     crate::GetSizeMode::Default,
+                                    SimpleReporter::default(),
                                 )
                                 .await
                                 .unwrap();
@@ -263,7 +283,7 @@ mod range {
             mod start_at_0 {
                 use std::sync::Arc;
 
-                use crate::reporter::SimpleReporterFactory;
+                use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
                 #[tokio::test]
@@ -287,12 +307,7 @@ mod range {
                                     .buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
-                                let condow = Condow::new_with_reporting(
-                                    client.clone(),
-                                    config,
-                                    SimpleReporterFactory,
-                                )
-                                .unwrap();
+                                let condow = Condow::new(client.clone(), config).unwrap();
 
                                 for end_incl in [0usize, 2, 101, 255, 255] {
                                     let range = 0..=end_incl;
@@ -303,6 +318,7 @@ mod range {
                                             (),
                                             range,
                                             crate::GetSizeMode::Default,
+                                            SimpleReporter::default(),
                                         )
                                         .await
                                         .unwrap();
@@ -338,12 +354,7 @@ mod range {
                                     .buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
-                                let condow = Condow::new_with_reporting(
-                                    client.clone(),
-                                    config,
-                                    SimpleReporterFactory,
-                                )
-                                .unwrap();
+                                let condow = Condow::new(client.clone(), config).unwrap();
 
                                 for end_excl in [0usize, 2, 101, 255, 256] {
                                     let range = 0..end_excl;
@@ -354,6 +365,7 @@ mod range {
                                             (),
                                             range,
                                             crate::GetSizeMode::Default,
+                                            SimpleReporter::default(),
                                         )
                                         .await
                                         .unwrap();
@@ -372,7 +384,7 @@ mod range {
             mod start_after_0 {
                 use std::sync::Arc;
 
-                use crate::reporter::SimpleReporterFactory;
+                use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
                 #[tokio::test]
@@ -396,12 +408,7 @@ mod range {
                                     .buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
-                                let condow = Condow::new_with_reporting(
-                                    client.clone(),
-                                    config,
-                                    SimpleReporterFactory,
-                                )
-                                .unwrap();
+                                let condow = Condow::new(client.clone(), config).unwrap();
 
                                 for start in [1usize, 87, 101, 201] {
                                     for len in [1, 10, 100] {
@@ -414,6 +421,7 @@ mod range {
                                                 (),
                                                 range,
                                                 crate::GetSizeMode::Default,
+                                                SimpleReporter::default(),
                                             )
                                             .await
                                             .unwrap();
@@ -450,12 +458,7 @@ mod range {
                                     .buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
-                                let condow = Condow::new_with_reporting(
-                                    client.clone(),
-                                    config,
-                                    SimpleReporterFactory,
-                                )
-                                .unwrap();
+                                let condow = Condow::new(client.clone(), config).unwrap();
 
                                 for start in [1usize, 87, 101, 201] {
                                     for len in [1, 10, 100] {
@@ -468,6 +471,7 @@ mod range {
                                                 (),
                                                 range,
                                                 crate::GetSizeMode::Default,
+                                                SimpleReporter::default(),
                                             )
                                             .await
                                             .unwrap();

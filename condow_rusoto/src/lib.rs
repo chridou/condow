@@ -24,7 +24,6 @@ use condow_core::{
     errors::{CondowError, GetSizeError, IoError},
     reporter::ReporterFactory,
     streams::{BytesHint, BytesStream},
-    Condow,
 };
 
 pub use condow_core::*;
