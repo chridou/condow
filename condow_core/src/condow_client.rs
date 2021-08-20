@@ -32,7 +32,7 @@ impl DownloadSpec {
 ///
 /// This is an adapter trait
 pub trait CondowClient: Clone + Send + Sync + 'static {
-    type Location: std::fmt::Debug + Clone + Send + Sync + 'static;
+    type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
     /// Returns the size of the BLOB at the given location
     fn get_size(&self, location: Self::Location)

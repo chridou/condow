@@ -138,13 +138,13 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         range: R,
         get_size_mode: GetSizeMode,
         reporter: RP,
-    ) -> Result<Outcome<ChunkStream, RP>, CondowError> {
+    ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
         let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {
             range
         } else {
-            return Ok(Outcome::new(ChunkStream::empty(), reporter));
+            return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
         };
 
         let (inclusive_range, bytes_hint) = match range {
@@ -153,7 +153,7 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
                 if let Some(range) = or.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
-                    return Ok(Outcome::new(ChunkStream::empty(), reporter));
+                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
                 }
             }
             DownloadRange::Closed(cl) => {
@@ -162,12 +162,12 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
                     if let Some(range) = cl.incl_range_from_size(size) {
                         (range, BytesHint::new_exact(range.len()))
                     } else {
-                        return Ok(Outcome::new(ChunkStream::empty(), reporter));
+                        return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
                     }
                 } else if let Some(range) = cl.incl_range() {
                     (range, BytesHint::new_at_max(range.len()))
                 } else {
-                    return Ok(Outcome::new(ChunkStream::empty(), reporter));
+                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
                 }
             }
         };
@@ -182,16 +182,16 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         )
         .await?;
 
-        Ok(Outcome { reporter, stream })
+        Ok(StreamWithReport { reporter, stream })
     }
 }
 
-pub struct Outcome<St: Stream, R: Reporter> {
+pub struct StreamWithReport<St: Stream, R: Reporter> {
     pub stream: St,
     pub reporter: R,
 }
 
-impl<St, R> Outcome<St, R>
+impl<St, R> StreamWithReport<St, R>
 where
     St: Stream,
     R: Reporter,
@@ -209,14 +209,14 @@ where
     }
 }
 
-impl<R> Outcome<ChunkStream, R>
+impl<R> StreamWithReport<ChunkStream, R>
 where
     R: Reporter,
 {
-    pub fn part_stream(self) -> Result<Outcome<PartStream<ChunkStream>, R>, CondowError> {
-        let Outcome { stream, reporter } = self;
+    pub fn part_stream(self) -> Result<StreamWithReport<PartStream<ChunkStream>, R>, CondowError> {
+        let StreamWithReport { stream, reporter } = self;
         let part_stream = PartStream::from_chunk_stream(stream)?;
-        Ok(Outcome::new(part_stream, reporter))
+        Ok(StreamWithReport::new(part_stream, reporter))
     }
 
     pub async fn write_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
@@ -228,7 +228,7 @@ where
     }
 }
 
-impl<S, R> Outcome<PartStream<S>, R>
+impl<S, R> StreamWithReport<PartStream<S>, R>
 where
     S: Stream<Item = ChunkStreamItem> + Unpin,
     R: Reporter,

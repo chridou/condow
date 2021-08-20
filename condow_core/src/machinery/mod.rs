@@ -70,7 +70,7 @@ mod tests {
         let range = InclusiveRange(0, 8);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
+        let result_stream = download(client, NoLocation, range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 
@@ -94,7 +94,7 @@ mod tests {
         let range = InclusiveRange(0, 9);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
+        let result_stream = download(client, NoLocation, range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 
@@ -118,7 +118,7 @@ mod tests {
         let range = InclusiveRange(0, 10);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream = download(client, (), range, bytes_hint, config, NoReporter)
+        let result_stream = download(client, NoLocation, range, bytes_hint, config, NoReporter)
             .await
             .unwrap();
 

@@ -358,7 +358,7 @@ mod tests {
             client,
             results_sender,
             KillSwitch::new(),
-            (),
+            NoLocation,
             config.buffer_size.into(),
             DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporter),
         );

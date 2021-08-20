@@ -14,6 +14,15 @@ use crate::{
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
 };
 
+#[derive(Debug, Clone)]
+pub struct NoLocation;
+
+impl std::fmt::Display for NoLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "NoLocation")
+    }
+}
+
 #[derive(Clone)]
 pub struct TestCondowClient {
     pub data: Arc<Vec<u8>>,
@@ -59,7 +68,7 @@ impl Default for TestCondowClient {
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = ();
+    type Location = NoLocation;
 
     fn get_size(
         &self,

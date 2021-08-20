@@ -3,7 +3,7 @@ use crate::{
     errors::{CondowError, GetSizeError},
     reporter::{NoReporter, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
-    Condow, DownloadRange, GetSizeMode, Outcome,
+    Condow, DownloadRange, GetSizeMode, StreamWithReport,
 };
 
 /// A configured downloader.
@@ -74,7 +74,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         &self,
         location: C::Location,
         range: R,
-    ) -> Result<Outcome<PartStream<ChunkStream>, RF::ReporterType>, CondowError> {
+    ) -> Result<StreamWithReport<PartStream<ChunkStream>, RF::ReporterType>, CondowError> {
         let reporter = self.condow.reporter_factory.make();
         self.download_wrep(location, range, reporter).await
     }
@@ -91,7 +91,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         &self,
         location: C::Location,
         range: R,
-    ) -> Result<Outcome<ChunkStream, RF::ReporterType>, CondowError> {
+    ) -> Result<StreamWithReport<ChunkStream, RF::ReporterType>, CondowError> {
         let reporter = self.condow.reporter_factory.make();
         self.download_chunks_wrep(location, range, reporter).await
     }
@@ -107,7 +107,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         location: C::Location,
         range: R,
         reporter: RP,
-    ) -> Result<Outcome<PartStream<ChunkStream>, RP>, CondowError> {
+    ) -> Result<StreamWithReport<PartStream<ChunkStream>, RP>, CondowError> {
         self.download_chunks_wrep(location, range, reporter)
             .await?
             .part_stream()
@@ -126,7 +126,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         location: C::Location,
         range: R,
         reporter: RP,
-    ) -> Result<Outcome<ChunkStream, RP>, CondowError> {
+    ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
         self.condow
             .download_chunks_internal(location, range, self.get_size_mode, reporter)
             .await
