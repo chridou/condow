@@ -17,6 +17,8 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// The actual IO started
     fn download_started(&self) {}
     /// IO tasks finished
+    ///
+    /// **This always is the last method called on a [Reporter].**
     fn download_finished(&self) {}
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
@@ -72,10 +74,21 @@ mod simple_reporter {
             }
         }
 
+        /// Returns true once the download is finished
+        ///
+        /// As long as this method does not return `true` values in the [SimpleReport]
+        /// will change.
+        pub fn is_download_finished(&self) -> bool {
+            self.inner.download_finished_at.lock().unwrap().is_some()
+        }
+
         pub fn report(&self) -> SimpleReport {
             let inner = self.inner.as_ref();
-            let download_time = *inner.download_finished_at.lock().unwrap()
-                - *inner.download_started_at.lock().unwrap();
+            let download_time = if let Some(finished_at) = *inner.download_finished_at.lock().unwrap() {
+                finished_at - *inner.download_started_at.lock().unwrap()
+            } else {
+                Instant::now() - *inner.download_started_at.lock().unwrap()
+            };
             let n_bytes_received = inner.n_bytes_received.load(Ordering::SeqCst);
             let bytes_per_second_f64 = if n_bytes_received > 0 {
                 n_bytes_received as f64 / download_time.as_secs_f64()
@@ -116,6 +129,8 @@ mod simple_reporter {
 
     #[derive(Debug, Clone)]
     pub struct SimpleReport {
+        /// If the download is not yet finished, this is the time 
+        /// elapsed since the start of the download.
         pub download_time: Duration,
         pub bytes_per_second: u64,
         pub megabytes_per_second: u64,
@@ -144,7 +159,7 @@ mod simple_reporter {
         }
 
         fn download_finished(&self) {
-            *self.inner.download_finished_at.lock().unwrap() = Instant::now();
+            *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
         }
 
         fn queue_full(&self) {
@@ -187,7 +202,7 @@ mod simple_reporter {
 
     struct Inner {
         download_started_at: Mutex<Instant>,
-        download_finished_at: Mutex<Instant>,
+        download_finished_at: Mutex<Option<Instant>>,
         n_queue_full: AtomicUsize,
         n_bytes_received: AtomicUsize,
         n_chunks_received: AtomicUsize,
@@ -208,7 +223,7 @@ mod simple_reporter {
         fn new() -> Self {
             Inner {
                 download_started_at: Mutex::new(Instant::now()),
-                download_finished_at: Mutex::new(Instant::now()),
+                download_finished_at: Mutex::new(None),
                 n_bytes_received: AtomicUsize::new(0),
                 n_chunks_received: AtomicUsize::new(0),
                 n_parts_received: AtomicUsize::new(0),
