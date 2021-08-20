@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
+
 use crate::{
     condow_client::CondowClient,
     errors::{CondowError, GetSizeError},
     reporter::{NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
-    Condow, DownloadRange, GetSizeMode, StreamWithReport,
+    Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
 };
 
 /// A configured downloader.
@@ -175,5 +177,27 @@ impl<C: CondowClient, RF: ReporterFactory> Clone for Downloader<C, RF> {
             reporter_factory: Arc::clone(&self.reporter_factory),
             get_size_mode: self.get_size_mode,
         }
+    }
+}
+
+impl<C, RF> Downloads<C::Location> for Downloader<C, RF>
+where
+    C: CondowClient,
+    RF: ReporterFactory,
+{
+    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: C::Location,
+        range: R,
+    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
+        Box::pin(self.download(location, range))
+    }
+
+    fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: C::Location,
+        range: R,
+    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+        Box::pin(self.download_chunks(location, range))
     }
 }

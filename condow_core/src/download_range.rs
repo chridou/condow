@@ -4,6 +4,8 @@ use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToIncl
 use crate::errors::CondowError;
 
 /// An inclusive range which can not have a length of 0.
+///
+/// A replacement for [RangeInclusive] with some sugar.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct InclusiveRange(pub usize, pub usize);
 
@@ -39,9 +41,23 @@ impl InclusiveRange {
     }
 }
 
-/// An exclusive range which can have a length of 0.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct ExclusiveOpenRange(pub usize, pub Option<usize>);
+impl From<RangeInclusive<usize>> for InclusiveRange {
+    fn from(ri: RangeInclusive<usize>) -> Self {
+        Self(*ri.start(), *ri.end())
+    }
+}
+
+impl From<InclusiveRange> for RangeInclusive<usize> {
+    fn from(ir: InclusiveRange) -> Self {
+        ir.to_std_range()
+    }
+}
+
+impl From<InclusiveRange> for Range<usize> {
+    fn from(ir: InclusiveRange) -> Self {
+        ir.to_std_range_excl()
+    }
+}
 
 /// A closed range
 ///
@@ -165,33 +181,6 @@ impl ClosedRange {
 
         inclusive
     }
-
-    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
-        let exclusive = match self {
-            Self::FromTo(a, b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(ExclusiveOpenRange(a, Some(b)))
-            }
-            Self::FromToInclusive(a, b) => Some(ExclusiveOpenRange(a, Some(b + 1))),
-            Self::To(b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(ExclusiveOpenRange(0, Some(b)))
-            }
-            Self::ToInclusive(b) => Some(ExclusiveOpenRange(0, Some(b + 1))),
-        };
-
-        if let Some(ExclusiveOpenRange(a, Some(b))) = exclusive {
-            if b <= a {
-                return None;
-            }
-        }
-
-        exclusive
-    }
 }
 
 /// An open range
@@ -227,13 +216,6 @@ impl OpenRange {
 
         inclusive
     }
-
-    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
-        match self {
-            Self::From(a) => Some(ExclusiveOpenRange(a, None)),
-            Self::Full => Some(ExclusiveOpenRange(0, None)),
-        }
-    }
 }
 
 /// A range which specifies a download
@@ -264,13 +246,6 @@ impl DownloadRange {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
             DownloadRange::Closed(r) => r.incl_range_from_size(size),
-        }
-    }
-
-    pub fn excl_open_range(self) -> Option<ExclusiveOpenRange> {
-        match self {
-            DownloadRange::Open(r) => r.excl_open_range(),
-            DownloadRange::Closed(r) => r.excl_open_range(),
         }
     }
 }
@@ -308,6 +283,12 @@ impl From<RangeTo<usize>> for DownloadRange {
 impl From<RangeToInclusive<usize>> for DownloadRange {
     fn from(r: RangeToInclusive<usize>) -> Self {
         Self::Closed(ClosedRange::ToInclusive(r.end))
+    }
+}
+
+impl From<InclusiveRange> for DownloadRange {
+    fn from(r: InclusiveRange) -> Self {
+        Self::Closed(ClosedRange::FromToInclusive(r.0, r.1))
     }
 }
 

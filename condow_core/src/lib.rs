@@ -23,7 +23,7 @@ use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{CondowError, GetSizeError};
 
-use futures::Stream;
+use futures::{future::BoxFuture, Stream};
 use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{BytesHint, ChunkStream, ChunkStreamItem, PartStream};
 
@@ -43,6 +43,29 @@ pub use downloader::*;
 
 #[cfg(test)]
 pub mod test_utils;
+
+pub trait Downloads<L>
+where
+    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
+{
+    /// Download a BLOB range (potentially) concurrently
+    ///
+    /// Returns a stream of [Chunk](streams::Chunk)s.
+    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: L,
+        range: R,
+    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>>;
+
+    /// Download a BLOB range (potentially) concurrently
+    ///
+    /// Returns a stream of [Parts](streams::Part)s.
+    fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: L,
+        range: R,
+    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>>;
+}
 
 /// The CONcurrent DOWnloader
 ///
@@ -179,6 +202,27 @@ impl<C: CondowClient> Condow<C> {
         .await?;
 
         Ok(StreamWithReport { reporter, stream })
+    }
+}
+
+impl<C> Downloads<C::Location> for Condow<C>
+where
+    C: CondowClient,
+{
+    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: C::Location,
+        range: R,
+    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
+        Box::pin(self.download(location, range))
+    }
+
+    fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: C::Location,
+        range: R,
+    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+        Box::pin(self.download_chunks(location, range))
     }
 }
 

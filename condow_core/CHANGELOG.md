@@ -10,7 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 * Rename `Outcome` to `StreamWithReport`
 * Download location requires `Display`
+* Reworked APIs
 
+### ADDED 
+
+* Trait `Downloads`
+* Conversions for `InclusiveRange`
+
+### REMOVED
+
+* struct `ExclusiveOpenRange`
 ## [0.3.0] - 2021/08/20
 
 ### FIXED
