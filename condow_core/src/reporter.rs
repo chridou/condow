@@ -98,6 +98,7 @@ mod simple_reporter {
             };
 
             SimpleReport {
+                is_finished: self.is_download_finished(),
                 download_time,
                 bytes_per_second: bytes_per_second_f64 as u64,
                 megabytes_per_second: (bytes_per_second_f64 / 1_000_000.0) as u64,
@@ -130,6 +131,8 @@ mod simple_reporter {
 
     #[derive(Debug, Clone)]
     pub struct SimpleReport {
+        /// `true` if the download was finished
+        pub is_finished: bool,
         /// If the download is not yet finished, this is the time
         /// elapsed since the start of the download.
         pub download_time: Duration,
