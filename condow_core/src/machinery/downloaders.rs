@@ -321,7 +321,7 @@ mod tests {
             range_stream::RangeStream,
             KillSwitch,
         },
-        reporter::NoReporter,
+        reporter::NoReporting,
         streams::{BytesHint, Chunk, ChunkStream},
         test_utils::*,
         InclusiveRange,
@@ -360,7 +360,7 @@ mod tests {
             KillSwitch::new(),
             NoLocation,
             config.buffer_size.into(),
-            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporter),
+            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporting),
         );
 
         while let Some(next) = ranges_stream.next().await {

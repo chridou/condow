@@ -29,14 +29,14 @@ pub trait Reporter: Clone + Send + Sync + 'static {
 }
 
 #[derive(Copy, Clone)]
-pub struct NoReporter;
+pub struct NoReporting;
 
-impl Reporter for NoReporter {}
-impl ReporterFactory for NoReporter {
+impl Reporter for NoReporting {}
+impl ReporterFactory for NoReporting {
     type ReporterType = Self;
 
     fn make(&self) -> Self {
-        NoReporter
+        NoReporting
     }
 }
 

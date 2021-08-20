@@ -1,7 +1,7 @@
 use crate::{
     condow_client::CondowClient,
     errors::{CondowError, GetSizeError},
-    reporter::{NoReporter, Reporter, ReporterFactory},
+    reporter::{NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, GetSizeMode, StreamWithReport,
 };
@@ -9,7 +9,7 @@ use crate::{
 /// A configured downloader.
 ///
 /// This struct has state which configures a download.
-pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporter> {
+pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
     ///
     /// Default: As configured with [Condow] itself
@@ -59,7 +59,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         range: R,
     ) -> Result<ChunkStream, CondowError> {
         self.condow
-            .download_chunks_internal(location, range, self.get_size_mode, NoReporter)
+            .download_chunks_internal(location, range, self.get_size_mode, NoReporting)
             .await
             .map(|o| o.stream)
     }

@@ -24,7 +24,7 @@ use config::{AlwaysGetSize, Config};
 use errors::{CondowError, GetSizeError};
 
 use futures::Stream;
-use reporter::{NoReporter, Reporter, ReporterFactory};
+use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{BytesHint, ChunkStream, ChunkStreamItem, PartStream};
 
 #[macro_use]
@@ -54,7 +54,7 @@ pub mod test_utils;
 /// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
-pub struct Condow<C, RF = NoReporter> {
+pub struct Condow<C, RF = NoReporting> {
     client: C,
     config: Config,
     reporter_factory: Arc<RF>,
@@ -70,13 +70,13 @@ impl<C: CondowClient, RF: ReporterFactory> Clone for Condow<C, RF> {
     }
 }
 
-impl<C: CondowClient> Condow<C, NoReporter> {
+impl<C: CondowClient> Condow<C, NoReporting> {
     /// Create a new CONcurrent DOWnloader.
     ///
     /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
-        Self::new_with_reporting(client, config, NoReporter)
+        Self::new_with_reporting(client, config, NoReporting)
     }
 }
 
@@ -107,7 +107,7 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        self.download_chunks_internal(location, range, GetSizeMode::Default, NoReporter)
+        self.download_chunks_internal(location, range, GetSizeMode::Default, NoReporting)
             .await
             .map(|o| o.into_stream())
     }
@@ -121,7 +121,7 @@ impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
         let chunk_stream = self
-            .download_chunks_internal(location, range, GetSizeMode::Default, NoReporter)
+            .download_chunks_internal(location, range, GetSizeMode::Default, NoReporting)
             .await
             .map(|o| o.into_stream())?;
         PartStream::from_chunk_stream(chunk_stream)
