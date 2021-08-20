@@ -39,19 +39,17 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         }
     }
 
-
-   /// Change the behaviour on when to query the file size
+    /// Change the behaviour on when to query the file size
     pub fn get_size_mode<T: Into<GetSizeMode>>(mut self, get_size_mode: T) -> Self {
         self.get_size_mode = get_size_mode.into();
         self
     }
 
-    pub fn with_reporting<RRF: ReporterFactory>( self, rep_fac: RRF) -> Downloader<C, RRF> {
+    pub fn with_reporting<RRF: ReporterFactory>(self, rep_fac: RRF) -> Downloader<C, RRF> {
         self.with_reporting_arc(Arc::new(rep_fac))
     }
 
-
-    pub fn with_reporting_arc<RRF: ReporterFactory>( self, rep_fac: Arc<RRF>) -> Downloader<C, RRF> {
+    pub fn with_reporting_arc<RRF: ReporterFactory>(self, rep_fac: Arc<RRF>) -> Downloader<C, RRF> {
         let Downloader {
             get_size_mode,
             condow,
@@ -59,7 +57,9 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         } = self;
 
         Downloader {
-condow, get_size_mode, reporter_factory: rep_fac,
+            condow,
+            get_size_mode,
+            reporter_factory: rep_fac,
         }
     }
 
@@ -173,7 +173,7 @@ impl<C: CondowClient, RF: ReporterFactory> Clone for Downloader<C, RF> {
         Self {
             condow: self.condow.clone(),
             reporter_factory: Arc::clone(&self.reporter_factory),
-            get_size_mode :self.get_size_mode,
+            get_size_mode: self.get_size_mode,
         }
     }
 }

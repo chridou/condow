@@ -84,11 +84,12 @@ mod simple_reporter {
 
         pub fn report(&self) -> SimpleReport {
             let inner = self.inner.as_ref();
-            let download_time = if let Some(finished_at) = *inner.download_finished_at.lock().unwrap() {
-                finished_at - *inner.download_started_at.lock().unwrap()
-            } else {
-                Instant::now() - *inner.download_started_at.lock().unwrap()
-            };
+            let download_time =
+                if let Some(finished_at) = *inner.download_finished_at.lock().unwrap() {
+                    finished_at - *inner.download_started_at.lock().unwrap()
+                } else {
+                    Instant::now() - *inner.download_started_at.lock().unwrap()
+                };
             let n_bytes_received = inner.n_bytes_received.load(Ordering::SeqCst);
             let bytes_per_second_f64 = if n_bytes_received > 0 {
                 n_bytes_received as f64 / download_time.as_secs_f64()
@@ -129,7 +130,7 @@ mod simple_reporter {
 
     #[derive(Debug, Clone)]
     pub struct SimpleReport {
-        /// If the download is not yet finished, this is the time 
+        /// If the download is not yet finished, this is the time
         /// elapsed since the start of the download.
         pub download_time: Duration,
         pub bytes_per_second: u64,

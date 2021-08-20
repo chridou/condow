@@ -74,10 +74,7 @@ impl<C: CondowClient> Condow<C> {
     /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
-        Ok(Self {
-            client,
-            config,
-        })
+        Ok(Self { client, config })
     }
 
     /// Create a reusable [Downloader] which is just an alternate form to use the API.
@@ -85,16 +82,18 @@ impl<C: CondowClient> Condow<C> {
         Downloader::new(self.clone())
     }
 
-        /// Create a reusable [Downloader] which is just an alternate form to use the API.
-        pub fn downloader_with_reporting<RF: ReporterFactory>(&self, rep_fac: RF) -> Downloader<C, RF> {
-            self.downloader_with_reporting_arc(Arc::new(rep_fac))
-        }
- 
-               /// Create a reusable [Downloader] which is just an alternate form to use the API.
-               pub fn downloader_with_reporting_arc<RF: ReporterFactory>(&self, rep_fac: Arc<RF>) -> Downloader<C, RF> {
-                Downloader::new_with_reporting_arc(self.clone(), rep_fac)
-            }
-     
+    /// Create a reusable [Downloader] which is just an alternate form to use the API.
+    pub fn downloader_with_reporting<RF: ReporterFactory>(&self, rep_fac: RF) -> Downloader<C, RF> {
+        self.downloader_with_reporting_arc(Arc::new(rep_fac))
+    }
+
+    /// Create a reusable [Downloader] which is just an alternate form to use the API.
+    pub fn downloader_with_reporting_arc<RF: ReporterFactory>(
+        &self,
+        rep_fac: Arc<RF>,
+    ) -> Downloader<C, RF> {
+        Downloader::new_with_reporting_arc(self.clone(), rep_fac)
+    }
 
     /// Download a BLOB range (potentially) concurrently
     ///

@@ -28,9 +28,7 @@ mod blob {
                         .buffers_full_delay_ms(0)
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
-                    let condow =
-                        Condow::new(client.clone(), config)
-                            .unwrap();
+                    let condow = Condow::new(client.clone(), config).unwrap();
 
                     let downloader = condow.downloader_with_reporting(SimpleReporterFactory);
 
@@ -65,9 +63,7 @@ mod blob {
                         .buffers_full_delay_ms(0)
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
-                    let condow =
-                        Condow::new(client.clone(), config)
-                            .unwrap();
+                    let condow = Condow::new(client.clone(), config).unwrap();
 
                     let downloader = condow.downloader_with_reporting(SimpleReporterFactory);
 
