@@ -29,10 +29,10 @@ mod blob {
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
                     let condow =
-                        Condow::new_with_reporting(client.clone(), config, SimpleReporterFactory)
+                        Condow::new(client.clone(), config)
                             .unwrap();
 
-                    let downloader = condow.downloader();
+                    let downloader = condow.downloader_with_reporting(SimpleReporterFactory);
 
                     let result_stream = downloader.download_rep(NoLocation, ..).await.unwrap();
 
@@ -66,10 +66,10 @@ mod blob {
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
                     let condow =
-                        Condow::new_with_reporting(client.clone(), config, SimpleReporterFactory)
+                        Condow::new(client.clone(), config)
                             .unwrap();
 
-                    let downloader = condow.downloader();
+                    let downloader = condow.downloader_with_reporting(SimpleReporterFactory);
 
                     let result_stream = downloader.download_rep(NoLocation, ..).await.unwrap();
 

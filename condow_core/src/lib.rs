@@ -54,50 +54,47 @@ pub mod test_utils;
 /// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
-pub struct Condow<C, RF = NoReporting> {
+pub struct Condow<C> {
     client: C,
     config: Config,
-    reporter_factory: Arc<RF>,
 }
 
-impl<C: CondowClient, RF: ReporterFactory> Clone for Condow<C, RF> {
+impl<C: CondowClient> Clone for Condow<C> {
     fn clone(&self) -> Self {
         Self {
             client: self.client.clone(),
             config: self.config.clone(),
-            reporter_factory: Arc::clone(&self.reporter_factory),
         }
     }
 }
 
-impl<C: CondowClient> Condow<C, NoReporting> {
+impl<C: CondowClient> Condow<C> {
     /// Create a new CONcurrent DOWnloader.
     ///
     /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
-        Self::new_with_reporting(client, config, NoReporting)
-    }
-}
-
-impl<C: CondowClient, RF: ReporterFactory> Condow<C, RF> {
-    pub fn new_with_reporting(
-        client: C,
-        config: Config,
-        rep_fac: RF,
-    ) -> Result<Self, anyhow::Error> {
-        let config = config.validated()?;
         Ok(Self {
             client,
             config,
-            reporter_factory: Arc::new(rep_fac),
         })
     }
 
     /// Create a reusable [Downloader] which is just an alternate form to use the API.
-    pub fn downloader(&self) -> Downloader<C, RF> {
+    pub fn downloader(&self) -> Downloader<C, NoReporting> {
         Downloader::new(self.clone())
     }
+
+        /// Create a reusable [Downloader] which is just an alternate form to use the API.
+        pub fn downloader_with_reporting<RF: ReporterFactory>(&self, rep_fac: RF) -> Downloader<C, RF> {
+            self.downloader_with_reporting_arc(Arc::new(rep_fac))
+        }
+ 
+               /// Create a reusable [Downloader] which is just an alternate form to use the API.
+               pub fn downloader_with_reporting_arc<RF: ReporterFactory>(&self, rep_fac: Arc<RF>) -> Downloader<C, RF> {
+                Downloader::new_with_reporting_arc(self.clone(), rep_fac)
+            }
+     
 
     /// Download a BLOB range (potentially) concurrently
     ///

@@ -22,7 +22,6 @@ use condow_core::{
     condow_client::*,
     config::Config,
     errors::{CondowError, GetSizeError, IoError},
-    reporter::ReporterFactory,
     streams::{BytesHint, BytesStream},
 };
 
@@ -156,16 +155,6 @@ impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
     /// Create a concurrent downloader from this adapter and the given [Config]
     pub fn condow(self, config: Config) -> Result<Condow<Self>, AnyError> {
         Condow::new(self, config)
-    }
-
-    /// Create a concurrent downloader from this adapter and the given [Config]
-    /// and rrequest reporting
-    pub fn condow_with_reporter<RF: ReporterFactory>(
-        self,
-        config: Config,
-        rep_fac: RF,
-    ) -> Result<Condow<Self, RF>, AnyError> {
-        Condow::new_with_reporting(self, config, rep_fac)
     }
 }
 
