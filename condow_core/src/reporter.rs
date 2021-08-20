@@ -1,3 +1,8 @@
+//! Reporting
+//!
+//! This goes more into the direction of instrumentation. Unfortunately
+//! `tokio` uses the word `Instrumentation` already for their tracing
+//! implementation.
 use std::time::Duration;
 
 use crate::InclusiveRange;
@@ -7,9 +12,19 @@ pub use simple_reporter::*;
 pub trait ReporterFactory: Send + Sync + 'static {
     type ReporterType: Reporter;
 
+    /// Create a new [Reporter].
+    ///
+    /// This might share state with the factory or not
     fn make(&self) -> Self::ReporterType;
 }
 
+/// A Reporter is an interface to track occurences of different kinds
+///
+/// Implementors can use this to put instrumentation on downloads
+/// or simply to log.
+///
+/// All methods should return quickly to not to influence the
+/// downloading too much with measuring.
 #[allow(unused_variables)]
 pub trait Reporter: Clone + Send + Sync + 'static {
     /// The effective range which is downloaded (and split into parts)
@@ -30,6 +45,7 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     fn part_completed(&self, part_index: usize, n_chunks: usize, n_bytes: usize, time: Duration) {}
 }
 
+/// Disables reporting
 #[derive(Copy, Clone)]
 pub struct NoReporting;
 
@@ -43,6 +59,7 @@ impl ReporterFactory for NoReporting {
 }
 
 mod simple_reporter {
+    //! Simple reporting with counters
     use std::{
         sync::{
             atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -53,6 +70,7 @@ mod simple_reporter {
 
     use super::{Reporter, ReporterFactory};
 
+    /// Creates [SimpleReporter]s
     pub struct SimpleReporterFactory;
     impl ReporterFactory for SimpleReporterFactory {
         type ReporterType = SimpleReporter;
@@ -62,6 +80,7 @@ mod simple_reporter {
         }
     }
 
+    /// A `SimpleReporter` collects metrics and creates a [SimpleReport]
     #[derive(Clone)]
     pub struct SimpleReporter {
         inner: Arc<Inner>,
@@ -82,6 +101,10 @@ mod simple_reporter {
             self.inner.download_finished_at.lock().unwrap().is_some()
         }
 
+        /// Get a [SimpleReport].
+        ///
+        /// Takes a snapshot. A download might still be running when a snapshot
+        /// is taken.
         pub fn report(&self) -> SimpleReport {
             let inner = self.inner.as_ref();
             let download_time =
