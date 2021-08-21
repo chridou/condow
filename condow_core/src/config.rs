@@ -317,7 +317,6 @@ impl From<BuffersFullDelayMs> for Duration {
 ///
 /// ```rust
 /// # use condow_core::config::Kilo;
-///
 /// assert_eq!(usize::from(Kilo(2)), 2*1_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -335,7 +334,6 @@ impl From<Kilo> for usize {
 ///
 /// ```rust
 /// # use condow_core::config::Mega;
-///
 /// assert_eq!(usize::from(Mega(2)), 2*1_000_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -353,7 +351,6 @@ impl From<Mega> for usize {
 ///
 /// ```rust
 /// # use condow_core::config::Giga;
-///
 /// assert_eq!(usize::from(Giga(2)), 2*1_000_000_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -371,7 +368,6 @@ impl From<Giga> for usize {
 ///
 /// ```rust
 /// # use condow_core::config::Kibi;
-///
 /// assert_eq!(usize::from(Kibi(2)), 2*1_024);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -389,7 +385,6 @@ impl From<Kibi> for usize {
 ///
 /// ```rust
 /// # use condow_core::config::Mebi;
-///
 /// assert_eq!(usize::from(Mebi(2)), 2*1_048_576);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -397,7 +392,7 @@ pub struct Mebi(pub usize);
 
 impl From<Mebi> for usize {
     fn from(m: Mebi) -> Self {
-        m.0 * 1_024 * 1_024
+        m.0 * 1_048_576
     }
 }
 
@@ -407,7 +402,6 @@ impl From<Mebi> for usize {
 ///
 /// ```rust
 /// # use condow_core::config::Gibi;
-///
 /// assert_eq!(usize::from(Gibi(2)), 2*1_073_741_824);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -415,6 +409,6 @@ pub struct Gibi(pub usize);
 
 impl From<Gibi> for usize {
     fn from(m: Gibi) -> Self {
-        m.0 * 1_024 * 1_024 * 1_024
+        m.0 * 1_073_741_824
     }
 }

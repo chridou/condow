@@ -1,4 +1,4 @@
-/// Error types returned by Condow
+//! Error types returned by Condow
 use thiserror::Error;
 
 #[derive(Error, Debug)]

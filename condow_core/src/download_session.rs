@@ -45,6 +45,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         self
     }
 
+    /// Returns a reference to the [ReporterFactory].
     pub fn reporter_factory(&self) -> &RF {
         self.reporter_factory.as_ref()
     }

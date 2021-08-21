@@ -51,10 +51,12 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         self
     }
 
+    /// Set or replace the [ReporterFactory] in a builder style
     pub fn with_reporting<RRF: ReporterFactory>(self, rep_fac: RRF) -> Downloader<C, RRF> {
         self.with_reporting_arc(Arc::new(rep_fac))
     }
 
+    /// Set or replace the [ReporterFactory] in a builder style
     pub fn with_reporting_arc<RRF: ReporterFactory>(self, rep_fac: Arc<RRF>) -> Downloader<C, RRF> {
         let Downloader {
             get_size_mode,
@@ -168,7 +170,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
             .await
     }
 
-    /// Get the size of a file at the BLOB at location
+    /// Get the size of a BLOB at location
     pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
         self.condow.get_size(location).await
     }

@@ -259,6 +259,12 @@ impl OpenRange {
 /// let dl = DownloadRange::from(..=7);
 /// assert_eq!(dl, DownloadRange::Closed(ClosedRange::ToInclusive(7)));
 /// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(InclusiveRange(1, 7));
+/// assert_eq!(dl, DownloadRange::Closed(ClosedRange::FromToInclusive(1,7)));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadRange {
     Open(OpenRange),
