@@ -249,13 +249,31 @@ impl Stream for ChunkStream {
 mod tests {
     use futures::StreamExt;
 
-    use crate::streams::{Chunk, ChunkStream};
+    use crate::{
+        streams::{BytesHint, Chunk, ChunkStream},
+        test_utils::create_chunk_stream,
+    };
 
-    async fn check_stream(mut result_stream: ChunkStream, data: &[u8], file_start: usize) {
+    #[tokio::test]
+    async fn check() {
+        for n_parts in 1..20 {
+            for n_chunks in 1..20 {
+                let (stream, expected) = create_chunk_stream(n_parts, n_chunks, true, Some(10));
+                check_stream(stream, &expected).await
+            }
+        }
+    }
+
+    async fn check_stream(mut result_stream: ChunkStream, data: &[u8]) {
+        let mut bytes_left = data.len();
+        let mut first_blob_offset = 0;
+        let mut got_first = false;
+
+        assert_eq!(result_stream.bytes_hint(), BytesHint::new_exact(bytes_left));
         while let Some(next) = result_stream.next().await {
             let Chunk {
                 range_offset,
-                blob_offset: file_offset,
+                blob_offset,
                 bytes,
                 ..
             } = match next {
@@ -263,15 +281,25 @@ mod tests {
                 Ok(next) => next,
             };
 
+            if !got_first {
+                first_blob_offset = blob_offset - range_offset;
+                got_first = true;
+            }
+
+            bytes_left -= bytes.len();
+            assert_eq!(result_stream.bytes_hint(), BytesHint::new_exact(bytes_left));
+
             assert_eq!(
                 bytes[..],
-                data[file_offset..file_offset + bytes.len()],
-                "file_offset"
-            );
-            assert_eq!(
-                bytes[..],
-                data[file_start + range_offset..file_start + range_offset + bytes.len()],
+                data[range_offset..range_offset + bytes.len()],
                 "range_offset"
+            );
+            let adjusted_blob_offset = blob_offset - first_blob_offset;
+            assert_eq!(adjusted_blob_offset, range_offset, "blob vs range");
+            assert_eq!(
+                bytes[..],
+                data[adjusted_blob_offset..adjusted_blob_offset + bytes.len()],
+                "blob_offset"
             );
         }
     }

@@ -20,7 +20,7 @@ pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
 /// The second half of the tuple that is returned is an `Option<usize>`.
 /// A None here means that either there is no known upper bound,
 /// or the upper bound is larger than usize.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BytesHint(usize, Option<usize>);
 
 impl BytesHint {

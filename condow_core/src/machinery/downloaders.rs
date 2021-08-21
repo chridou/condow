@@ -1,6 +1,6 @@
 use std::{
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Instant,
@@ -165,12 +165,14 @@ impl Downloader {
                             .is_err()
                             {
                                 kill_switch.push_the_button();
+                                watcher.mark_failed();
                                 request_receiver.close();
                                 break;
                             }
                         }
                         Err(err) => {
                             kill_switch.push_the_button();
+                            watcher.mark_failed();
                             request_receiver.close();
                             let _ = results_sender.unbounded_send(Err(err));
                             break;
@@ -208,13 +210,22 @@ impl Downloader {
 
 struct DownloadersWatcher<R: Reporter> {
     counter: Arc<AtomicUsize>,
+    is_failed: Arc<AtomicBool>,
     reporter: R,
 }
 
 impl<R: Reporter> DownloadersWatcher<R> {
     pub fn new(counter: Arc<AtomicUsize>, reporter: R) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
-        Self { counter, reporter }
+        Self {
+            counter,
+            reporter,
+            is_failed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn mark_failed(&self) {
+        self.is_failed.store(true, Ordering::SeqCst);
     }
 }
 
@@ -222,7 +233,11 @@ impl<R: Reporter> Drop for DownloadersWatcher<R> {
     fn drop(&mut self) {
         self.counter.fetch_sub(1, Ordering::SeqCst);
         if self.counter.load(Ordering::SeqCst) == 0 {
-            self.reporter.download_finished()
+            if self.is_failed.load(Ordering::SeqCst) {
+                self.reporter.download_failed()
+            } else {
+                self.reporter.download_completed()
+            }
         }
     }
 }

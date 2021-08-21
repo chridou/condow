@@ -19,11 +19,11 @@
 //! the [CondowClient] trait.
 use std::sync::Arc;
 
+use futures::{future::BoxFuture, Stream};
+
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::{CondowError, GetSizeError};
-
-use futures::{future::BoxFuture, Stream};
 use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{BytesHint, ChunkStream, ChunkStreamItem, PartStream};
 
@@ -32,6 +32,7 @@ pub(crate) mod helpers;
 pub mod condow_client;
 pub mod config;
 mod download_range;
+mod download_session;
 mod downloader;
 pub mod errors;
 mod machinery;
@@ -39,6 +40,7 @@ pub mod reporter;
 pub mod streams;
 
 pub use download_range::*;
+pub use download_session::*;
 pub use downloader::*;
 
 #[cfg(test)]
@@ -48,7 +50,7 @@ pub trait Downloads<L>
 where
     L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
 {
-    /// Download a BLOB range (potentially) concurrently
+    /// Download a BLOB range concurrently
     ///
     /// Returns a stream of [Chunk](streams::Chunk)s.
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
@@ -57,7 +59,7 @@ where
         range: R,
     ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>>;
 
-    /// Download a BLOB range (potentially) concurrently
+    /// Download a BLOB range concurrently
     ///
     /// Returns a stream of [Parts](streams::Part)s.
     fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
@@ -71,6 +73,10 @@ where
 ///
 /// Downloads BLOBs by splitting the download into parts
 /// which are downloaded concurrently.
+///
+/// The API of `Condow` itself should be sufficient for most use cases.
+///
+/// If reporting/metrics is required, see [Downloader] and [DownloadSession]
 ///
 /// ## Wording
 ///
@@ -100,22 +106,35 @@ impl<C: CondowClient> Condow<C> {
         Ok(Self { client, config })
     }
 
-    /// Create a reusable [Downloader] which is just an alternate form to use the API.
+    /// Create a reusable [Downloader] which has a richer API.
     pub fn downloader(&self) -> Downloader<C, NoReporting> {
         Downloader::new(self.clone())
     }
 
-    /// Create a reusable [Downloader] which is just an alternate form to use the API.
+    /// Create a reusable [Downloader] which has a richer API.
     pub fn downloader_with_reporting<RF: ReporterFactory>(&self, rep_fac: RF) -> Downloader<C, RF> {
         self.downloader_with_reporting_arc(Arc::new(rep_fac))
     }
 
-    /// Create a reusable [Downloader] which is just an alternate form to use the API.
+    /// Create a reusable [Downloader] which has a richer API.
     pub fn downloader_with_reporting_arc<RF: ReporterFactory>(
         &self,
         rep_fac: Arc<RF>,
     ) -> Downloader<C, RF> {
         Downloader::new_with_reporting_arc(self.clone(), rep_fac)
+    }
+
+    /// Create a [DownloadSession] to track all downloads.
+    pub fn download_session<RF: ReporterFactory>(&self, rep_fac: RF) -> DownloadSession<C, RF> {
+        self.download_session_arc(Arc::new(rep_fac))
+    }
+
+    /// Create a [DownloadSession] to track all downloads.
+    pub fn download_session_arc<RF: ReporterFactory>(
+        &self,
+        rep_fac: Arc<RF>,
+    ) -> DownloadSession<C, RF> {
+        DownloadSession::new_with_reporting_arc(self.clone(), rep_fac)
     }
 
     /// Download a BLOB range (potentially) concurrently

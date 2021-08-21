@@ -10,10 +10,7 @@ use crate::{
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
 };
 
-/// A configured downloader.
-///
-/// This struct has state which configures a download.
-pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
+pub struct DownloadSession<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
     ///
     /// Default: As configured with [Condow] itself
@@ -22,17 +19,7 @@ pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
     reporter_factory: Arc<RF>,
 }
 
-impl<C: CondowClient> Downloader<C, NoReporting> {
-    pub(crate) fn new(condow: Condow<C>) -> Self {
-        Self::new_with_reporting(condow, NoReporting)
-    }
-}
-
-impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
-    pub(crate) fn new_with_reporting(condow: Condow<C>, rep_fac: RF) -> Self {
-        Self::new_with_reporting_arc(condow, Arc::new(rep_fac))
-    }
-
+impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     pub(crate) fn new_with_reporting_arc(condow: Condow<C>, rep_fac: Arc<RF>) -> Self {
         Self {
             condow,
@@ -47,25 +34,13 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         self
     }
 
-    pub fn with_reporting<RRF: ReporterFactory>(self, rep_fac: RRF) -> Downloader<C, RRF> {
-        self.with_reporting_arc(Arc::new(rep_fac))
-    }
-
-    pub fn with_reporting_arc<RRF: ReporterFactory>(self, rep_fac: Arc<RRF>) -> Downloader<C, RRF> {
-        let Downloader {
-            get_size_mode,
-            condow,
-            ..
-        } = self;
-
-        Downloader {
-            condow,
-            get_size_mode,
-            reporter_factory: rep_fac,
-        }
+    pub fn reporter_factory(&self) -> &RF {
+        self.reporter_factory.as_ref()
     }
 
     /// Download the BLOB/range.
+    ///
+    /// A [Reporter] will be created internally and be notified
     ///
     /// The parts and the chunks streamed have the same ordering as
     /// within the BLOB/range downloaded.
@@ -81,6 +56,8 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
 
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts.
+    ///
+    /// A [Reporter] will be created internally and be notified
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are
@@ -98,7 +75,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
 
     /// Download the BLOB/range and report events.
     ///
-    /// The [Reporter] is the one that was configured when creating [Downloader].
+    /// The [Reporter] is the one that was configured when creating [DownloadSession].
     ///
     /// The parts and the chunks streamed have the same ordering as
     /// within the BLOB/range downloaded.
@@ -114,7 +91,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts and report events.
     ///
-    /// The [Reporter] is the one that was configured when creating [Downloader].
+    /// The [Reporter] is the one that was configured when creating [DownloadSession].
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are
@@ -130,38 +107,58 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
 
     /// Download the BLOB/range and report events.
     ///
-    /// The [Reporter] has to be passed to the method explicitly.
+    /// A [Reporter] has to be passed to the method explicitly.
+    /// The given reporter will be returned but a [Reporter] from
+    /// the contained [ReporterFactory] will still be created and notified.
     ///
     /// The parts and the chunks streamed have the same ordering as
     /// within the BLOB/range downloaded.
-    pub async fn download_wrep<R: Into<DownloadRange>, RP: Reporter>(
+    pub async fn download_wrep<R: Into<DownloadRange>, RRP: Reporter>(
         &self,
         location: C::Location,
         range: R,
-        reporter: RP,
-    ) -> Result<StreamWithReport<PartStream<ChunkStream>, RP>, CondowError> {
-        self.download_chunks_wrep(location, range, reporter)
+        reporter: RRP,
+    ) -> Result<StreamWithReport<PartStream<ChunkStream>, RRP>, CondowError> {
+        let composite = CompositeReporter(self.reporter_factory.make(), reporter);
+        self.download_chunks_wrep(location, range, composite)
             .await?
             .part_stream()
+            .map(|sr| {
+                let StreamWithReport { stream, reporter } = sr;
+                StreamWithReport {
+                    stream,
+                    reporter: reporter.1,
+                }
+            })
     }
 
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts and report events.
     ///
-    /// The [Reporter] has to be passed to the method explicitly.
+    /// A [Reporter] has to be passed to the method explicitly.
+    /// The given reporter will be returned but a [Reporter] from
+    /// the contained [ReporterFactory] will still be created and notified.
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are
     /// downloaded sequentially.
-    pub async fn download_chunks_wrep<R: Into<DownloadRange>, RP: Reporter>(
+    pub async fn download_chunks_wrep<R: Into<DownloadRange>, RPP: Reporter>(
         &self,
         location: C::Location,
         range: R,
-        reporter: RP,
-    ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
+        reporter: RPP,
+    ) -> Result<StreamWithReport<ChunkStream, RPP>, CondowError> {
+        let composite = CompositeReporter(self.reporter_factory.make(), reporter);
         self.condow
-            .download_chunks_internal(location, range, self.get_size_mode, reporter)
+            .download_chunks_internal(location, range, self.get_size_mode, composite)
             .await
+            .map(|sr| {
+                let StreamWithReport { stream, reporter } = sr;
+                StreamWithReport {
+                    stream,
+                    reporter: reporter.1,
+                }
+            })
     }
 
     /// Get the size of a file at the BLOB at location
@@ -170,7 +167,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     }
 }
 
-impl<C: CondowClient, RF: ReporterFactory> Clone for Downloader<C, RF> {
+impl<C: CondowClient, RF: ReporterFactory> Clone for DownloadSession<C, RF> {
     fn clone(&self) -> Self {
         Self {
             condow: self.condow.clone(),
@@ -180,7 +177,7 @@ impl<C: CondowClient, RF: ReporterFactory> Clone for Downloader<C, RF> {
     }
 }
 
-impl<C, RF> Downloads<C::Location> for Downloader<C, RF>
+impl<C, RF> Downloads<C::Location> for DownloadSession<C, RF>
 where
     C: CondowClient,
     RF: ReporterFactory,
@@ -199,5 +196,33 @@ where
         range: R,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         Box::pin(self.download_chunks(location, range))
+    }
+}
+
+#[derive(Clone)]
+struct CompositeReporter<RA: Reporter, RB: Reporter>(RA, RB);
+
+impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
+    fn effective_range(&self, range: crate::InclusiveRange) {}
+
+    fn download_started(&self) {}
+
+    fn download_completed(&self) {}
+
+    fn download_failed(&self) {}
+
+    fn queue_full(&self) {}
+
+    fn chunk_completed(&self, part_index: usize, n_bytes: usize, time: std::time::Duration) {}
+
+    fn part_started(&self, part_index: usize, range: crate::InclusiveRange) {}
+
+    fn part_completed(
+        &self,
+        part_index: usize,
+        n_chunks: usize,
+        n_bytes: usize,
+        time: std::time::Duration,
+    ) {
     }
 }

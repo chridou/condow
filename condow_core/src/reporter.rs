@@ -33,8 +33,12 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     fn download_started(&self) {}
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter].**
-    fn download_finished(&self) {}
+    /// **This always is the last method called on a [Reporter] if the download was successful.**
+    fn download_completed(&self) {}
+    /// IO tasks finished
+    ///
+    /// **This always is the last method called on a [Reporter] if the download failed.**
+    fn download_failed(&self) {}
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed
@@ -62,7 +66,7 @@ mod simple_reporter {
     //! Simple reporting with counters
     use std::{
         sync::{
-            atomic::{AtomicU64, AtomicUsize, Ordering},
+            atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc, Mutex,
         },
         time::{Duration, Instant},
@@ -122,6 +126,7 @@ mod simple_reporter {
 
             SimpleReport {
                 is_finished: self.is_download_finished(),
+                is_failed: inner.is_failed.load(Ordering::SeqCst),
                 download_time,
                 bytes_per_second: bytes_per_second_f64 as u64,
                 megabytes_per_second: bytes_per_second_f64 / 1_000_000.0,
@@ -134,8 +139,8 @@ mod simple_reporter {
                 n_parts_received: inner.n_parts_received.load(Ordering::SeqCst),
                 min_chunk_bytes: inner.min_chunk_bytes.load(Ordering::SeqCst),
                 max_chunk_bytes: inner.max_chunk_bytes.load(Ordering::SeqCst),
-                min_chunk_time: Duration::from_millis(inner.min_chunk_ms.load(Ordering::SeqCst)),
-                max_chunk_time: Duration::from_millis(inner.max_chunk_ms.load(Ordering::SeqCst)),
+                min_chunk_time: Duration::from_micros(inner.min_chunk_us.load(Ordering::SeqCst)),
+                max_chunk_time: Duration::from_micros(inner.max_chunk_us.load(Ordering::SeqCst)),
                 min_part_bytes: inner.min_part_bytes.load(Ordering::SeqCst),
                 max_part_bytes: inner.max_part_bytes.load(Ordering::SeqCst),
                 min_chunks_per_part: inner.min_chunks_per_part.load(Ordering::SeqCst),
@@ -156,6 +161,7 @@ mod simple_reporter {
     pub struct SimpleReport {
         /// `true` if the download was finished
         pub is_finished: bool,
+        pub is_failed: bool,
         /// If the download is not yet finished, this is the time
         /// elapsed since the start of the download.
         pub download_time: Duration,
@@ -185,8 +191,13 @@ mod simple_reporter {
             *self.inner.download_started_at.lock().unwrap() = Instant::now();
         }
 
-        fn download_finished(&self) {
+        fn download_completed(&self) {
             *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
+        }
+
+        fn download_failed(&self) {
+            *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
+            self.inner.is_failed.store(true, Ordering::SeqCst);
         }
 
         fn queue_full(&self) {
@@ -198,9 +209,9 @@ mod simple_reporter {
             inner.n_chunks_received.fetch_add(1, Ordering::SeqCst);
             inner.min_chunk_bytes.fetch_min(n_bytes, Ordering::SeqCst);
             inner.max_chunk_bytes.fetch_max(n_bytes, Ordering::SeqCst);
-            let ms = time.as_millis() as u64;
-            inner.min_chunk_ms.fetch_min(ms, Ordering::SeqCst);
-            inner.max_chunk_ms.fetch_max(ms, Ordering::SeqCst);
+            let us = time.as_micros() as u64;
+            inner.min_chunk_us.fetch_min(us, Ordering::SeqCst);
+            inner.max_chunk_us.fetch_max(us, Ordering::SeqCst);
         }
 
         fn part_completed(
@@ -230,14 +241,15 @@ mod simple_reporter {
     struct Inner {
         download_started_at: Mutex<Instant>,
         download_finished_at: Mutex<Option<Instant>>,
+        is_failed: AtomicBool,
         n_queue_full: AtomicUsize,
         n_bytes_received: AtomicUsize,
         n_chunks_received: AtomicUsize,
         n_parts_received: AtomicUsize,
         min_chunk_bytes: AtomicUsize,
         max_chunk_bytes: AtomicUsize,
-        min_chunk_ms: AtomicU64,
-        max_chunk_ms: AtomicU64,
+        min_chunk_us: AtomicU64,
+        max_chunk_us: AtomicU64,
         min_part_bytes: AtomicUsize,
         max_part_bytes: AtomicUsize,
         min_chunks_per_part: AtomicUsize,
@@ -251,14 +263,15 @@ mod simple_reporter {
             Inner {
                 download_started_at: Mutex::new(Instant::now()),
                 download_finished_at: Mutex::new(None),
+                is_failed: AtomicBool::new(false),
                 n_bytes_received: AtomicUsize::new(0),
                 n_chunks_received: AtomicUsize::new(0),
                 n_parts_received: AtomicUsize::new(0),
                 n_queue_full: AtomicUsize::new(0),
                 min_chunk_bytes: AtomicUsize::new(usize::MAX),
                 max_chunk_bytes: AtomicUsize::new(0),
-                min_chunk_ms: AtomicU64::new(u64::MAX),
-                max_chunk_ms: AtomicU64::new(0),
+                min_chunk_us: AtomicU64::new(u64::MAX),
+                max_chunk_us: AtomicU64::new(0),
                 min_part_bytes: AtomicUsize::new(usize::MAX),
                 max_part_bytes: AtomicUsize::new(0),
                 min_chunks_per_part: AtomicUsize::new(usize::MAX),
