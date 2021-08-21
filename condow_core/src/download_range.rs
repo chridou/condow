@@ -221,6 +221,44 @@ impl OpenRange {
 /// A range which specifies a download
 ///
 /// Conversions for the standard Rust range syntax exist.
+///
+/// # Examples
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(..);
+/// assert_eq!(dl, DownloadRange::Open(OpenRange::Full))
+/// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(3..);
+/// assert_eq!(dl, DownloadRange::Open(OpenRange::From(3)))
+/// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(5..10);
+/// assert_eq!(dl, DownloadRange::Closed(ClosedRange::FromTo(5,10)))
+/// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(5..=10);
+/// assert_eq!(dl, DownloadRange::Closed(ClosedRange::FromToInclusive(5, 10)))
+/// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(..7);
+/// assert_eq!(dl, DownloadRange::Closed(ClosedRange::To(7)))
+/// ```
+///
+/// ```rust
+/// # use condow_core::*;
+/// let dl = DownloadRange::from(..=7);
+/// assert_eq!(dl, DownloadRange::Closed(ClosedRange::ToInclusive(7)))
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DownloadRange {
     Open(OpenRange),

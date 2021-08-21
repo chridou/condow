@@ -116,7 +116,6 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
     }
 }
 
-
 mod simple_reporter {
     //! Simple reporting with counters
     use std::{

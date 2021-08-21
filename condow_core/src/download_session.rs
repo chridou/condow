@@ -3,7 +3,13 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 
-use crate::{Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport, condow_client::CondowClient, errors::{CondowError, GetSizeError}, reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory}, streams::{ChunkStream, PartStream}};
+use crate::{
+    condow_client::CondowClient,
+    errors::{CondowError, GetSizeError},
+    reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory},
+    streams::{ChunkStream, PartStream},
+    Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
+};
 
 /// A downloading API for instrumented downloading.
 ///
@@ -203,4 +209,3 @@ where
         Box::pin(self.download_chunks(location, range))
     }
 }
-
