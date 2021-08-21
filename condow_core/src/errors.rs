@@ -72,6 +72,25 @@ pub enum CondowErrorKind {
     Io,
     Other,
 }
+
+impl From<std::io::Error> for CondowError {
+    fn from(io: std::io::Error) -> Self {
+        CondowError::new_io("io error").with_source(io)
+    }
+}
+
+impl From<IoError> for CondowError {
+    fn from(io: IoError) -> Self {
+        CondowError::new_io(io.0)
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("io error: {0}")]
 pub struct IoError(pub String);
+
+impl From<std::io::Error> for IoError {
+    fn from(io: std::io::Error) -> Self {
+        IoError(io.to_string())
+    }
+}
