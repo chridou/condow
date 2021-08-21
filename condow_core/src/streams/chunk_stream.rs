@@ -119,11 +119,13 @@ impl ChunkStream {
     /// not know, whether we can fill the buffer in a contiguous way.
     pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if !self.is_fresh {
-            return Err(CondowError::Other("stream already iterated".to_string()));
+            return Err(CondowError::new_other(
+                "stream already iterated".to_string(),
+            ));
         }
 
         if buffer.len() < self.bytes_hint.lower_bound() {
-            return Err(CondowError::Other(format!(
+            return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
                 self.bytes_hint.lower_bound()
@@ -144,7 +146,7 @@ impl ChunkStream {
 
             let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
-                return Err(CondowError::Other(format!(
+                return Err(CondowError::new_other(format!(
                     "write attempt beyond buffer end (buffer len = {}). \
                     attempted to write at index {}",
                     buffer.len(),
@@ -181,7 +183,9 @@ async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
 ) -> Result<Vec<u8>, CondowError> {
     if !stream.is_fresh {
-        return Err(CondowError::Other("stream already iterated".to_string()));
+        return Err(CondowError::new_other(
+            "stream already iterated".to_string(),
+        ));
     }
 
     let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());

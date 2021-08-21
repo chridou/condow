@@ -5,7 +5,7 @@ use futures::future::BoxFuture;
 
 use crate::{
     condow_client::CondowClient,
-    errors::{CondowError, GetSizeError},
+    errors::CondowError,
     reporter::{NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
@@ -171,7 +171,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     }
 
     /// Get the size of a BLOB at location
-    pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
+    pub async fn get_size(&self, location: C::Location) -> Result<usize, CondowError> {
         self.condow.get_size(location).await
     }
 }

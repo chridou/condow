@@ -90,7 +90,7 @@ impl<St: Stream<Item = ChunkStreamItem> + Unpin> PartStream<St> {
     /// Fails if the buffer is too small or there was an error on the stream.
     pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if buffer.len() < self.bytes_hint.lower_bound() {
-            return Err(CondowError::Other(format!(
+            return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
                 self.bytes_hint.lower_bound()
@@ -104,7 +104,7 @@ impl<St: Stream<Item = ChunkStreamItem> + Unpin> PartStream<St> {
             for chunk in part.chunks {
                 let end_excl = offset + chunk.len();
                 if end_excl > buffer.len() {
-                    return Err(CondowError::Other(format!(
+                    return Err(CondowError::new_other(format!(
                         "write attempt beyond buffer end (buffer len = {}). \
                         attempted to write at index {}",
                         buffer.len(),
@@ -151,7 +151,7 @@ impl PartStream<ChunkStream> {
     /// Will fail if the [ChunkStream] was already iterated.
     pub fn from_chunk_stream(chunk_stream: ChunkStream) -> Result<Self, CondowError> {
         if !chunk_stream.is_fresh() {
-            return Err(CondowError::Other(
+            return Err(CondowError::new_other(
                 "chunk stream already iterated".to_string(),
             ));
         }

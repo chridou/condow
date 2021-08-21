@@ -73,7 +73,7 @@ impl CondowClient for TestCondowClient {
     fn get_size(
         &self,
         _location: Self::Location,
-    ) -> BoxFuture<'static, Result<usize, crate::errors::GetSizeError>> {
+    ) -> BoxFuture<'static, Result<usize, crate::errors::CondowError>> {
         let f = future::ready(Ok(self.data.len()));
         Box::pin(f)
     }
@@ -95,7 +95,7 @@ impl CondowClient for TestCondowClient {
         };
 
         if range.end > self.data.len() {
-            return Box::pin(future::ready(Err(CondowError::InvalidRange(format!(
+            return Box::pin(future::ready(Err(CondowError::new_invalid_range(format!(
                 "max upper bound is {} but {} was requested",
                 self.data.len(),
                 range.end - 1

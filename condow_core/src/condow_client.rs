@@ -2,7 +2,7 @@
 use futures::future::BoxFuture;
 
 use crate::{
-    errors::{CondowError, GetSizeError},
+    errors::CondowError,
     streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
@@ -35,8 +35,7 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
     /// Returns the size of the BLOB at the given location
-    fn get_size(&self, location: Self::Location)
-        -> BoxFuture<'static, Result<usize, GetSizeError>>;
+    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<usize, CondowError>>;
 
     /// Download a BLOB or part of a BLOB from the given location as specified by the [DownloadSpec]
     ///

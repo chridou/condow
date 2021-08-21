@@ -23,7 +23,7 @@ use futures::{future::BoxFuture, Stream};
 
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
-use errors::{CondowError, GetSizeError};
+use errors::CondowError;
 use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{BytesHint, ChunkStream, ChunkStreamItem, PartStream};
 
@@ -167,7 +167,7 @@ impl<C: CondowClient> Condow<C> {
     }
 
     /// Get the size of a file at the given location
-    pub async fn get_size(&self, location: C::Location) -> Result<usize, GetSizeError> {
+    pub async fn get_size(&self, location: C::Location) -> Result<usize, CondowError> {
         self.client.get_size(location).await
     }
 

@@ -81,7 +81,7 @@ impl ClosedRange {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
-                    Err(CondowError::InvalidRange(format!(
+                    Err(CondowError::new_invalid_range(format!(
                         "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))
@@ -91,7 +91,7 @@ impl ClosedRange {
             }
             Self::FromToInclusive(a, b) => {
                 if b < a {
-                    Err(CondowError::InvalidRange(format!(
+                    Err(CondowError::new_invalid_range(format!(
                         "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
                         a, b
                     )))

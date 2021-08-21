@@ -266,7 +266,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 bytes_received += bytes.len();
 
                 if bytes_received > bytes_expected {
-                    let msg = Err(CondowError::Other(format!(
+                    let msg = Err(CondowError::new_other(format!(
                         "received more bytes than expected for part {} ({}..={}). expected {}, received {}",
                         range_request.part_index,
                         range_request.blob_range.start(),
@@ -294,7 +294,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 offset_in_range += n_bytes;
             }
             Err(IoError(msg)) => {
-                let _ = results_sender.unbounded_send(Err(CondowError::Io(msg)));
+                let _ = results_sender.unbounded_send(Err(CondowError::new_io(msg)));
                 return Err(());
             }
         }
@@ -308,7 +308,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
     );
 
     if bytes_received != bytes_expected {
-        let msg = Err(CondowError::Other(format!(
+        let msg = Err(CondowError::new_other(format!(
             "received wrong number of bytes for part {} ({}..={}). expected {}, received {}",
             range_request.part_index,
             range_request.blob_range.start(),
