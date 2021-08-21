@@ -3,13 +3,7 @@ use std::sync::Arc;
 
 use futures::future::BoxFuture;
 
-use crate::{
-    condow_client::CondowClient,
-    errors::{CondowError, GetSizeError},
-    reporter::{NoReporting, Reporter, ReporterFactory},
-    streams::{ChunkStream, PartStream},
-    Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
-};
+use crate::{Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport, condow_client::CondowClient, errors::{CondowError, GetSizeError}, reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory}, streams::{ChunkStream, PartStream}};
 
 /// A downloading API for instrumented downloading.
 ///
@@ -210,53 +204,3 @@ where
     }
 }
 
-#[derive(Clone)]
-struct CompositeReporter<RA: Reporter, RB: Reporter>(RA, RB);
-
-impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
-    fn effective_range(&self, range: crate::InclusiveRange) {
-        self.0.effective_range(range);
-        self.1.effective_range(range);
-    }
-
-    fn download_started(&self) {
-        self.0.download_started();
-        self.1.download_started();
-    }
-
-    fn download_completed(&self) {
-        self.0.download_completed();
-        self.1.download_completed();
-    }
-
-    fn download_failed(&self) {
-        self.0.download_failed();
-        self.1.download_failed();
-    }
-
-    fn queue_full(&self) {
-        self.0.queue_full();
-        self.1.queue_full();
-    }
-
-    fn chunk_completed(&self, part_index: usize, n_bytes: usize, time: std::time::Duration) {
-        self.0.chunk_completed(part_index, n_bytes, time);
-        self.1.chunk_completed(part_index, n_bytes, time);
-    }
-
-    fn part_started(&self, part_index: usize, range: crate::InclusiveRange) {
-        self.0.part_started(part_index, range);
-        self.1.part_started(part_index, range);
-    }
-
-    fn part_completed(
-        &self,
-        part_index: usize,
-        n_chunks: usize,
-        n_bytes: usize,
-        time: std::time::Duration,
-    ) {
-        self.0.part_completed(part_index, n_chunks, n_bytes, time);
-        self.1.part_completed(part_index, n_chunks, n_bytes, time);
-    }
-}
