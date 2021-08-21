@@ -1,3 +1,4 @@
+/// Downloading API with optional per request instrumentation
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -10,13 +11,16 @@ use crate::{
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
 };
 
-/// A configured downloader.
+/// A downloading API.
 ///
-/// This struct has state which configures a download.
+/// This has mutiple methods to download data. The main difference to
+/// [Condow] itself is, that per request reporting/instrumentation can be enabled.
+/// Only those methods which return a [Reporter] will be instrumented.
 pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
     ///
     /// Default: As configured with [Condow] itself
+    /// or the struct this was cloned from
     pub get_size_mode: GetSizeMode,
     condow: Condow<C>,
     reporter_factory: Arc<RF>,
@@ -98,7 +102,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
 
     /// Download the BLOB/range and report events.
     ///
-    /// The [Reporter] is the one that was configured when creating [Downloader].
+    /// The returned [Reporter] is created by the [ReporterFactory] when constructed.
     ///
     /// The parts and the chunks streamed have the same ordering as
     /// within the BLOB/range downloaded.
@@ -114,7 +118,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts and report events.
     ///
-    /// The [Reporter] is the one that was configured when creating [Downloader].
+    /// The returned [Reporter] is created by the [ReporterFactory] when constructed.
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are
@@ -130,7 +134,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
 
     /// Download the BLOB/range and report events.
     ///
-    /// The [Reporter] has to be passed to the method explicitly.
+    /// A [Reporter] has to be passed to the method explicitly.
     ///
     /// The parts and the chunks streamed have the same ordering as
     /// within the BLOB/range downloaded.
@@ -148,7 +152,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     /// Download the chunks of a BLOB/range as received
     /// from the concurrently downloaded parts and report events.
     ///
-    /// The [Reporter] has to be passed to the method explicitly.
+    /// A [Reporter] has to be passed to the method explicitly.
     ///
     /// The parts and the chunks streamed have no specific ordering.
     /// Chunks of the same part still have the correct ordering as they are

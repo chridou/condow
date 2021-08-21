@@ -1,3 +1,4 @@
+/// Downloading API with shared request instrumentation
 use std::sync::Arc;
 
 use futures::future::BoxFuture;
@@ -10,10 +11,20 @@ use crate::{
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
 };
 
+/// A downloading API for instrumented downloading.
+///
+/// This has mutiple methods to download data. The main difference to
+/// [Condow] itself is, that per request reporting/instrumentation is be enabled.
+/// All methods will always create a [Reporter] and collect data. Even those
+/// where an explicit [Reporter] is passed.
+///
+/// The [ReporterFactory] should act as a "global" metrics collector collecting
+/// data from the per request generated [Reporter]s.
 pub struct DownloadSession<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
     ///
     /// Default: As configured with [Condow] itself
+    /// or the struct this was cloned from
     pub get_size_mode: GetSizeMode,
     condow: Condow<C>,
     reporter_factory: Arc<RF>,

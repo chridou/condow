@@ -46,6 +46,7 @@ pub use downloader::*;
 #[cfg(test)]
 pub mod test_utils;
 
+/// A common interface for downloading
 pub trait Downloads<L>
 where
     L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
@@ -245,6 +246,9 @@ where
     }
 }
 
+/// A composite struct of a stream and a [Reporter]
+///
+/// Returned from functions which have reporting enabled.
 pub struct StreamWithReport<St: Stream, R: Reporter> {
     pub stream: St,
     pub reporter: R,
