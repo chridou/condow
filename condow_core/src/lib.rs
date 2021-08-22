@@ -25,7 +25,7 @@ use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::CondowError;
 use reporter::{NoReporting, Reporter, ReporterFactory};
-use streams::{BytesHint, ChunkStream, ChunkStreamItem, PartStream};
+use streams::{ChunkStream, ChunkStreamItem, PartStream};
 
 #[macro_use]
 pub(crate) mod helpers;
