@@ -310,7 +310,7 @@ mod simple_reporter {
             inner
                 .max_chunks_per_part
                 .fetch_max(n_chunks, Ordering::SeqCst);
-            let ms = time.as_millis() as u64;
+            let ms = time.as_micros() as u64;
             inner.min_part_us.fetch_min(ms, Ordering::SeqCst);
             inner.max_part_us.fetch_max(ms, Ordering::SeqCst);
         }
