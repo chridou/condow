@@ -22,7 +22,7 @@ pub async fn download<C: CondowClient, R: Reporter>(
     config: Config,
     reporter: R,
 ) -> Result<ChunkStream, CondowError> {
-    reporter.effective_range(range);
+    reporter.download(&location, range);
 
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
 

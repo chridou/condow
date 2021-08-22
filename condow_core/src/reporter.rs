@@ -3,7 +3,7 @@
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use crate::InclusiveRange;
 
@@ -27,8 +27,10 @@ pub trait ReporterFactory: Send + Sync + 'static {
 /// downloading too much with measuring.
 #[allow(unused_variables)]
 pub trait Reporter: Clone + Send + Sync + 'static {
-    /// The effective range which is downloaded (and split into parts)
-    fn effective_range(&self, range: InclusiveRange) {}
+    /// The location and range of this download
+    ///
+    /// **This is always the first method called.**
+    fn download(&self, location: &dyn fmt::Display, range: InclusiveRange) {}
     /// The actual IO started
     fn download_started(&self) {}
     /// IO tasks finished
@@ -69,9 +71,9 @@ impl ReporterFactory for NoReporting {
 pub struct CompositeReporter<RA: Reporter, RB: Reporter>(pub RA, pub RB);
 
 impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
-    fn effective_range(&self, range: crate::InclusiveRange) {
-        self.0.effective_range(range);
-        self.1.effective_range(range);
+    fn download(&self, location: &dyn fmt::Display, range: crate::InclusiveRange) {
+        self.0.download(location, range);
+        self.1.download(location, range);
     }
 
     fn download_started(&self) {
@@ -119,12 +121,15 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
 mod simple_reporter {
     //! Simple reporting with counters
     use std::{
+        fmt,
         sync::{
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc, Mutex,
         },
         time::{Duration, Instant},
     };
+
+    use crate::InclusiveRange;
 
     use super::{Reporter, ReporterFactory};
 
@@ -179,6 +184,8 @@ mod simple_reporter {
             };
 
             SimpleReport {
+                location: inner.location.lock().unwrap().clone(),
+                effective_range: *inner.range.lock().unwrap(),
                 is_finished: self.is_download_finished(),
                 is_failed: inner.is_failed.load(Ordering::SeqCst),
                 download_time,
@@ -213,6 +220,8 @@ mod simple_reporter {
 
     #[derive(Debug, Clone)]
     pub struct SimpleReport {
+        pub location: String,
+        pub effective_range: InclusiveRange,
         /// `true` if the download was finished
         pub is_finished: bool,
         pub is_failed: bool,
@@ -241,6 +250,15 @@ mod simple_reporter {
     }
 
     impl Reporter for SimpleReporter {
+        fn download(&self, location: &dyn fmt::Display, range: InclusiveRange) {
+            self.inner
+                .location
+                .lock()
+                .unwrap()
+                .push_str(&location.to_string());
+            *self.inner.range.lock().unwrap() = range;
+        }
+
         fn download_started(&self) {
             *self.inner.download_started_at.lock().unwrap() = Instant::now();
         }
@@ -293,6 +311,8 @@ mod simple_reporter {
     }
 
     struct Inner {
+        location: Mutex<String>,
+        range: Mutex<InclusiveRange>,
         download_started_at: Mutex<Instant>,
         download_finished_at: Mutex<Option<Instant>>,
         is_failed: AtomicBool,
@@ -315,6 +335,8 @@ mod simple_reporter {
     impl Inner {
         fn new() -> Self {
             Inner {
+                location: Mutex::new(String::new()),
+                range: Mutex::new(InclusiveRange(0, 0)),
                 download_started_at: Mutex::new(Instant::now()),
                 download_finished_at: Mutex::new(None),
                 is_failed: AtomicBool::new(false),

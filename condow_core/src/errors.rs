@@ -3,6 +3,9 @@ use std::fmt;
 
 use thiserror::Error;
 
+/// The error type used by `condow`
+///
+/// Further information is encoded with [CondowErrorKind].
 #[derive(Error, Debug)]
 pub struct CondowError {
     msg: String,
@@ -63,6 +66,7 @@ impl fmt::Display for CondowError {
     }
 }
 
+/// Specifies the kind of a [CondowError]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CondowErrorKind {
     InvalidRange,
