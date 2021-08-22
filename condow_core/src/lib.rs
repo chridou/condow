@@ -178,6 +178,8 @@ impl<C: CondowClient> Condow<C> {
         get_size_mode: GetSizeMode,
         reporter: RP,
     ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
+        reporter.location(&location);
+
         let range: DownloadRange = range.into();
         range.validate()?;
         let range = if let Some(range) = range.sanitized() {
