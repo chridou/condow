@@ -1,5 +1,8 @@
 //! Ranges for specifying downloads
-use std::ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive};
+use std::{
+    fmt,
+    ops::{Range, RangeFrom, RangeFull, RangeInclusive, RangeTo, RangeToInclusive},
+};
 
 use crate::errors::CondowError;
 
@@ -38,6 +41,12 @@ impl InclusiveRange {
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
     pub fn http_range_value(&self) -> String {
         format!("bytes={}-{}", self.0, self.1)
+    }
+}
+
+impl fmt::Display for InclusiveRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}..={}", self.0, self.1)
     }
 }
 
