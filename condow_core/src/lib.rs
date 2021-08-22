@@ -178,52 +178,7 @@ impl<C: CondowClient> Condow<C> {
         get_size_mode: GetSizeMode,
         reporter: RP,
     ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
-        reporter.location(&location);
-
-        let range: DownloadRange = range.into();
-        range.validate()?;
-        let range = if let Some(range) = range.sanitized() {
-            range
-        } else {
-            return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
-        };
-
-        let (inclusive_range, bytes_hint) = match range {
-            DownloadRange::Open(or) => {
-                let size = self.client.get_size(location.clone()).await?;
-                if let Some(range) = or.incl_range_from_size(size) {
-                    (range, BytesHint::new_exact(range.len()))
-                } else {
-                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
-                }
-            }
-            DownloadRange::Closed(cl) => {
-                if get_size_mode.is_load_size_enforced(self.config.always_get_size) {
-                    let size = self.client.get_size(location.clone()).await?;
-                    if let Some(range) = cl.incl_range_from_size(size) {
-                        (range, BytesHint::new_exact(range.len()))
-                    } else {
-                        return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
-                    }
-                } else if let Some(range) = cl.incl_range() {
-                    (range, BytesHint::new_at_max(range.len()))
-                } else {
-                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
-                }
-            }
-        };
-
-        let stream = machinery::download(
-            self.client.clone(),
-            location,
-            inclusive_range,
-            bytes_hint,
-            self.config.clone(),
-            reporter.clone(),
-        )
-        .await?;
-
-        Ok(StreamWithReport { reporter, stream })
+        machinery::start_download(&self, location, range, get_size_mode, reporter).await
     }
 }
 

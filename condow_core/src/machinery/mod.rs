@@ -6,15 +6,70 @@ use crate::condow_client::CondowClient;
 use crate::config::Config;
 use crate::errors::CondowError;
 use crate::streams::{BytesHint, ChunkStream};
-use crate::InclusiveRange;
 use crate::Reporter;
+use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange, StreamWithReport};
 
 use self::range_stream::RangeStream;
 
 mod downloaders;
 mod range_stream;
 
-pub async fn download<C: CondowClient, R: Reporter>(
+pub async fn start_download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
+    condow: &Condow<C>,
+    location: C::Location,
+    range: DR,
+    get_size_mode: GetSizeMode,
+    reporter: R,
+) -> Result<StreamWithReport<ChunkStream, R>, CondowError> {
+    reporter.location(&location);
+
+    let range: DownloadRange = range.into();
+    range.validate()?;
+    let range = if let Some(range) = range.sanitized() {
+        range
+    } else {
+        return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+    };
+
+    let (inclusive_range, bytes_hint) = match range {
+        DownloadRange::Open(or) => {
+            let size = condow.client.get_size(location.clone()).await?;
+            if let Some(range) = or.incl_range_from_size(size) {
+                (range, BytesHint::new_exact(range.len()))
+            } else {
+                return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+            }
+        }
+        DownloadRange::Closed(cl) => {
+            if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
+                let size = condow.client.get_size(location.clone()).await?;
+                if let Some(range) = cl.incl_range_from_size(size) {
+                    (range, BytesHint::new_exact(range.len()))
+                } else {
+                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+                }
+            } else if let Some(range) = cl.incl_range() {
+                (range, BytesHint::new_at_max(range.len()))
+            } else {
+                return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+            }
+        }
+    };
+
+    let stream = download(
+        condow.client.clone(),
+        location,
+        inclusive_range,
+        bytes_hint,
+        condow.config.clone(),
+        reporter.clone(),
+    )
+    .await?;
+
+    Ok(StreamWithReport { reporter, stream })
+}
+
+async fn download<C: CondowClient, R: Reporter>(
     client: C,
     location: C::Location,
     range: InclusiveRange,

@@ -161,10 +161,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
 impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> {
     type Location = S3Location;
 
-    fn get_size(
-        &self,
-        location: Self::Location,
-    ) -> BoxFuture<'static, Result<usize, CondowError>> {
+    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<usize, CondowError>> {
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
@@ -182,9 +179,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             if let Some(size) = response.content_length {
                 Ok(size as usize)
             } else {
-                Err(CondowError::new_other(
-                    "response had no content length",
-                ))
+                Err(CondowError::new_other("response had no content length"))
             }
         };
 
@@ -234,27 +229,35 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
 fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError {
     match err {
         RusotoError::Service(err) => CondowError::new_remote("remote error").with_source(err),
-        RusotoError::Validation(cause) => CondowError::new_other(format!("validation error: {}", cause)),
-        RusotoError::Credentials(err) => CondowError::new_other("credentials error").with_source(err),
+        RusotoError::Validation(cause) => {
+            CondowError::new_other(format!("validation error: {}", cause))
+        }
+        RusotoError::Credentials(err) => {
+            CondowError::new_other("credentials error").with_source(err)
+        }
         RusotoError::HttpDispatch(dispatch_error) => {
             CondowError::new_other("http dispatch error").with_source(dispatch_error)
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
-        RusotoError::Unknown(_cause) => CondowError::new_other("unknown"),//.with_source(cause),
+        RusotoError::Unknown(_cause) => CondowError::new_other("unknown"), //.with_source(cause),
         RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
     }
 }
 
 fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowError {
-        match err {
-            RusotoError::Service(err) => CondowError::new_remote("remote error").with_source(err),
-            RusotoError::Validation(cause) => CondowError::new_other(format!("validation error: {}", cause)),
-            RusotoError::Credentials(err) => CondowError::new_other("credentials error").with_source(err),
-            RusotoError::HttpDispatch(dispatch_error) => {
-                CondowError::new_other("http dispatch error").with_source(dispatch_error)
-            }
-            RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
-            RusotoError::Unknown(_cause) => CondowError::new_other("unknown"),//.with_source(cause),
-            RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
+    match err {
+        RusotoError::Service(err) => CondowError::new_remote("remote error").with_source(err),
+        RusotoError::Validation(cause) => {
+            CondowError::new_other(format!("validation error: {}", cause))
         }
- }
+        RusotoError::Credentials(err) => {
+            CondowError::new_other("credentials error").with_source(err)
+        }
+        RusotoError::HttpDispatch(dispatch_error) => {
+            CondowError::new_other("http dispatch error").with_source(dispatch_error)
+        }
+        RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
+        RusotoError::Unknown(_cause) => CondowError::new_other("unknown"), //.with_source(cause),
+        RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
+    }
+}
