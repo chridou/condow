@@ -6,6 +6,7 @@ use futures::future::BoxFuture;
 use crate::{
     condow_client::CondowClient,
     errors::CondowError,
+    machinery,
     reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
@@ -79,10 +80,15 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        self.condow
-            .download_chunks_internal(location, range, self.get_size_mode, NoReporting)
-            .await
-            .map(|o| o.stream)
+        machinery::start_download(
+            &self.condow,
+            location,
+            range,
+            self.get_size_mode,
+            NoReporting,
+        )
+        .await
+        .map(|o| o.stream)
     }
 
     /// Download the BLOB/range and report events.
@@ -161,8 +167,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         reporter: RPP,
     ) -> Result<StreamWithReport<ChunkStream, RPP>, CondowError> {
         let composite = CompositeReporter(self.reporter_factory.make(), reporter);
-        self.condow
-            .download_chunks_internal(location, range, self.get_size_mode, composite)
+        machinery::start_download(&self.condow, location, range, self.get_size_mode, composite)
             .await
             .map(|sr| {
                 let StreamWithReport { stream, reporter } = sr;

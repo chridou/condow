@@ -81,6 +81,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
+        use crate::machinery;
         use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -110,15 +111,15 @@ mod range {
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = condow
-                                .download_chunks_internal(
-                                    NoLocation,
-                                    range.clone(),
-                                    crate::GetSizeMode::Always,
-                                    SimpleReporter::default(),
-                                )
-                                .await
-                                .unwrap();
+                            let result_stream = machinery::start_download(
+                                &condow,
+                                NoLocation,
+                                range.clone(),
+                                crate::GetSizeMode::Always,
+                                SimpleReporter::default(),
+                            )
+                            .await
+                            .unwrap();
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
@@ -156,15 +157,15 @@ mod range {
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = condow
-                                .download_chunks_internal(
-                                    NoLocation,
-                                    range.clone(),
-                                    crate::GetSizeMode::Required,
-                                    SimpleReporter::default(),
-                                )
-                                .await
-                                .unwrap();
+                            let result_stream = machinery::start_download(
+                                &condow,
+                                NoLocation,
+                                range.clone(),
+                                crate::GetSizeMode::Required,
+                                SimpleReporter::default(),
+                            )
+                            .await
+                            .unwrap();
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
@@ -180,6 +181,7 @@ mod range {
     mod closed {
         use std::sync::Arc;
 
+        use crate::machinery;
         use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -210,15 +212,15 @@ mod range {
                             let range = 0..=end_incl;
                             let expected_range_end = (end_incl + 1).min(data.len());
 
-                            let result_stream = condow
-                                .download_chunks_internal(
-                                    NoLocation,
-                                    range.clone(),
-                                    crate::GetSizeMode::Default,
-                                    SimpleReporter::default(),
-                                )
-                                .await
-                                .unwrap();
+                            let result_stream = machinery::start_download(
+                                &condow,
+                                NoLocation,
+                                range.clone(),
+                                crate::GetSizeMode::Default,
+                                SimpleReporter::default(),
+                            )
+                            .await
+                            .unwrap();
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
@@ -256,15 +258,15 @@ mod range {
                             let range = 0..end_excl;
                             let expected_range_end = end_excl.min(data.len());
 
-                            let result_stream = condow
-                                .download_chunks_internal(
-                                    NoLocation,
-                                    range.clone(),
-                                    crate::GetSizeMode::Default,
-                                    SimpleReporter::default(),
-                                )
-                                .await
-                                .unwrap();
+                            let result_stream = machinery::start_download(
+                                &condow,
+                                NoLocation,
+                                range.clone(),
+                                crate::GetSizeMode::Default,
+                                SimpleReporter::default(),
+                            )
+                            .await
+                            .unwrap();
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
@@ -279,6 +281,7 @@ mod range {
             mod start_at_0 {
                 use std::sync::Arc;
 
+                use crate::machinery;
                 use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -309,15 +312,15 @@ mod range {
                                     let range = 0..=end_incl;
                                     let expected_range_end = (end_incl + 1).min(data.len());
 
-                                    let result_stream = condow
-                                        .download_chunks_internal(
-                                            NoLocation,
-                                            range,
-                                            crate::GetSizeMode::Default,
-                                            SimpleReporter::default(),
-                                        )
-                                        .await
-                                        .unwrap();
+                                    let result_stream = machinery::start_download(
+                                        &condow,
+                                        NoLocation,
+                                        range,
+                                        crate::GetSizeMode::Default,
+                                        SimpleReporter::default(),
+                                    )
+                                    .await
+                                    .unwrap();
 
                                     let result =
                                         result_stream.into_stream().into_vec().await.unwrap();
@@ -356,15 +359,15 @@ mod range {
                                     let range = 0..end_excl;
                                     let expected_range_end = end_excl.min(data.len());
 
-                                    let result_stream = condow
-                                        .download_chunks_internal(
-                                            NoLocation,
-                                            range,
-                                            crate::GetSizeMode::Default,
-                                            SimpleReporter::default(),
-                                        )
-                                        .await
-                                        .unwrap();
+                                    let result_stream = machinery::start_download(
+                                        &condow,
+                                        NoLocation,
+                                        range,
+                                        crate::GetSizeMode::Default,
+                                        SimpleReporter::default(),
+                                    )
+                                    .await
+                                    .unwrap();
 
                                     let result =
                                         result_stream.into_stream().into_vec().await.unwrap();
@@ -380,6 +383,7 @@ mod range {
             mod start_after_0 {
                 use std::sync::Arc;
 
+                use crate::machinery;
                 use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -412,15 +416,15 @@ mod range {
                                         let range = start..=(end_incl);
                                         let expected_range_end = (end_incl + 1).min(data.len());
 
-                                        let result_stream = condow
-                                            .download_chunks_internal(
-                                                NoLocation,
-                                                range,
-                                                crate::GetSizeMode::Default,
-                                                SimpleReporter::default(),
-                                            )
-                                            .await
-                                            .unwrap();
+                                        let result_stream = machinery::start_download(
+                                            &condow,
+                                            NoLocation,
+                                            range,
+                                            crate::GetSizeMode::Default,
+                                            SimpleReporter::default(),
+                                        )
+                                        .await
+                                        .unwrap();
 
                                         let result =
                                             result_stream.into_stream().into_vec().await.unwrap();
@@ -462,15 +466,15 @@ mod range {
                                         let range = start..(end_excl);
                                         let expected_range_end = end_excl.min(data.len());
 
-                                        let result_stream = condow
-                                            .download_chunks_internal(
-                                                NoLocation,
-                                                range,
-                                                crate::GetSizeMode::Default,
-                                                SimpleReporter::default(),
-                                            )
-                                            .await
-                                            .unwrap();
+                                        let result_stream = machinery::start_download(
+                                            &condow,
+                                            NoLocation,
+                                            range,
+                                            crate::GetSizeMode::Default,
+                                            SimpleReporter::default(),
+                                        )
+                                        .await
+                                        .unwrap();
 
                                         let result =
                                             result_stream.into_stream().into_vec().await.unwrap();

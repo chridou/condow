@@ -146,7 +146,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        self.download_chunks_internal(location, range, GetSizeMode::Default, NoReporting)
+        machinery::start_download(&self, location, range, GetSizeMode::Default, NoReporting)
             .await
             .map(|o| o.into_stream())
     }
@@ -159,26 +159,16 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
-        let chunk_stream = self
-            .download_chunks_internal(location, range, GetSizeMode::Default, NoReporting)
-            .await
-            .map(|o| o.into_stream())?;
+        let chunk_stream =
+            machinery::start_download(&self, location, range, GetSizeMode::Default, NoReporting)
+                .await
+                .map(|o| o.into_stream())?;
         PartStream::from_chunk_stream(chunk_stream)
     }
 
     /// Get the size of a file at the given location
     pub async fn get_size(&self, location: C::Location) -> Result<usize, CondowError> {
         self.client.get_size(location).await
-    }
-
-    async fn download_chunks_internal<R: Into<DownloadRange>, RP: Reporter>(
-        &self,
-        location: C::Location,
-        range: R,
-        get_size_mode: GetSizeMode,
-        reporter: RP,
-    ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
-        machinery::start_download(&self, location, range, get_size_mode, reporter).await
     }
 }
 
