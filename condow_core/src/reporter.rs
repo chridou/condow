@@ -122,7 +122,7 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
 }
 
 mod simple_reporter {
-    //! Simple reporting with counters
+    //! Simple reporting with (mostly) counters
     use std::{
         fmt,
         sync::{
@@ -209,8 +209,8 @@ mod simple_reporter {
                 max_part_bytes: inner.max_part_bytes.load(Ordering::SeqCst),
                 min_chunks_per_part: inner.min_chunks_per_part.load(Ordering::SeqCst),
                 max_chunks_per_part: inner.max_chunks_per_part.load(Ordering::SeqCst),
-                min_part_time: Duration::from_millis(inner.min_part_ms.load(Ordering::SeqCst)),
-                max_part_time: Duration::from_millis(inner.max_part_ms.load(Ordering::SeqCst)),
+                min_part_time: Duration::from_micros(inner.min_part_us.load(Ordering::SeqCst)),
+                max_part_time: Duration::from_micros(inner.max_part_us.load(Ordering::SeqCst)),
             }
         }
     }
@@ -311,8 +311,8 @@ mod simple_reporter {
                 .max_chunks_per_part
                 .fetch_max(n_chunks, Ordering::SeqCst);
             let ms = time.as_millis() as u64;
-            inner.min_part_ms.fetch_min(ms, Ordering::SeqCst);
-            inner.max_part_ms.fetch_max(ms, Ordering::SeqCst);
+            inner.min_part_us.fetch_min(ms, Ordering::SeqCst);
+            inner.max_part_us.fetch_max(ms, Ordering::SeqCst);
         }
     }
 
@@ -334,8 +334,8 @@ mod simple_reporter {
         max_part_bytes: AtomicUsize,
         min_chunks_per_part: AtomicUsize,
         max_chunks_per_part: AtomicUsize,
-        min_part_ms: AtomicU64,
-        max_part_ms: AtomicU64,
+        min_part_us: AtomicU64,
+        max_part_us: AtomicU64,
     }
 
     impl Inner {
@@ -358,8 +358,8 @@ mod simple_reporter {
                 max_part_bytes: AtomicUsize::new(0),
                 min_chunks_per_part: AtomicUsize::new(usize::MAX),
                 max_chunks_per_part: AtomicUsize::new(0),
-                min_part_ms: AtomicU64::new(u64::MAX),
-                max_part_ms: AtomicU64::new(0),
+                min_part_us: AtomicU64::new(u64::MAX),
+                max_part_us: AtomicU64::new(0),
             }
         }
     }
