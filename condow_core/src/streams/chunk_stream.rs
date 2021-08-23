@@ -35,8 +35,6 @@ pub struct Chunk {
 
 impl Chunk {
     /// Returns `true` if this is the last chunk of the part
-    ///
-    /// Same as `len()==0`
     pub fn is_last(&self) -> bool {
         self.bytes_left == 0
     }
