@@ -278,7 +278,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                     return Err(());
                 }
 
-                reporter.chunk_completed(range_request.part_index, n_bytes, t_chunk);
+                reporter.chunk_completed(range_request.part_index, chunk_index, n_bytes, t_chunk);
 
                 results_sender
                     .unbounded_send(Ok(Chunk {

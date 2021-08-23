@@ -42,7 +42,14 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed
-    fn chunk_completed(&self, part_index: usize, n_bytes: usize, time: Duration) {}
+    fn chunk_completed(
+        &self,
+        part_index: usize,
+        chunk_index: usize,
+        n_bytes: usize,
+        time: Duration,
+    ) {
+    }
     /// Download of a part has started
     fn part_started(&self, part_index: usize, range: InclusiveRange) {}
     /// Download of a part was completed
@@ -99,9 +106,17 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
         self.1.queue_full();
     }
 
-    fn chunk_completed(&self, part_index: usize, n_bytes: usize, time: std::time::Duration) {
-        self.0.chunk_completed(part_index, n_bytes, time);
-        self.1.chunk_completed(part_index, n_bytes, time);
+    fn chunk_completed(
+        &self,
+        part_index: usize,
+        chunk_index: usize,
+        n_bytes: usize,
+        time: std::time::Duration,
+    ) {
+        self.0
+            .chunk_completed(part_index, chunk_index, n_bytes, time);
+        self.1
+            .chunk_completed(part_index, chunk_index, n_bytes, time);
     }
 
     fn part_started(&self, part_index: usize, range: crate::InclusiveRange) {
@@ -137,12 +152,36 @@ mod simple_reporter {
     use super::{Reporter, ReporterFactory};
 
     /// Creates [SimpleReporter]s
-    pub struct SimpleReporterFactory;
+    pub struct SimpleReporterFactory {
+        skip_first_chunk_timings: bool,
+    }
+
+    impl SimpleReporterFactory {
+        /// Create a new factory
+        ///
+        /// If `skip_first_chunk_timings` is set to `true`
+        /// the first chunk of a part is not considered for
+        /// muasuring timing. This should be enabled
+        /// on HTTP downloads since there is a high chance that
+        /// the first chunk was received with the headers.
+        pub fn new(skip_first_chunk_timings: bool) -> Self {
+            Self {
+                skip_first_chunk_timings,
+            }
+        }
+    }
+
     impl ReporterFactory for SimpleReporterFactory {
         type ReporterType = SimpleReporter;
 
         fn make(&self) -> Self::ReporterType {
-            SimpleReporter::new()
+            SimpleReporter::new(self.skip_first_chunk_timings)
+        }
+    }
+
+    impl Default for SimpleReporterFactory {
+        fn default() -> Self {
+            Self::new(false)
         }
     }
 
@@ -150,12 +189,14 @@ mod simple_reporter {
     #[derive(Clone)]
     pub struct SimpleReporter {
         inner: Arc<Inner>,
+        skip_first_chunk_timings: bool,
     }
 
     impl SimpleReporter {
-        pub fn new() -> Self {
+        pub fn new(skip_first_chunk_timings: bool) -> Self {
             SimpleReporter {
                 inner: Arc::new(Inner::new()),
+                skip_first_chunk_timings,
             }
         }
 
@@ -217,7 +258,7 @@ mod simple_reporter {
 
     impl Default for SimpleReporter {
         fn default() -> Self {
-            Self::new()
+            Self::new(false)
         }
     }
 
@@ -282,14 +323,22 @@ mod simple_reporter {
             self.inner.n_queue_full.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn chunk_completed(&self, _part_index: usize, n_bytes: usize, time: Duration) {
+        fn chunk_completed(
+            &self,
+            _part_index: usize,
+            chunk_index: usize,
+            n_bytes: usize,
+            time: Duration,
+        ) {
             let inner = self.inner.as_ref();
             inner.n_chunks_received.fetch_add(1, Ordering::SeqCst);
             inner.min_chunk_bytes.fetch_min(n_bytes, Ordering::SeqCst);
             inner.max_chunk_bytes.fetch_max(n_bytes, Ordering::SeqCst);
-            let us = time.as_micros() as u64;
-            inner.min_chunk_us.fetch_min(us, Ordering::SeqCst);
-            inner.max_chunk_us.fetch_max(us, Ordering::SeqCst);
+            if self.skip_first_chunk_timings && chunk_index == 0 {
+                let us = time.as_micros() as u64;
+                inner.min_chunk_us.fetch_min(us, Ordering::SeqCst);
+                inner.max_chunk_us.fetch_max(us, Ordering::SeqCst);
+            }
         }
 
         fn part_completed(
