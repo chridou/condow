@@ -13,7 +13,7 @@
 //! use condow_rusoto::config::Config;
 //!
 //! # async {
-//! let client = S3ClientWrapper::new(Default::default());
+//! let client = S3ClientWrapper::new(Region::default());
 //! let condow = client.condow(Config::default()).unwrap();
 //!
 //! let location = Bucket::new("my_bucket").object("my_object");
@@ -30,10 +30,11 @@ use std::{
 
 use anyhow::Error as AnyError;
 use futures::{future::BoxFuture, stream::TryStreamExt};
-use rusoto_core::{Region, RusotoError};
-use rusoto_s3::{
-    GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3Client, S3,
-};
+use rusoto_core::RusotoError;
+use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
+
+pub use rusoto_core::Region;
+pub use rusoto_s3::S3Client;
 
 use condow_core::{
     condow_client::*,
