@@ -6,6 +6,23 @@
 //!
 //! Unlike e.g. the AWS Java SDK this library does not download
 //! the parts as uploaded but ranges.
+//!
+//! ```rust, noexec
+//!
+//! use condow_rusoto::*;
+//! use condow_rusoto::config::Config;
+//!
+//! # async {
+//! let client = S3ClientWrapper::new(Default::default());
+//! let condow = client.condow(Config::default()).unwrap();
+//!
+//! let location = Bucket::new("my_bucket").object("my_object");
+//!
+//! let stream = condow.download(location, 23..46).await.unwrap();
+//! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
+//! # };
+//! # ()
+//! ```
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -48,6 +65,12 @@ impl Bucket {
 impl fmt::Display for Bucket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl From<&str> for Bucket {
+    fn from(s: &str) -> Self {
+        Self::new(s)
     }
 }
 
@@ -100,6 +123,12 @@ impl Deref for ObjectKey {
 impl DerefMut for ObjectKey {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+impl From<&str> for ObjectKey {
+    fn from(s: &str) -> Self {
+        Self::new(s)
     }
 }
 
