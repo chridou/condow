@@ -146,7 +146,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        machinery::download(&self, location, range, GetSizeMode::Default, NoReporting)
+        machinery::download(self, location, range, GetSizeMode::Default, NoReporting)
             .await
             .map(|o| o.into_stream())
     }
@@ -160,7 +160,7 @@ impl<C: CondowClient> Condow<C> {
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
         let chunk_stream =
-            machinery::download(&self, location, range, GetSizeMode::Default, NoReporting)
+            machinery::download(self, location, range, GetSizeMode::Default, NoReporting)
                 .await
                 .map(|o| o.into_stream())?;
         PartStream::from_chunk_stream(chunk_stream)
