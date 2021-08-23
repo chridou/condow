@@ -111,7 +111,7 @@ mod range {
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = machinery::start_download(
+                            let result_stream = machinery::download(
                                 &condow,
                                 NoLocation,
                                 range.clone(),
@@ -157,7 +157,7 @@ mod range {
                         for from_idx in [0usize, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = machinery::start_download(
+                            let result_stream = machinery::download(
                                 &condow,
                                 NoLocation,
                                 range.clone(),
@@ -212,7 +212,7 @@ mod range {
                             let range = 0..=end_incl;
                             let expected_range_end = (end_incl + 1).min(data.len());
 
-                            let result_stream = machinery::start_download(
+                            let result_stream = machinery::download(
                                 &condow,
                                 NoLocation,
                                 range.clone(),
@@ -258,7 +258,7 @@ mod range {
                             let range = 0..end_excl;
                             let expected_range_end = end_excl.min(data.len());
 
-                            let result_stream = machinery::start_download(
+                            let result_stream = machinery::download(
                                 &condow,
                                 NoLocation,
                                 range.clone(),
@@ -312,7 +312,7 @@ mod range {
                                     let range = 0..=end_incl;
                                     let expected_range_end = (end_incl + 1).min(data.len());
 
-                                    let result_stream = machinery::start_download(
+                                    let result_stream = machinery::download(
                                         &condow,
                                         NoLocation,
                                         range,
@@ -359,7 +359,7 @@ mod range {
                                     let range = 0..end_excl;
                                     let expected_range_end = end_excl.min(data.len());
 
-                                    let result_stream = machinery::start_download(
+                                    let result_stream = machinery::download(
                                         &condow,
                                         NoLocation,
                                         range,
@@ -416,7 +416,7 @@ mod range {
                                         let range = start..=(end_incl);
                                         let expected_range_end = (end_incl + 1).min(data.len());
 
-                                        let result_stream = machinery::start_download(
+                                        let result_stream = machinery::download(
                                             &condow,
                                             NoLocation,
                                             range,
@@ -466,7 +466,7 @@ mod range {
                                         let range = start..(end_excl);
                                         let expected_range_end = end_excl.min(data.len());
 
-                                        let result_stream = machinery::start_download(
+                                        let result_stream = machinery::download(
                                             &condow,
                                             NoLocation,
                                             range,

@@ -97,7 +97,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        machinery::start_download(
+        machinery::download(
             &self.condow,
             location,
             range,
@@ -171,7 +171,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         range: R,
         reporter: RP,
     ) -> Result<StreamWithReport<ChunkStream, RP>, CondowError> {
-        machinery::start_download(&self.condow, location, range, self.get_size_mode, reporter).await
+        machinery::download(&self.condow, location, range, self.get_size_mode, reporter).await
     }
 
     /// Get the size of a BLOB at location
