@@ -85,7 +85,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
             location,
             range,
             self.get_size_mode,
-            NoReporting,
+            self.reporter_factory.make(),
         )
         .await
         .map(|o| o.stream)
