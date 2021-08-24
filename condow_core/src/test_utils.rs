@@ -73,8 +73,8 @@ impl CondowClient for TestCondowClient {
     fn get_size(
         &self,
         _location: Self::Location,
-    ) -> BoxFuture<'static, Result<usize, crate::errors::CondowError>> {
-        let f = future::ready(Ok(self.data.len()));
+    ) -> BoxFuture<'static, Result<u64, crate::errors::CondowError>> {
+        let f = future::ready(Ok(self.data.len() as u64));
         Box::pin(f)
     }
 

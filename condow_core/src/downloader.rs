@@ -175,7 +175,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     }
 
     /// Get the size of a BLOB at location
-    pub async fn get_size(&self, location: C::Location) -> Result<usize, CondowError> {
+    pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
         self.condow.get_size(location).await
     }
 }
@@ -209,5 +209,9 @@ where
         range: R,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         Box::pin(self.download_chunks(location, range))
+    }
+
+    fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+        Box::pin(self.get_size(location))
     }
 }

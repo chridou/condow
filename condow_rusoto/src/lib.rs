@@ -191,7 +191,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
 impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> {
     type Location = S3Location;
 
-    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<usize, CondowError>> {
+    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<u64, CondowError>> {
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
@@ -207,7 +207,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
                 .map_err(head_obj_err_to_get_size_err)?;
 
             if let Some(size) = response.content_length {
-                Ok(size as usize)
+                Ok(size as u64)
             } else {
                 Err(CondowError::new_other("response had no content length"))
             }

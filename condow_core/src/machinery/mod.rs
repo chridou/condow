@@ -49,7 +49,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
             let size = condow.client.get_size(location.clone()).await?;
-            if let Some(range) = or.incl_range_from_size(size) {
+            if let Some(range) = or.incl_range_from_size(size as usize) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
                 return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
@@ -58,7 +58,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
         DownloadRange::Closed(cl) => {
             if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
                 let size = condow.client.get_size(location.clone()).await?;
-                if let Some(range) = cl.incl_range_from_size(size) {
+                if let Some(range) = cl.incl_range_from_size(size as usize) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
                     return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
