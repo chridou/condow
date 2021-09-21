@@ -135,8 +135,8 @@ pub type RangeChunkStreamItem = Result<RangeChunk, CondowError>;
 
 #[derive(Debug, Clone)]
 pub struct RangeChunk {
-    range_idx: usize,
-    chunk: Chunk,
+    pub range_idx: usize,
+    pub chunk: Chunk,
 }
 
 pin_project! {

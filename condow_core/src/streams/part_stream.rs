@@ -4,7 +4,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{ready, Stream, StreamExt};
+use futures::{ready, AsyncRead, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -254,6 +254,16 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
+    }
+}
+
+impl<St: Stream<Item = ChunkStreamItem>> AsyncRead for PartStream<St> {
+    fn poll_read(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut [u8],
+    ) -> Poll<std::io::Result<usize>> {
+        todo!()
     }
 }
 
