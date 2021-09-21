@@ -38,6 +38,7 @@ mod downloader;
 pub mod errors;
 mod machinery;
 pub mod multi;
+pub mod reader;
 pub mod reporter;
 pub mod streams;
 

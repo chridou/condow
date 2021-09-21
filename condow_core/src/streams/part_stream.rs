@@ -5,7 +5,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{ready, AsyncRead, Stream, StreamExt};
+use futures::{ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -263,16 +263,6 @@ impl TryFrom<ChunkStream> for PartStream<ChunkStream> {
 
     fn try_from(chunk_stream: ChunkStream) -> Result<Self, Self::Error> {
         PartStream::from_chunk_stream(chunk_stream)
-    }
-}
-
-impl<St: Stream<Item = ChunkStreamItem>> AsyncRead for PartStream<St> {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<std::io::Result<usize>> {
-        todo!()
     }
 }
 
