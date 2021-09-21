@@ -7,6 +7,7 @@ use crate::{
     condow_client::CondowClient,
     errors::CondowError,
     machinery,
+    multi::MultiRangeDownloader,
     reporter::{NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
@@ -22,7 +23,7 @@ pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
     ///
     /// Default: As configured with [Condow] itself
     /// or the struct this was cloned from
-    pub get_size_mode: GetSizeMode,
+    get_size_mode: GetSizeMode,
     condow: Condow<C>,
     reporter_factory: Arc<RF>,
 }
@@ -177,6 +178,11 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
     /// Get the size of a BLOB at location
     pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
         self.condow.get_size(location).await
+    }
+
+    /// Create a new [MultiRangeDownloader] without reporting
+    pub fn multi_range(&self) -> MultiRangeDownloader<C> {
+        MultiRangeDownloader::new_with_reporting_arc(self.condow.clone(), Arc::new(NoReporting))
     }
 }
 

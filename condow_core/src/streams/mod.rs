@@ -116,6 +116,22 @@ impl BytesHint {
         }
     }
 
+    pub fn combine(self, other: BytesHint) -> BytesHint {
+        let (me_lower, me_upper) = self.into_inner();
+        let (other_lower, other_upper) = other.into_inner();
+
+        let lower_bound = me_lower + other_lower;
+
+        let upper_bound = match (me_upper, other_upper) {
+            (Some(a), Some(b)) => Some(a + b),
+            (Some(_), None) => None,
+            (None, Some(_)) => None,
+            (None, None) => None,
+        };
+
+        BytesHint::new(lower_bound, upper_bound)
+    }
+
     /// Turns this into the inner tuple
     pub fn into_inner(self) -> (usize, Option<usize>) {
         (self.lower_bound(), self.upper_bound())
