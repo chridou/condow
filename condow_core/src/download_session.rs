@@ -8,6 +8,7 @@ use crate::{
     errors::CondowError,
     machinery,
     multi::MultiRangeDownloader,
+    reader::Reader,
     reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
@@ -190,6 +191,13 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
             self.condow.clone(),
             Arc::clone(&self.reporter_factory),
         )
+    }
+
+    /// Creates a [Reader] for the given location
+    ///
+    /// The reader will use the configured [ReporterFactory].
+    pub fn reader(&self, location: C::Location) -> Reader<Self, C::Location> {
+        Reader::new(self.clone(), location)
     }
 }
 
