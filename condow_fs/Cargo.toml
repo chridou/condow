@@ -1,24 +1,22 @@
 [package]
-name = "condow_core"
-version = "0.9.1"
+name = "condow_fs"
+version = "0.10.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
-description = "Framework for concurrent downloads"
-documentation = "https://docs.rs/condow_core"
+description = "Concurrent downloads for local files"
+documentation = "https://docs.rs/condow_rusoto"
 homepage = "https://github.com/chridou/condow"
 repository = "https://github.com/chridou/condow"
-keywords = [ "download", "network", "parallel", "files"]
 edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-[dependencies]
-pin-project-lite = "0.2"
-bytes = "1"
-futures = "0.3"
-tokio = { version = "1", features = ["rt", "macros", "time"] }
-thiserror = "1.0"
-anyhow = "1.0"
 
-[dev-dependencies]
-rand = "0.8.0"
+[dependencies]
+condow_core = { version = "0.9", path = "../condow_core"}
+
+futures = "0.3"
+anyhow = "1.0"
+tokio = { version = "1", features = ["fs", "io-util"] }
+bytes = "1"
+

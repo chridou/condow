@@ -72,7 +72,7 @@ impl<C: CondowClient, RF: ReporterFactory> MultiRangeDownloader<C, RF> {
         Ok(chunk_streams)
     }
 
-    pub async fn download_chunks<R: Into<DownloadRange> + Copy>(
+    pub async fn download_chunks<R: Into<DownloadRange> + Clone>(
         &self,
         location: C::Location,
         ranges: &[R],
@@ -82,7 +82,7 @@ impl<C: CondowClient, RF: ReporterFactory> MultiRangeDownloader<C, RF> {
         let mut bytes_hint = BytesHint::new_exact(0);
 
         for (range_idx, range) in ranges.iter().enumerate() {
-            let range: DownloadRange = (*range).into();
+            let range: DownloadRange = range.clone().into();
             let chunk_stream = machinery::download(
                 &self.condow,
                 location.clone(),

@@ -68,6 +68,35 @@ impl From<InclusiveRange> for Range<usize> {
     }
 }
 
+/// A range defined by an offset and a length.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct OffsetRange(pub usize, pub usize);
+
+impl OffsetRange {
+    pub fn new(offset: usize, len: usize) -> Self {
+        Self(offset, len)
+    }
+
+    pub fn start(&self) -> usize {
+        self.0
+    }
+
+    pub fn end_excl(&self) -> usize {
+        self.0 + self.1
+    }
+
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> usize {
+        self.1
+    }
+}
+
+impl fmt::Display for OffsetRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}({})", self.0, self.1)
+    }
+}
+
 /// A closed range
 ///
 /// A closed range has a "defined end".
@@ -342,6 +371,12 @@ impl From<RangeToInclusive<usize>> for DownloadRange {
 impl From<InclusiveRange> for DownloadRange {
     fn from(r: InclusiveRange) -> Self {
         Self::Closed(ClosedRange::FromToInclusive(r.0, r.1))
+    }
+}
+
+impl From<OffsetRange> for DownloadRange {
+    fn from(r: OffsetRange) -> Self {
+        Self::Closed(ClosedRange::FromTo(r.start(), r.end_excl()))
     }
 }
 
