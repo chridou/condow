@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    convert::TryFrom,
     task::{Context, Poll},
 };
 
@@ -254,6 +255,14 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
+    }
+}
+
+impl TryFrom<ChunkStream> for PartStream<ChunkStream> {
+    type Error = CondowError;
+
+    fn try_from(chunk_stream: ChunkStream) -> Result<Self, Self::Error> {
+        PartStream::from_chunk_stream(chunk_stream)
     }
 }
 

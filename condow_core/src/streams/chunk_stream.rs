@@ -1,4 +1,7 @@
-use std::task::{Context, Poll};
+use std::{
+    convert::TryFrom,
+    task::{Context, Poll},
+};
 
 use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
@@ -6,7 +9,7 @@ use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
 
-use super::BytesHint;
+use super::{BytesHint, PartStream};
 
 /// The type of the elements returned by a [ChunkStream]
 pub type ChunkStreamItem = Result<Chunk, CondowError>;
@@ -174,6 +177,13 @@ impl ChunkStream {
         } else {
             stream_into_vec_with_unknown_size(self).await
         }
+    }
+
+    /// Turns this stream into a [PartStream]
+    ///
+    /// Fails if this [ChunkStream] was already iterated.
+    pub fn try_into_part_stream(self) -> Result<PartStream<Self>, CondowError> {
+        PartStream::try_from(self)
     }
 }
 
