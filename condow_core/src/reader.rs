@@ -11,6 +11,20 @@ use crate::{errors::CondowError, Downloads};
 type BytesStream = BoxStream<'static, Result<Vec<Bytes>, CondowError>>;
 type GetNewStreamFut = BoxFuture<'static, BytesStream>;
 
+const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
+
+pub enum FetchAheadMode {
+    None,
+    Bytes(u64),
+    ToEnd,
+}
+
+impl Default for FetchAheadMode {
+    fn default() -> Self {
+        Self::Bytes(FETCH_AHEAD_BYTES)
+    }
+}
+
 enum State {
     Empty,
     Buffered {
@@ -29,6 +43,7 @@ pub struct Reader<D, L> {
     location: L,
     length: u64,
     state: State,
+    pub fetch_ahead_mode: FetchAheadMode,
 }
 
 impl<D, L> Reader<D, L>
@@ -44,14 +59,15 @@ where
             pos: 0,
             length,
             state: State::Empty,
+            fetch_ahead_mode: FetchAheadMode::default(),
         })
     }
 }
 
 impl<D, L> AsyncRead for Reader<D, L>
 where
-    D: Downloads<L>,
-    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
+    D: Downloads<L> + Unpin,
+    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static + Unpin,
 {
     fn poll_read(
         self: Pin<&mut Self>,
