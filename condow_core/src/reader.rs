@@ -112,33 +112,35 @@ where
         // 7. If stream is empty -> GetNewStreamFuture: Buffered state created new future if
         // 8. PollingStream
         // 9.
-        match self.state {
+
+        // Get ownership of the state to not deal with mutable references
+        let current_state = std::mem::replace(&mut self.state, State::Initial);
+
+        match current_state {
             State::Initial => {
                 // Get next stream with a future
                 let fut = match self.get_next_stream(dest_buf.len()) {
                     Ok(fut) => fut,
                     Err(err) => {
-                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                        self.state = State::Finished;
+                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
                     }
                 };
                 self.state = State::GetNewStreamFuture(fut);
                 task::Poll::Pending
             }
-            State::Buffered {
-                ref buffer,
-                ref stream,
-            } => {
+            State::Buffered { buffer, stream } => {
                 todo!()
             }
-            State::GetNewStreamFuture(ref mut fut) => match ready!(fut.as_mut().poll(cx)) {
-                Ok(mut stream) => {
+            State::GetNewStreamFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
+                Ok(stream) => {
                     self.state = State::PollingStream(stream);
                     task::Poll::Pending
                 }
                 Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
             },
             State::PollingStream(mut stream) => match ready!(stream.as_mut().poll_next(cx)) {
-                Some(Ok(mut bytes)) => {
+                Some(Ok(bytes)) => {
                     let mut buffer = Buffer(0, bytes);
                     let bytes_written = fill_buffer(&mut buffer, dest_buf);
                     self.pos += bytes_written as u64;
@@ -156,10 +158,16 @@ where
                     self.state = State::Buffered { buffer, stream };
                     task::Poll::Ready(Ok(bytes_written as usize))
                 }
-                Some(Err(err)) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
+                Some(Err(err)) => {
+                    self.state = State::Finished;
+                    task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                }
                 None => todo!(),
             },
-            State::Finished => task::Poll::Ready(Ok(0)),
+            State::Finished => {
+                self.state = State::Finished;
+                task::Poll::Ready(Ok(0))
+            }
         }
     }
 }
