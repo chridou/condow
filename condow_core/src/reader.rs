@@ -3,9 +3,24 @@ use std::{
     pin::Pin,
 };
 
-use futures::{AsyncRead, AsyncSeek};
+use bytes::Bytes;
+use futures::{future::BoxFuture, stream::BoxStream, AsyncRead, AsyncSeek};
 
 use crate::{errors::CondowError, Downloads};
+
+type BytesStream = BoxStream<'static, Result<Vec<Bytes>, CondowError>>;
+type GetNewStreamFut = BoxFuture<'static, BytesStream>;
+
+enum State {
+    Empty,
+    Buffered {
+        /// Position in the first element of `bytes`
+        pos: u64,
+        bytes: Vec<Bytes>,
+        stream: BytesStream,
+    },
+    GetNewStreamFut(GetNewStreamFut),
+}
 
 /// Implements [AsyncRead] and [AsyncSeek]
 pub struct Reader<D, L> {
@@ -13,6 +28,7 @@ pub struct Reader<D, L> {
     downloader: D,
     location: L,
     length: u64,
+    state: State,
 }
 
 impl<D, L> Reader<D, L>
@@ -27,6 +43,7 @@ where
             location,
             pos: 0,
             length,
+            state: State::Empty,
         })
     }
 }
