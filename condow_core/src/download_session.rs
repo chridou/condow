@@ -196,8 +196,11 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// Creates a [Reader] for the given location
     ///
     /// The reader will use the configured [ReporterFactory].
-    pub fn reader(&self, location: C::Location) -> Reader<Self, C::Location> {
-        Reader::new(self.clone(), location)
+    pub async fn reader(
+        &self,
+        location: C::Location,
+    ) -> Result<Reader<Self, C::Location>, CondowError> {
+        Reader::new(self.clone(), location).await
     }
 }
 

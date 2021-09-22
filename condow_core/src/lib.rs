@@ -184,8 +184,11 @@ impl<C: CondowClient> Condow<C> {
     }
 
     /// Creates a [Reader] for the given location
-    pub fn reader(&self, location: C::Location) -> Reader<Self, C::Location> {
-        Reader::new(self.clone(), location)
+    pub async fn reader(
+        &self,
+        location: C::Location,
+    ) -> Result<Reader<Self, C::Location>, CondowError> {
+        Reader::new(self.clone(), location).await
     }
 }
 

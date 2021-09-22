@@ -81,7 +81,7 @@ impl<C: CondowClient, RF: ReporterFactory> MultiRangeDownloader<C, RF> {
 
         let mut bytes_hint = BytesHint::new_exact(0);
 
-        for (range_idx, range) in ranges.iter().enumerate() {
+        for (range_index, range) in ranges.iter().enumerate() {
             let range: DownloadRange = range.clone().into();
             let chunk_stream = machinery::download(
                 &self.condow,
@@ -99,7 +99,7 @@ impl<C: CondowClient, RF: ReporterFactory> MultiRangeDownloader<C, RF> {
             let task = async move {
                 chunk_stream
                     .for_each(move |chunk_res| {
-                        let msg = chunk_res.map(|chunk| RangeChunk { range_idx, chunk });
+                        let msg = chunk_res.map(|chunk| RangeChunk { range_index, chunk });
 
                         let _ = tx.unbounded_send(msg);
 
@@ -135,7 +135,7 @@ pub type RangeChunkStreamItem = Result<RangeChunk, CondowError>;
 
 #[derive(Debug, Clone)]
 pub struct RangeChunk {
-    pub range_idx: usize,
+    pub range_index: usize,
     pub chunk: Chunk,
 }
 
