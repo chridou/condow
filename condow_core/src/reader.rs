@@ -60,7 +60,7 @@ mod random_access_reader {
         },
         /// Wait for a new stream to be created
         GetNewReaderFuture(GetNewReaderFuture),
-        PollingStream(BytesStream),
+        PollingReader(AsyncReader),
         Finished,
     }
 
@@ -156,14 +156,15 @@ mod random_access_reader {
                     todo!()
                 }
                 State::GetNewReaderFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
-                    Ok(stream) => {
-                        self.state = State::PollingStream(stream);
+                    Ok(reader) => {
+                        self.state = State::PollingReader(reader);
                         task::Poll::Pending
                     }
                     Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
                 },
-                State::PollingStream(mut stream) => match ready!(stream.as_mut().poll_next(cx)) {
-                    Some(Ok(bytes)) => {
+                State::PollingReader(mut reader) => match ready!(Pin::new(&mut reader).poll_read(cx, dest_buf)) {
+                    Ok(bytes) => {
+                        
                         todo!()
                         // let mut buffer = Buffer(0, bytes);
                         // let bytes_written = fill_buffer(&mut buffer, dest_buf);
@@ -182,11 +183,10 @@ mod random_access_reader {
                         // self.state = State::Buffered { buffer, stream };
                         // task::Poll::Ready(Ok(bytes_written as usize))
                     }
-                    Some(Err(err)) => {
+                    Err(err) => {
                         self.state = State::Finished;
                         task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
                     }
-                    None => todo!(),
                 },
                 State::Finished => {
                     self.state = State::Finished;
