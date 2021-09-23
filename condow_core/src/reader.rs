@@ -204,7 +204,10 @@ mod bytes_async_reader {
     use std::pin::Pin;
 
     use bytes::Bytes;
-    use futures::{task, AsyncRead, Stream};
+    use futures::{
+        future::{BoxFuture, Future},
+        ready, task, AsyncRead, Stream,
+    };
 
     use crate::errors::CondowError;
 
@@ -212,7 +215,6 @@ mod bytes_async_reader {
     ///
     /// Consumes a stream of bytes and wraps it into an `AsyncRead`.
     pub struct BytesAsyncReader<St> {
-        stream: St,
         state: State<St>,
     }
 
@@ -222,8 +224,7 @@ mod bytes_async_reader {
     {
         pub fn new(stream: St) -> Self {
             Self {
-                stream,
-                state: State::Initial,
+                state: State::PollingStream(stream),
             }
         }
     }
@@ -237,17 +238,34 @@ mod bytes_async_reader {
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
-            let current_state = std::mem::replace(&mut self.state, State::Initial);
+            let current_state = std::mem::replace(&mut self.state, State::Finished);
 
             match current_state {
-                State::Initial => {
-                    todo!()
+                State::PollingStream(mut stream) => {
+                    match ready!(Pin::new(&mut stream).poll_next(cx)) {
+                        Some(Ok(bytes)) => {
+                            let mut buffer = Buffer(0, bytes);
+                            task::Poll::Ready(Ok(bytes))
+                        }
+                        Some(Err(err)) => {
+                            todo!()
+                        }
+                        None => {
+                            self.state = State::Finished;
+                            task::Poll::Ready(Ok(0))
+                        }
+                    }
                 }
                 State::Buffered { buffer, stream } => {
-                    todo!()
-                }
-                State::PollingStream(mut stream) => {
-                    todo!()
+                    let n_bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+
+                    if buffer.is_empty() {
+                        self.state = State::PollingStream(stream);
+                    } else {
+                        self.state = State::Buffered { buffer, stream };
+                    }
+
+                    task::Poll::Ready(Ok(n_bytes_written))
                 }
                 State::Finished => {
                     self.state = State::Finished;
@@ -257,8 +275,12 @@ mod bytes_async_reader {
         }
     }
 
+    fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> u64 {
+        todo!()
+    }
+
     enum State<St> {
-        Initial,
+        PollingStream(St),
         /// State that holds undelivered bytes
         Buffered {
             /// Position in the first element of `bytes`
@@ -266,7 +288,6 @@ mod bytes_async_reader {
             /// Bytes following those already buffered
             stream: St,
         },
-        PollingStream(St),
         Finished,
     }
 
