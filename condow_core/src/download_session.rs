@@ -200,9 +200,21 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         &self,
         location: C::Location,
     ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
-        RandomAccessReader::new(self.clone(), location).await
+        let length = self.get_size(location.clone()).await?;
+        Ok(RandomAccessReader::new_with_length(self.clone(), location, length))
     }
-}
+    
+       /// Creates a [RandomAccessReader] for the given location
+        ///
+        /// The reader will use the configured [ReporterFactory].
+        pub fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64) -> RandomAccessReader<Self, C::Location> {
+        let mut me = self.clone();
+        me.get_size_mode = GetSizeMode::Required;
+        RandomAccessReader::new_with_length(me, location, length)
+    }}
 
 impl<C: CondowClient, RF: ReporterFactory> Clone for DownloadSession<C, RF> {
     fn clone(&self) -> Self {
