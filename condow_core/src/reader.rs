@@ -14,6 +14,8 @@ use futures::{
 
 use crate::{errors::CondowError, Downloads};
 
+pub use bytes_async_reader::*;
+
 type BytesStream = BoxStream<'static, Result<Vec<Bytes>, CondowError>>;
 type GetNewStreamFuture = BoxFuture<'static, Result<BytesStream, CondowError>>;
 
@@ -194,5 +196,85 @@ where
             SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
         };
         task::Poll::Ready(Ok(this.pos))
+    }
+}
+
+mod bytes_async_reader {
+    use std::io::Result as IoResult;
+    use std::pin::Pin;
+
+    use bytes::Bytes;
+    use futures::{task, AsyncRead, Stream};
+
+    use crate::errors::CondowError;
+
+    /// A reader for streams of `Result<Bytes, CondowError>`.
+    ///
+    /// Consumes a stream of bytes and wraps it into an `AsyncRead`.
+    pub struct BytesAsyncReader<St> {
+        stream: St,
+        state: State<St>,
+    }
+
+    impl<St> BytesAsyncReader<St>
+    where
+        St: Stream<Item = Result<Bytes, CondowError>> + Unpin,
+    {
+        pub fn new(stream: St) -> Self {
+            Self {
+                stream,
+                state: State::Initial,
+            }
+        }
+    }
+
+    impl<St> AsyncRead for BytesAsyncReader<St>
+    where
+        St: Stream<Item = Result<Bytes, CondowError>> + Unpin,
+    {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut task::Context<'_>,
+            dest_buf: &mut [u8],
+        ) -> task::Poll<IoResult<usize>> {
+            let current_state = std::mem::replace(&mut self.state, State::Initial);
+
+            match current_state {
+                State::Initial => {
+                    todo!()
+                }
+                State::Buffered { buffer, stream } => {
+                    todo!()
+                }
+                State::PollingStream(mut stream) => {
+                    todo!()
+                }
+                State::Finished => {
+                    self.state = State::Finished;
+                    task::Poll::Ready(Ok(0))
+                }
+            }
+        }
+    }
+
+    enum State<St> {
+        Initial,
+        /// State that holds undelivered bytes
+        Buffered {
+            /// Position in the first element of `bytes`
+            buffer: Buffer,
+            /// Bytes following those already buffered
+            stream: St,
+        },
+        PollingStream(St),
+        Finished,
+    }
+
+    struct Buffer(usize, Bytes);
+
+    impl Buffer {
+        pub fn is_empty(&self) -> bool {
+            self.1.is_empty()
+        }
     }
 }
