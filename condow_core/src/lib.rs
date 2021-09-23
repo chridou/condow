@@ -187,8 +187,8 @@ impl<C: CondowClient> Condow<C> {
     pub async fn reader(
         &self,
         location: C::Location,
-    ) -> Result<Reader<Self, C::Location>, CondowError> {
-        Reader::new(self.clone(), location).await
+    ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
+        RandomAccessReader::new(self.clone(), location).await
     }
 }
 
@@ -264,7 +264,7 @@ where
 
 impl<S, R> StreamWithReport<PartStream<S>, R>
 where
-    S: Stream<Item = ChunkStreamItem> + Unpin,
+    S: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
     R: Reporter,
 {
     pub async fn write_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {

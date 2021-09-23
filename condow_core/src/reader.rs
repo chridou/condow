@@ -112,13 +112,17 @@ mod random_access_reader {
             let end_incl = end_incl as usize;
 
             let dl = self.downloader.clone();
-            dl.download(self.location.clone(), pos..=end_incl)
-                .map_ok(|stream| {
-                    let stream = stream.bytes_stream().boxed();
-                    let reader = super::BytesAsyncReader::new(stream);
-                    reader
-                })
-                .boxed()
+            let location = self.location.clone();
+            async move {
+                dl.download(location, pos..=end_incl)
+                    .map_ok(|stream| {
+                        let stream = stream.bytes_stream().boxed();
+                        let reader = super::BytesAsyncReader::new(stream);
+                        reader
+                    })
+                    .await
+            }
+            .boxed()
         }
     }
 
@@ -162,32 +166,33 @@ mod random_access_reader {
                     }
                     Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
                 },
-                State::PollingReader(mut reader) => match ready!(Pin::new(&mut reader).poll_read(cx, dest_buf)) {
-                    Ok(bytes) => {
-                        
-                        todo!()
-                        // let mut buffer = Buffer(0, bytes);
-                        // let bytes_written = fill_buffer(&mut buffer, dest_buf);
-                        // self.pos += bytes_written as u64;
+                State::PollingReader(mut reader) => {
+                    match ready!(Pin::new(&mut reader).poll_read(cx, dest_buf)) {
+                        Ok(bytes) => {
+                            todo!()
+                            // let mut buffer = Buffer(0, bytes);
+                            // let bytes_written = fill_buffer(&mut buffer, dest_buf);
+                            // self.pos += bytes_written as u64;
 
-                        // if self.pos == self.length {
-                        //     self.state = State::Finished;
-                        //     return task::Poll::Ready(Ok(bytes_written as usize));
-                        // }
+                            // if self.pos == self.length {
+                            //     self.state = State::Finished;
+                            //     return task::Poll::Ready(Ok(bytes_written as usize));
+                            // }
 
-                        // if buffer.is_empty() {
-                        //     self.state = State::PollingStream(stream);
-                        //     return task::Poll::Ready(Ok(bytes_written as usize));
-                        // }
+                            // if buffer.is_empty() {
+                            //     self.state = State::PollingStream(stream);
+                            //     return task::Poll::Ready(Ok(bytes_written as usize));
+                            // }
 
-                        // self.state = State::Buffered { buffer, stream };
-                        // task::Poll::Ready(Ok(bytes_written as usize))
+                            // self.state = State::Buffered { buffer, stream };
+                            // task::Poll::Ready(Ok(bytes_written as usize))
+                        }
+                        Err(err) => {
+                            self.state = State::Finished;
+                            task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                        }
                     }
-                    Err(err) => {
-                        self.state = State::Finished;
-                        task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
-                    }
-                },
+                }
                 State::Finished => {
                     self.state = State::Finished;
                     task::Poll::Ready(Ok(0))
