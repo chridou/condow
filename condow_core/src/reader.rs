@@ -245,10 +245,19 @@ mod bytes_async_reader {
                     match ready!(Pin::new(&mut stream).poll_next(cx)) {
                         Some(Ok(bytes)) => {
                             let mut buffer = Buffer(0, bytes);
-                            task::Poll::Ready(Ok(bytes))
+                            let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+
+                            if buffer.is_empty() {
+                                self.state = State::PollingStream(stream);
+                            } else {
+                                self.state = State::Buffered { buffer, stream };
+                            }
+
+                            task::Poll::Ready(Ok(bytes_written))
                         }
                         Some(Err(err)) => {
-                            todo!()
+                            self.state = State::Finished;
+                            task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
                         }
                         None => {
                             self.state = State::Finished;
@@ -275,7 +284,7 @@ mod bytes_async_reader {
         }
     }
 
-    fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> u64 {
+    fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> usize {
         todo!()
     }
 
