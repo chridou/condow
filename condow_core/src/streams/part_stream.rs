@@ -4,8 +4,9 @@ use std::{
     task::{Context, Poll},
 };
 
+use crate::reader::BytesAsyncReader;
 use bytes::Bytes;
-use futures::{ready, Stream, StreamExt};
+use futures::{ready, stream, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -64,7 +65,10 @@ pin_project! {
     }
 }
 
-impl<St: Stream<Item = ChunkStreamItem> + Unpin> PartStream<St> {
+impl<St> PartStream<St>
+where
+    St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+{
     /// Create a new [PartStream].
     ///
     /// **Call with care.** This function will only work
@@ -143,6 +147,13 @@ impl<St: Stream<Item = ChunkStreamItem> + Unpin> PartStream<St> {
 
             Ok(buffer)
         }
+    }
+
+    pub fn bytes_stream(
+        self,
+    ) -> impl Stream<Item = Result<Bytes, CondowError>> + Send + Sync + 'static {
+        self.map_ok(|part| stream::iter(part.chunks.into_iter().map(Ok)))
+            .try_flatten()
     }
 }
 

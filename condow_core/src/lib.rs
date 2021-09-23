@@ -25,7 +25,7 @@ use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::CondowError;
 use multi::MultiRangeDownloader;
-use reader::Reader;
+use reader::RandomAccessReader;
 use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{ChunkStream, ChunkStreamItem, PartStream};
 

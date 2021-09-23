@@ -1,206 +1,223 @@
-use std::{
-    io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, SeekFrom},
-    pin::Pin,
-    task,
-};
-
-use bytes::Bytes;
-use futures::{
-    future::{BoxFuture, Future},
-    ready,
-    stream::{BoxStream, StreamExt},
-    AsyncRead, AsyncSeek,
-};
-
-use crate::{errors::CondowError, Downloads};
-
 pub use bytes_async_reader::*;
+pub use random_access_reader::*;
 
-type BytesStream = BoxStream<'static, Result<Vec<Bytes>, CondowError>>;
-type GetNewStreamFuture = BoxFuture<'static, Result<BytesStream, CondowError>>;
+mod random_access_reader {
+    use std::{
+        io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult, SeekFrom},
+        pin::Pin,
+        task,
+    };
 
-const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
+    use bytes::Bytes;
+    use futures::{
+        future::{BoxFuture, Future, FutureExt, TryFutureExt},
+        ready,
+        stream::{BoxStream, StreamExt},
+        AsyncRead, AsyncSeek, Stream,
+    };
 
-pub enum FetchAheadMode {
-    /// Don't fetch any data in excess of those requested.
-    None,
-    /// Fetch n bytes ahead of the current position when bytes are requested.
-    Bytes(u64),
-    /// Fetch all data from the current position to the end of the BLOB.
-    ToEnd,
-}
+    use crate::{errors::CondowError, Downloads};
 
-impl Default for FetchAheadMode {
-    fn default() -> Self {
-        Self::Bytes(FETCH_AHEAD_BYTES)
-    }
-}
+    use super::BytesAsyncReader;
 
-struct Buffer(u64, Vec<Bytes>);
+    type BytesStream = BoxStream<'static, Result<Bytes, CondowError>>;
+    type AsyncReader = BytesAsyncReader<BytesStream>;
+    type GetNewReaderFuture = BoxFuture<'static, Result<AsyncReader, CondowError>>;
 
-impl Buffer {
-    pub fn is_empty(&self) -> bool {
-        self.1.is_empty()
-    }
-}
+    const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
 
-enum State {
-    Initial,
-    /// State that holds undelivered bytes
-    Buffered {
-        /// Position in the first element of `bytes`
-        buffer: Buffer,
-        /// Bytes following those already buffered
-        stream: BytesStream,
-    },
-    /// Wait for a new stream to be created
-    GetNewStreamFuture(GetNewStreamFuture),
-    PollingStream(BytesStream),
-    Finished,
-}
-
-/// Implements [AsyncRead] and [AsyncSeek]
-pub struct Reader<D, L> {
-    /// Reading position of the next byte
-    pos: u64,
-    /// Download logic
-    downloader: D,
-    /// location of the BLOB
-    location: L,
-    /// total length of the BLOB
-    length: u64,
-    state: State,
-    pub fetch_ahead_mode: FetchAheadMode,
-}
-
-impl<D, L> Reader<D, L>
-where
-    D: Downloads<L>,
-    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-{
-    pub async fn new(downloader: D, location: L) -> Result<Self, CondowError> {
-        let length = downloader.get_size(location.clone()).await?;
-        Ok(Self {
-            downloader,
-            location,
-            pos: 0,
-            length,
-            state: State::Initial,
-            fetch_ahead_mode: FetchAheadMode::default(),
-        })
+    pub enum FetchAheadMode {
+        /// Don't fetch any data in excess of those requested.
+        None,
+        /// Fetch n bytes ahead of the current position when bytes are requested.
+        Bytes(u64),
+        /// Fetch all data from the current position to the end of the BLOB.
+        ToEnd,
     }
 
-    fn get_next_stream(&self, min_bytes: usize) -> Result<GetNewStreamFuture, CondowError> {
-        todo!()
+    impl Default for FetchAheadMode {
+        fn default() -> Self {
+            Self::Bytes(FETCH_AHEAD_BYTES)
+        }
     }
-}
 
-impl<D, L> AsyncRead for Reader<D, L>
-where
-    D: Downloads<L> + Unpin,
-    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static + Unpin,
-{
-    fn poll_read(
-        mut self: Pin<&mut Self>,
-        cx: &mut task::Context<'_>,
-        dest_buf: &mut [u8],
-    ) -> task::Poll<IoResult<usize>> {
-        // 1. Initial: build future(stream)
-        // 2. GetNewStreamFuture: check if future is ready to work
-        // 3. PollingStream: request next item from stream (in this state until buffer filled)
-        // 4. Buffered: buffer field deliver data
-        // 5 . PollingStream
-        // 6.
-        // 7. If stream is empty -> GetNewStreamFuture: Buffered state created new future if
-        // 8. PollingStream
-        // 9.
+    struct Buffer(u64, Vec<Bytes>);
 
-        // Get ownership of the state to not deal with mutable references
-        let current_state = std::mem::replace(&mut self.state, State::Initial);
+    impl Buffer {
+        pub fn is_empty(&self) -> bool {
+            self.1.is_empty()
+        }
+    }
 
-        match current_state {
-            State::Initial => {
-                // Get next stream with a future
-                let fut = match self.get_next_stream(dest_buf.len()) {
-                    Ok(fut) => fut,
-                    Err(err) => {
-                        self.state = State::Finished;
-                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
-                    }
-                };
-                self.state = State::GetNewStreamFuture(fut);
-                task::Poll::Pending
+    enum State {
+        Initial,
+        /// State that holds undelivered bytes
+        Buffered {
+            /// Position in the first element of `bytes`
+            buffer: Buffer,
+            /// Bytes following those already buffered
+            stream: BytesStream,
+        },
+        /// Wait for a new stream to be created
+        GetNewReaderFuture(GetNewReaderFuture),
+        PollingStream(BytesStream),
+        Finished,
+    }
+
+    /// Implements [AsyncRead] and [AsyncSeek]
+    pub struct RandomAccessReader<D, L> {
+        /// Reading position of the next byte
+        pos: u64,
+        /// Download logic
+        downloader: D,
+        /// location of the BLOB
+        location: L,
+        /// total length of the BLOB
+        length: u64,
+        state: State,
+        pub fetch_ahead_mode: FetchAheadMode,
+    }
+
+    impl<D, L> RandomAccessReader<D, L>
+    where
+        D: Downloads<L> + Clone + Send + Sync + 'static,
+        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
+    {
+        pub async fn new(downloader: D, location: L) -> Result<Self, CondowError> {
+            let length = downloader.get_size(location.clone()).await?;
+            Ok(Self::new_with_length(downloader, location, length))
+        }
+
+        pub fn new_with_length(downloader: D, location: L, length: u64) -> Self {
+            Self {
+                downloader,
+                location,
+                pos: 0,
+                length,
+                state: State::Initial,
+                fetch_ahead_mode: FetchAheadMode::default(),
             }
-            State::Buffered { buffer, stream } => {
-                todo!()
-            }
-            State::GetNewStreamFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
-                Ok(stream) => {
-                    self.state = State::PollingStream(stream);
+        }
+
+        fn get_next_reader(&self, len: u64) -> GetNewReaderFuture {
+            let len = match self.fetch_ahead_mode {
+                FetchAheadMode::None => len,
+                FetchAheadMode::Bytes(bytes) => len.max(bytes),
+                FetchAheadMode::ToEnd => self.length,
+            };
+
+            let end_incl = (self.pos + len).min(len);
+
+            let pos = self.pos as usize;
+            let end_incl = end_incl as usize;
+
+            let dl = self.downloader.clone();
+            dl.download(self.location.clone(), pos..=end_incl)
+                .map_ok(|stream| {
+                    let stream = stream.bytes_stream().boxed();
+                    let reader = super::BytesAsyncReader::new(stream);
+                    reader
+                })
+                .boxed()
+        }
+    }
+
+    impl<D, L> AsyncRead for RandomAccessReader<D, L>
+    where
+        D: Downloads<L> + Clone + Send + Sync + 'static + Unpin,
+        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static + Unpin,
+    {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            cx: &mut task::Context<'_>,
+            dest_buf: &mut [u8],
+        ) -> task::Poll<IoResult<usize>> {
+            // 1. Initial: build future(stream)
+            // 2. GetNewStreamFuture: check if future is ready to work
+            // 3. PollingStream: request next item from stream (in this state until buffer filled)
+            // 4. Buffered: buffer field deliver data
+            // 5 . PollingStream
+            // 6.
+            // 7. If stream is empty -> GetNewStreamFuture: Buffered state created new future if
+            // 8. PollingStream
+            // 9.
+
+            // Get ownership of the state to not deal with mutable references
+            let current_state = std::mem::replace(&mut self.state, State::Initial);
+
+            match current_state {
+                State::Initial => {
+                    // Get next stream with a future
+                    let fut = self.get_next_reader(dest_buf.len() as u64);
+                    self.state = State::GetNewReaderFuture(fut);
                     task::Poll::Pending
                 }
-                Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
-            },
-            State::PollingStream(mut stream) => match ready!(stream.as_mut().poll_next(cx)) {
-                Some(Ok(bytes)) => {
-                    let mut buffer = Buffer(0, bytes);
-                    let bytes_written = fill_buffer(&mut buffer, dest_buf);
-                    self.pos += bytes_written as u64;
-
-                    if self.pos == self.length {
-                        self.state = State::Finished;
-                        return task::Poll::Ready(Ok(bytes_written as usize));
-                    }
-
-                    if buffer.is_empty() {
+                State::Buffered { buffer, stream } => {
+                    todo!()
+                }
+                State::GetNewReaderFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
+                    Ok(stream) => {
                         self.state = State::PollingStream(stream);
-                        return task::Poll::Ready(Ok(bytes_written as usize));
+                        task::Poll::Pending
                     }
+                    Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
+                },
+                State::PollingStream(mut stream) => match ready!(stream.as_mut().poll_next(cx)) {
+                    Some(Ok(bytes)) => {
+                        todo!()
+                        // let mut buffer = Buffer(0, bytes);
+                        // let bytes_written = fill_buffer(&mut buffer, dest_buf);
+                        // self.pos += bytes_written as u64;
 
-                    self.state = State::Buffered { buffer, stream };
-                    task::Poll::Ready(Ok(bytes_written as usize))
-                }
-                Some(Err(err)) => {
+                        // if self.pos == self.length {
+                        //     self.state = State::Finished;
+                        //     return task::Poll::Ready(Ok(bytes_written as usize));
+                        // }
+
+                        // if buffer.is_empty() {
+                        //     self.state = State::PollingStream(stream);
+                        //     return task::Poll::Ready(Ok(bytes_written as usize));
+                        // }
+
+                        // self.state = State::Buffered { buffer, stream };
+                        // task::Poll::Ready(Ok(bytes_written as usize))
+                    }
+                    Some(Err(err)) => {
+                        self.state = State::Finished;
+                        task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                    }
+                    None => todo!(),
+                },
+                State::Finished => {
                     self.state = State::Finished;
-                    task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                    task::Poll::Ready(Ok(0))
                 }
-                None => todo!(),
-            },
-            State::Finished => {
-                self.state = State::Finished;
-                task::Poll::Ready(Ok(0))
             }
         }
     }
-}
 
-///
-fn fill_buffer(buffer: &mut Buffer, dest_buf: &mut [u8]) -> usize {
-    0
-}
-
-impl<D, L> AsyncSeek for Reader<D, L>
-where
-    D: Unpin,
-    L: Unpin,
-{
-    fn poll_seek(
-        self: Pin<&mut Self>,
-        _: &mut task::Context<'_>,
-        pos: SeekFrom,
-    ) -> task::Poll<IoResult<u64>> {
-        let this = self.get_mut();
-        match pos {
-            SeekFrom::Start(pos) => this.pos = pos,
-            SeekFrom::End(pos) => this.pos = (this.length as i64 + pos) as u64,
-            SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
-        };
-        task::Poll::Ready(Ok(this.pos))
+    impl<D, L> AsyncSeek for RandomAccessReader<D, L>
+    where
+        D: Unpin,
+        L: Unpin,
+    {
+        fn poll_seek(
+            self: Pin<&mut Self>,
+            _: &mut task::Context<'_>,
+            pos: SeekFrom,
+        ) -> task::Poll<IoResult<u64>> {
+            let this = self.get_mut();
+            match pos {
+                SeekFrom::Start(pos) => this.pos = pos,
+                SeekFrom::End(pos) => this.pos = (this.length as i64 + pos) as u64,
+                SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
+            };
+            task::Poll::Ready(Ok(this.pos))
+        }
     }
 }
-
 mod bytes_async_reader {
-    use std::io::Result as IoResult;
+    use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
     use std::pin::Pin;
 
     use bytes::Bytes;
@@ -220,7 +237,7 @@ mod bytes_async_reader {
 
     impl<St> BytesAsyncReader<St>
     where
-        St: Stream<Item = Result<Bytes, CondowError>> + Unpin,
+        St: Stream<Item = Result<Bytes, CondowError>> + Send + 'static + Unpin,
     {
         pub fn new(stream: St) -> Self {
             Self {
@@ -231,13 +248,21 @@ mod bytes_async_reader {
 
     impl<St> AsyncRead for BytesAsyncReader<St>
     where
-        St: Stream<Item = Result<Bytes, CondowError>> + Unpin,
+        St: Stream<Item = Result<Bytes, CondowError>> + Send + 'static + Unpin,
     {
         fn poll_read(
             mut self: Pin<&mut Self>,
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
+            if dest_buf.len() == 0 {
+                self.state = State::Finished;
+                return task::Poll::Ready(Err(IoError::new(
+                    IoErrorKind::Other,
+                    CondowError::new_other("'dest_buf' must have a length greater than 0"),
+                )));
+            }
+
             let current_state = std::mem::replace(&mut self.state, State::Finished);
 
             match current_state {
@@ -265,7 +290,7 @@ mod bytes_async_reader {
                         }
                     }
                 }
-                State::Buffered { buffer, stream } => {
+                State::Buffered { mut buffer, stream } => {
                     let n_bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
 
                     if buffer.is_empty() {
@@ -285,7 +310,17 @@ mod bytes_async_reader {
     }
 
     fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> usize {
-        todo!()
+        let buf_slice = buf.slice();
+        let mut bytes_written = 0;
+
+        buf_slice.iter().zip(dest.iter_mut()).for_each(|(s, d)| {
+            *d = *s;
+            bytes_written += 1;
+        });
+
+        buf.0 += bytes_written;
+
+        bytes_written
     }
 
     enum State<St> {
@@ -300,11 +335,16 @@ mod bytes_async_reader {
         Finished,
     }
 
+    /// (Next byte to read, Bytes[])
     struct Buffer(usize, Bytes);
 
     impl Buffer {
         pub fn is_empty(&self) -> bool {
-            self.1.is_empty()
+            self.0 == self.1.len()
+        }
+
+        pub fn slice(&self) -> &[u8] {
+            &self.1[self.0..]
         }
     }
 }
