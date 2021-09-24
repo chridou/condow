@@ -137,11 +137,13 @@ mod random_access_reader {
                     // Get next stream with a future
                     let fut = self.get_next_reader(dest_buf.len() as u64);
                     self.state = State::GetNewReaderFuture(fut);
+                    cx.waker().wake_by_ref();
                     task::Poll::Pending
                 }
                 State::GetNewReaderFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
                     Ok(reader) => {
                         self.state = State::PollingReader(reader);
+                        cx.waker().wake_by_ref();
                         task::Poll::Pending
                     }
                     Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
