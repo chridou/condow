@@ -230,11 +230,11 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
                                 chunks,
                             })))
                         } else {
-                            cx.waker().clone().wake();
+                            cx.waker().wake_by_ref();
                             Poll::Pending
                         }
                     } else {
-                        cx.waker().clone().wake();
+                        cx.waker().wake_by_ref();
                         Poll::Pending
                     }
                 }

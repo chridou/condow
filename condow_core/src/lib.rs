@@ -188,17 +188,17 @@ impl<C: CondowClient> Condow<C> {
         &self,
         location: C::Location,
     ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
-            RandomAccessReader::new(self.clone(), location).await
+        RandomAccessReader::new(self.clone(), location).await
     }
 
-       /// Creates a [RandomAccessReader] for the given location
-       pub fn reader_with_length(
+    /// Creates a [RandomAccessReader] for the given location
+    pub fn reader_with_length(
         &self,
         location: C::Location,
-        length: u64) -> RandomAccessReader<Self, C::Location> {
+        length: u64,
+    ) -> RandomAccessReader<Self, C::Location> {
         RandomAccessReader::new_with_length(self.clone(), location, length)
     }
-
 }
 
 impl<C> Downloads<C::Location> for Condow<C>
