@@ -387,8 +387,8 @@ mod bytes_async_reader {
         let dest_buf: &mut [u8] = &mut [];
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 0, "bytes_written");
-        assert_eq!(buffer.0, 0);
-        assert_eq!(dest_buf, &[]);
+        assert_eq!(buffer.0, 0, "buffer.0");
+        assert_eq!(dest_buf, &[], "buffer.as_slice");
         assert_eq!(buffer.as_slice(), &[]);
     }
 
@@ -398,8 +398,8 @@ mod bytes_async_reader {
         let dest_buf: &mut [u8] = &mut [10];
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 1, "bytes_written");
-        assert_eq!(buffer.0, 1);
-        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
         assert_eq!(dest_buf, &[0]);
     }
 
@@ -409,11 +409,11 @@ mod bytes_async_reader {
         let dest_buf: &mut [u8] = &mut [10];
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 1, "bytes_written");
-        assert_eq!(buffer.0, 1);
-        assert_eq!(buffer.as_slice(), &[1]);
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[1], "buffer.as_slice");
         assert_eq!(dest_buf, &[0]);
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-        assert_eq!(bytes_written, 1);
+        assert_eq!(bytes_written, 1, "buffer.0");
         assert_eq!(buffer.0, 2);
         assert_eq!(buffer.as_slice(), &[]);
         assert_eq!(dest_buf, &[1]);
@@ -425,12 +425,12 @@ mod bytes_async_reader {
         let dest_buf: &mut [u8] = &mut [10, 11];
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 1, "bytes_written");
-        assert_eq!(buffer.0, 1);
-        assert_eq!(buffer.as_slice(), &[1]);
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[1], "buffer.as_slice");
         assert_eq!(dest_buf, &[0]);
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 1, "bytes_written");
-        assert_eq!(buffer.0, 2);
+        assert_eq!(buffer.0, 2, "buffer.0");
         assert_eq!(buffer.as_slice(), &[]);
         assert_eq!(dest_buf, &[1]);
     }
@@ -441,15 +441,15 @@ mod bytes_async_reader {
         let dest_buf: &mut [u8] = &mut [];
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 0, "bytes_written");
-        assert_eq!(buffer.0, 0);
-        assert_eq!(buffer.as_slice(), &[0]);
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[0], "buffer.as_slice");
         assert_eq!(dest_buf, &[]);
 
         buffer.0 = 1;
         let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
         assert_eq!(bytes_written, 0, "bytes_written");
-        assert_eq!(buffer.0, 0);
-        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
         assert_eq!(dest_buf, &[]);
     }
 }
