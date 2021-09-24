@@ -192,10 +192,32 @@ mod random_access_reader {
 
     #[cfg(test)]
     mod tests {
+       use bytes::Bytes;
+
         use super::*;
 
         struct TestDownloader {
-            streams: Vec<BytesStream>,
+            streams: Vec<Result<BytesStream, CondowError>>,
+        }
+
+        impl TestDownloader {
+            pub fn new() -> Self {
+                Self {
+                    streams: Vec::new()
+                }
+            }
+
+            pub fn new_ok_from_one_batch(batch: Bytes) -> Self {
+                Self {
+                    streams: vec![Ok(batch)]
+                }
+            }
+
+            pub fn new_ok_from_batches<T>(batches: T) -> Self where T: IntoIterator {
+                Self {
+                    streams: batches.into_iter().map(Ok).collect(),
+                }
+            }
         }
     }
 }
