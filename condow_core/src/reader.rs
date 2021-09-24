@@ -322,6 +322,26 @@ mod bytes_async_reader {
         }
     }
 
+    #[tokio::test]
+    async fn test_unknown_at_this_point_of_in_at_sure_current_time() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
+            Ok(vec![0_u8, 1, 2].into()),
+            Ok(vec![3_u8, 4, 5].into()),
+            Ok(vec![6_u8, 7, 8].into()),
+        ];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+
+        let dest_buf: &mut [u8; 9] = &mut [42; 9];
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+
+        assert_eq!(bytes_written, 9, "bytes_written");
+
+        assert_eq!(dest_buf, &[0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    }
+
     #[test]
     fn test_buffer_is_empty() {
         let buffer = Buffer(0, Bytes::new());
