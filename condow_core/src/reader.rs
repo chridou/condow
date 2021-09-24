@@ -189,16 +189,22 @@ mod random_access_reader {
             task::Poll::Ready(Ok(this.pos))
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        struct TestDownloader {
+            streams: Vec<BytesStream>,
+        }
+    }
 }
 mod bytes_async_reader {
     use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
     use std::pin::Pin;
 
     use bytes::Bytes;
-    use futures::{
-        future::{BoxFuture, Future},
-        ready, task, AsyncRead, Stream,
-    };
+    use futures::{ready, task, AsyncRead, Stream};
 
     use crate::errors::CondowError;
 
@@ -323,7 +329,7 @@ mod bytes_async_reader {
     }
 
     #[tokio::test]
-    async fn test_unknown_at_this_point_of_in_at_sure_current_time() {
+    async fn test_read_from_stream_with_stream_chunk_and_destination_buffer_same_size() {
         use futures::io::AsyncReadExt as _;
         // create stream
         let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
@@ -333,13 +339,99 @@ mod bytes_async_reader {
         ];
         let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
         let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 3] = &mut [42; 3];
 
-        let dest_buf: &mut [u8; 9] = &mut [42; 9];
         let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1, 2]);
 
-        assert_eq!(bytes_written, 9, "bytes_written");
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4, 5,]);
 
-        assert_eq!(dest_buf, &[0, 1, 2, 3, 4, 5, 6, 7, 8]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7, 8,]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7, 8,]);
+    }
+
+    #[tokio::test]
+    async fn test_read_from_stream_chunk_larger_than_destination_buffer() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
+            Ok(vec![0_u8, 1, 2].into()),
+            Ok(vec![3_u8, 4, 5].into()),
+            Ok(vec![6_u8, 7, 8].into()),
+        ];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 2] = &mut [42; 2];
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[2, 1]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[5, 4]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[8, 7]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(dest_buf, &[8, 7]);
+    }
+
+    #[tokio::test]
+    async fn test_read_from_stream_destination_buffer_larger_than_stream_chunk() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> =
+            vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 4] = &mut [42; 4];
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1, 2, 42,]);
+
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4, 5, 42]);
+    }
+
+    #[tokio::test]
+    async fn test_read_to_end() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> =
+            vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+
+        let mut buf = Vec::new();
+
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![0, 1, 2, 3, 4, 5]);
     }
 
     #[test]

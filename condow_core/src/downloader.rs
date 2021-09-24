@@ -249,4 +249,12 @@ where
     fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
     }
+
+    fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64,
+    ) -> RandomAccessReader<Self, C::Location> {
+        Downloader::reader_with_length(self, location, length)
+    }
 }

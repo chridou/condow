@@ -19,7 +19,7 @@
 //! the [CondowClient] trait.
 use std::sync::Arc;
 
-use futures::{future::BoxFuture, Stream};
+use futures::{future::BoxFuture, FutureExt, Stream};
 
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
@@ -75,6 +75,27 @@ where
 
     /// Get the size of a file at the BLOB location
     fn get_size<'a>(&'a self, location: L) -> BoxFuture<'a, Result<u64, CondowError>>;
+
+    /// Creates a [RandomAccessReader] for the given location
+    fn reader<'a>(
+        &'a self,
+        location: L,
+    ) -> BoxFuture<'a, Result<RandomAccessReader<Self, L>, CondowError>>
+    where
+        Self: Sized + Sync,
+    {
+        let me = self;
+        async move {
+            let length = me.get_size(location.clone()).await?;
+            Ok(me.reader_with_length(location, length))
+        }
+        .boxed()
+    }
+
+    /// Creates a [RandomAccessReader] for the given location
+    fn reader_with_length(&self, location: L, length: u64) -> RandomAccessReader<Self, L>
+    where
+        Self: Sized;
 }
 
 /// The CONcurrent DOWnloader
@@ -223,6 +244,14 @@ where
 
     fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
+    }
+
+    fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64,
+    ) -> RandomAccessReader<Self, C::Location> {
+        Condow::reader_with_length(self, location, length)
     }
 }
 
