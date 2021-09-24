@@ -51,13 +51,6 @@ mod random_access_reader {
 
     enum State {
         Initial,
-        /// State that holds undelivered bytes
-        Buffered {
-            /// Position in the first element of `bytes`
-            buffer: Buffer,
-            /// Bytes following those already buffered
-            stream: BytesStream,
-        },
         /// Wait for a new stream to be created
         GetNewReaderFuture(GetNewReaderFuture),
         PollingReader(AsyncReader),
@@ -136,16 +129,6 @@ mod random_access_reader {
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
-            // 1. Initial: build future(stream)
-            // 2. GetNewStreamFuture: check if future is ready to work
-            // 3. PollingStream: request next item from stream (in this state until buffer filled)
-            // 4. Buffered: buffer field deliver data
-            // 5 . PollingStream
-            // 6.
-            // 7. If stream is empty -> GetNewStreamFuture: Buffered state created new future if
-            // 8. PollingStream
-            // 9.
-
             // Get ownership of the state to not deal with mutable references
             let current_state = std::mem::replace(&mut self.state, State::Initial);
 
@@ -156,9 +139,6 @@ mod random_access_reader {
                     self.state = State::GetNewReaderFuture(fut);
                     task::Poll::Pending
                 }
-                State::Buffered { buffer, stream } => {
-                    todo!()
-                }
                 State::GetNewReaderFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
                     Ok(reader) => {
                         self.state = State::PollingReader(reader);
@@ -168,24 +148,11 @@ mod random_access_reader {
                 },
                 State::PollingReader(mut reader) => {
                     match ready!(Pin::new(&mut reader).poll_read(cx, dest_buf)) {
-                        Ok(bytes) => {
-                            todo!()
-                            // let mut buffer = Buffer(0, bytes);
-                            // let bytes_written = fill_buffer(&mut buffer, dest_buf);
-                            // self.pos += bytes_written as u64;
-
-                            // if self.pos == self.length {
-                            //     self.state = State::Finished;
-                            //     return task::Poll::Ready(Ok(bytes_written as usize));
-                            // }
-
-                            // if buffer.is_empty() {
-                            //     self.state = State::PollingStream(stream);
-                            //     return task::Poll::Ready(Ok(bytes_written as usize));
-                            // }
-
-                            // self.state = State::Buffered { buffer, stream };
-                            // task::Poll::Ready(Ok(bytes_written as usize))
+                        Ok(bytes_written) => {
+                            if bytes_written == 0 {
+                                self.state = State::Finished;
+                            }
+                            task::Poll::Ready(Ok(bytes_written))
                         }
                         Err(err) => {
                             self.state = State::Finished;
@@ -357,8 +324,10 @@ mod bytes_async_reader {
     fn test_buffer_is_empty() {
         let buffer = Buffer(0, Bytes::new());
         assert!(buffer.is_empty());
+
         let mut buffer = Buffer(0, vec![0_u8].into());
         assert!(!buffer.is_empty());
+
         buffer.0 = 1;
         assert!(buffer.is_empty());
     }
@@ -370,13 +339,16 @@ mod bytes_async_reader {
 
         let mut buffer = Buffer(0, vec![0_u8].into());
         assert_eq!(buffer.as_slice(), &[0]);
+
         buffer.0 = 1;
         assert_eq!(buffer.as_slice(), &[]);
 
         let mut buffer = Buffer(0, vec![0_u8, 1_u8].into());
         assert_eq!(buffer.as_slice(), &[0, 1]);
+
         buffer.0 = 1;
         assert_eq!(buffer.as_slice(), &[1]);
+
         buffer.0 = 2;
         assert_eq!(buffer.as_slice(), &[]);
     }
