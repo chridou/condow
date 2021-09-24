@@ -260,7 +260,7 @@ mod bytes_async_reader {
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
-            if dest_buf.len() == 0 {
+            if dest_buf.is_empty() {
                 self.state = State::Finished;
                 return task::Poll::Ready(Err(IoError::new(
                     IoErrorKind::Other,
@@ -315,7 +315,7 @@ mod bytes_async_reader {
     }
 
     fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> usize {
-        let buf_slice = buf.slice();
+        let buf_slice = buf.as_slice();
         let mut bytes_written = 0;
 
         buf_slice.iter().zip(dest.iter_mut()).for_each(|(s, d)| {
@@ -348,8 +348,108 @@ mod bytes_async_reader {
             self.0 == self.1.len()
         }
 
-        pub fn slice(&self) -> &[u8] {
+        pub fn as_slice(&self) -> &[u8] {
             &self.1[self.0..]
         }
+    }
+
+    #[test]
+    fn test_buffer_is_empty() {
+        let buffer = Buffer(0, Bytes::new());
+        assert!(buffer.is_empty());
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        assert!(!buffer.is_empty());
+        buffer.0 = 1;
+        assert!(buffer.is_empty());
+    }
+
+    #[test]
+    fn test_buffer_slice() {
+        let buffer = Buffer(0, Bytes::new());
+        assert_eq!(buffer.as_slice(), &[]);
+
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        assert_eq!(buffer.as_slice(), &[0]);
+        buffer.0 = 1;
+        assert_eq!(buffer.as_slice(), &[]);
+
+        let mut buffer = Buffer(0, vec![0_u8, 1_u8].into());
+        assert_eq!(buffer.as_slice(), &[0, 1]);
+        buffer.0 = 1;
+        assert_eq!(buffer.as_slice(), &[1]);
+        buffer.0 = 2;
+        assert_eq!(buffer.as_slice(), &[]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_both_empty() {
+        let mut buffer = Buffer(0, Bytes::new());
+        let dest_buf: &mut [u8] = &mut [];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 0);
+        assert_eq!(dest_buf, &[]);
+        assert_eq!(buffer.as_slice(), &[]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_dest_not_empty_1() {
+        let mut buffer = Buffer(1, vec![0_u8].into());
+        let dest_buf: &mut [u8] = &mut [10];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[0]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_dest_not_empty_2() {
+        let mut buffer = Buffer(1, vec![0_u8, 1].into());
+        let dest_buf: &mut [u8] = &mut [10];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1);
+        assert_eq!(buffer.as_slice(), &[1]);
+        assert_eq!(dest_buf, &[0]);
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1);
+        assert_eq!(buffer.0, 2);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[1]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_dest_not_empty_3() {
+        let mut buffer = Buffer(1, vec![0_u8, 1].into());
+        let dest_buf: &mut [u8] = &mut [10, 11];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1);
+        assert_eq!(buffer.as_slice(), &[1]);
+        assert_eq!(dest_buf, &[0]);
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 2);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[1]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_dest_empty() {
+        let mut buffer = Buffer(1, vec![0_u8].into());
+        let dest_buf: &mut [u8] = &mut [];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 0);
+        assert_eq!(buffer.as_slice(), &[0]);
+        assert_eq!(dest_buf, &[]);
+
+        buffer.0 = 1;
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 0);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[]);
     }
 }
