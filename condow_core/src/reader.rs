@@ -103,7 +103,7 @@ mod random_access_reader {
                 FetchAheadMode::ToEnd => self.length,
             };
 
-            let end_incl = (self.pos + len).min(len);
+            let end_incl = (self.pos + len).min(self.length);
 
             let pos = self.pos as usize;
             let end_incl = end_incl as usize;
