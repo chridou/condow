@@ -307,6 +307,40 @@ mod random_access_reader {
             reader.read_exact(&mut buf).await.unwrap();
             assert_eq!(buf, vec![6, 7], "SeekFrom::Current 3");
         }
+
+        #[tokio::test]
+        async fn fetch_ahead() {
+            let modes = [
+                FetchAheadMode::None,
+                FetchAheadMode::Bytes(1),
+                FetchAheadMode::Bytes(5),
+                FetchAheadMode::Bytes(5_000),
+                FetchAheadMode::ToEnd,
+            ];
+
+            for mode in modes {
+                for n in 1..255 {
+                    let expected: Vec<u8> = (0..n).collect();
+
+                    let downloader = TestDownloader::new(n as usize);
+
+                    let mut reader = downloader.reader(42).await.unwrap();
+                    reader.set_fetch_ahead_mode(mode);
+
+                    let mut buf = Vec::new();
+                    let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+                    assert_eq!(
+                        bytes_read,
+                        expected.len(),
+                        "n bytes read ({} items, mode: {:?})",
+                        n,
+                        mode
+                    );
+                    assert_eq!(buf, expected, "bytes read ({} items, mode: {:?})", n, mode);
+                }
+            }
+        }
     }
 }
 
