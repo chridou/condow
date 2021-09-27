@@ -211,6 +211,7 @@ mod random_access_reader {
                 SeekFrom::End(pos) => this.pos = (this.length as i64 + pos) as u64,
                 SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
             };
+            this.state = State::Initial;
             task::Poll::Ready(Ok(this.pos))
         }
     }
