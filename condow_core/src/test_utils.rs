@@ -360,13 +360,14 @@ async fn make_a_stream(
 
     drop(blob_guard);
 
-    let mut chunk_patterns = pattern.into_iter().enumerate().cycle();
+    let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
 
     let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len()));
 
     tokio::spawn(async move {
         let mut start = 0;
         loop {
+
             if start == bytes.len() {
                 return;
             }
@@ -384,16 +385,16 @@ async fn make_a_stream(
                 };
 
             let end_excl = bytes.len().min(start + chunk_len);
-
             let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
-
+            
+            let bytes_left = bytes.len() - end_excl;
             let chunk = Chunk {
                 part_index: 0,
                 chunk_index,
                 blob_offset: start,
                 range_offset: start,
                 bytes: chunk,
-                bytes_left: bytes.len() - end_excl,
+                bytes_left,
             };
 
             let _ = tx.unbounded_send(Ok(chunk));
@@ -404,3 +405,19 @@ async fn make_a_stream(
 
     Ok(chunk_stream)
 }
+
+#[tokio::test]
+async fn check_test_downloader() {
+    for n in 1..255 {
+        let expected: Vec<u8> = (0..n).collect();
+
+        let downloader = TestDownloader::new(n as usize);
+
+        let parts = downloader.download(42, ..).await.unwrap();
+
+        let result = parts.into_vec().await.unwrap();
+        
+        assert_eq!(result, expected, "bytes read ({} items)", n);
+    }
+}
+

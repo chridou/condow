@@ -203,7 +203,7 @@ mod random_access_reader {
         use super::*;
 
         #[tokio::test]
-        async fn check_test_downloader() {
+        async fn check_test() {
             for n in 1..255 {
                 let expected: Vec<u8> = (0..n).collect();
 
