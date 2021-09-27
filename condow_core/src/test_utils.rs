@@ -6,7 +6,7 @@ use std::{
 use bytes::Bytes;
 use futures::{
     future::{self, BoxFuture, FutureExt, TryFutureExt},
-    stream, AsyncReadExt, StreamExt as _,
+    stream, StreamExt as _,
 };
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;

@@ -10,10 +10,9 @@ mod random_access_reader {
 
     use bytes::Bytes;
     use futures::{
-        future::{BoxFuture, Future, FutureExt, TryFutureExt},
-        ready,
+        future::{BoxFuture, FutureExt, TryFutureExt},
         stream::{BoxStream, StreamExt},
-        AsyncRead, AsyncSeek, Stream,
+        AsyncRead, AsyncSeek,
     };
 
     use crate::{errors::CondowError, Downloads};
@@ -51,14 +50,6 @@ mod random_access_reader {
     impl From<u64> for FetchAheadMode {
         fn from(v: u64) -> Self {
             Self::Bytes(v)
-        }
-    }
-
-    struct Buffer(u64, Vec<Bytes>);
-
-    impl Buffer {
-        pub fn is_empty(&self) -> bool {
-            self.1.is_empty()
         }
     }
 
@@ -226,13 +217,9 @@ mod random_access_reader {
 
     #[cfg(test)]
     mod tests {
-        use std::sync::{Arc, Mutex};
-
-        use bytes::Bytes;
         use futures::io::AsyncReadExt;
 
         use crate::test_utils::TestDownloader;
-        use crate::DownloadRange;
 
         use super::*;
 
@@ -260,7 +247,7 @@ mod bytes_async_reader {
     use std::pin::Pin;
 
     use bytes::Bytes;
-    use futures::{ready, task, AsyncRead, Stream};
+    use futures::{task, AsyncRead, Stream};
 
     use crate::errors::CondowError;
 

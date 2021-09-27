@@ -4,7 +4,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::reader::BytesAsyncReader;
 use bytes::Bytes;
 use futures::{ready, stream, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
