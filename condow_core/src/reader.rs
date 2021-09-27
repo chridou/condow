@@ -96,10 +96,10 @@ mod random_access_reader {
             }
         }
 
-        fn get_next_reader(&self, len: u64) -> GetNewReaderFuture {
+        fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
             let len = match self.fetch_ahead_mode {
-                FetchAheadMode::None => len,
-                FetchAheadMode::Bytes(bytes) => len.max(bytes),
+                FetchAheadMode::None => dest_buf_len,
+                FetchAheadMode::Bytes(bytes) => dest_buf_len.max(bytes),
                 FetchAheadMode::ToEnd => self.length,
             };
 
@@ -114,8 +114,7 @@ mod random_access_reader {
                 dl.download(location, pos..=end_incl)
                     .map_ok(|stream| {
                         let stream = stream.bytes_stream().boxed();
-                        let reader = super::BytesAsyncReader::new(stream);
-                        reader
+                        super::BytesAsyncReader::new(stream)
                     })
                     .await
             }
