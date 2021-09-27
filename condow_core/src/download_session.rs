@@ -16,7 +16,7 @@ use crate::{
 
 /// A downloading API for instrumented downloading.
 ///
-/// This has mutiple methods to download data. The main difference to
+/// This has multiple methods to download data. The main difference to
 /// [Condow] itself is, that per request reporting/instrumentation is be enabled.
 /// All methods will always create a [Reporter] and collect data. Even those
 /// where an explicit [Reporter] is passed.

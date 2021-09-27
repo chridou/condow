@@ -15,7 +15,7 @@ mod random_access_reader {
         AsyncRead, AsyncSeek,
     };
 
-    use crate::{errors::CondowError, Downloads};
+    use crate::{errors::CondowError, DownloadRange, Downloads};
 
     use super::BytesAsyncReader;
 
@@ -99,19 +99,20 @@ mod random_access_reader {
         fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
             let len = match self.fetch_ahead_mode {
                 FetchAheadMode::None => dest_buf_len,
-                FetchAheadMode::Bytes(bytes) => dest_buf_len.max(bytes),
+                FetchAheadMode::Bytes(n_bytes) => dest_buf_len.max(n_bytes),
                 FetchAheadMode::ToEnd => self.length,
             };
 
-            let end_incl = (self.pos + len).min(self.length);
+            let end_incl = (self.pos + len - 1).min(self.length - 1);
 
             let pos = self.pos as usize;
             let end_incl = end_incl as usize;
 
             let dl = self.downloader.clone();
             let location = self.location.clone();
+            let range = DownloadRange::from(pos..=end_incl);
             async move {
-                dl.download(location, pos..=end_incl)
+                dl.download(location, range)
                     .map_ok(|stream| {
                         let stream = stream.bytes_stream().boxed();
                         super::BytesAsyncReader::new(stream)
@@ -169,13 +170,23 @@ mod random_access_reader {
                 State::PollingReader(mut reader) => {
                     match Pin::new(&mut reader).poll_read(cx, dest_buf) {
                         task::Poll::Ready(Ok(bytes_written)) => {
-                            if bytes_written == 0 {
+                            assert!(
+                                !(self.pos > self.length),
+                                "Position can not be larger than length"
+                            );
+                            self.pos += bytes_written as u64;
+                            if self.pos == self.length {
+                                assert!(!(bytes_written == 0), "Still bytes left");
                                 self.state = State::Finished;
+                                task::Poll::Ready(Ok(bytes_written))
+                            } else if bytes_written == 0 {
+                                self.state = State::Initial;
+                                cx.waker().wake_by_ref();
+                                task::Poll::Pending
                             } else {
                                 self.state = State::PollingReader(reader);
+                                task::Poll::Ready(Ok(bytes_written))
                             }
-                            self.pos += bytes_written as u64;
-                            task::Poll::Ready(Ok(bytes_written))
                         }
                         task::Poll::Ready(Err(err)) => {
                             self.state = State::Finished;
@@ -309,19 +320,21 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn fetch_ahead() {
-            let modes = [
-                FetchAheadMode::None,
-                FetchAheadMode::Bytes(1),
-                FetchAheadMode::Bytes(5),
-                FetchAheadMode::Bytes(5_000),
-                FetchAheadMode::ToEnd,
-            ];
-
-            for mode in modes {
-                for n in 1..255 {
+            for n in 1..255 {
+                let modes = [
+                    FetchAheadMode::ToEnd,
+                    FetchAheadMode::Bytes(5_000),
+                    FetchAheadMode::Bytes(n as u64 + 1),
+                    FetchAheadMode::Bytes(n as u64),
+                    FetchAheadMode::Bytes(1.max(n as u64 - 1)),
+                    FetchAheadMode::Bytes(252),
+                    FetchAheadMode::None,
+                    FetchAheadMode::Bytes(1),
+                ];
+                for mode in modes {
                     let expected: Vec<u8> = (0..n).collect();
 
-                    let downloader = TestDownloader::new(n as usize);
+                    let downloader = TestDownloader::new_with_blob(expected.clone());
 
                     let mut reader = downloader.reader(42).await.unwrap();
                     reader.set_fetch_ahead_mode(mode);
