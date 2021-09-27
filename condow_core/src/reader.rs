@@ -175,6 +175,7 @@ mod random_access_reader {
                             } else {
                                 self.state = State::PollingReader(reader);
                             }
+                            self.pos += bytes_written as u64;
                             task::Poll::Ready(Ok(bytes_written))
                         }
                         task::Poll::Ready(Err(err)) => {
@@ -218,7 +219,7 @@ mod random_access_reader {
 
     #[cfg(test)]
     mod tests {
-        use futures::io::AsyncReadExt;
+        use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
         use crate::test_utils::TestDownloader;
 
@@ -239,6 +240,72 @@ mod random_access_reader {
                 assert_eq!(bytes_read, expected.len(), "n bytes read ({} items)", n);
                 assert_eq!(buf, expected, "bytes read ({} items)", n);
             }
+        }
+
+        #[tokio::test]
+        async fn seek_from_start() {
+            let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
+            let downloader = TestDownloader::new_with_blob(expected.clone());
+            let mut reader = downloader.reader(42).await.unwrap();
+
+            reader.seek(SeekFrom::Start(1)).await.unwrap();
+            let mut buf = vec![0, 0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![1, 2, 3]);
+
+            reader.seek(SeekFrom::Start(6)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![4, 5]);
+
+            reader.seek(SeekFrom::Start(9)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![6, 7]);
+        }
+
+        #[tokio::test]
+        async fn seek_from_end() {
+            let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
+            let downloader = TestDownloader::new_with_blob(expected.clone());
+            let mut reader = downloader.reader(42).await.unwrap();
+
+            reader.seek(SeekFrom::End(-10)).await.unwrap();
+            let mut buf = vec![0, 0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![1, 2, 3]);
+
+            reader.seek(SeekFrom::End(-5)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![4, 5]);
+
+            reader.seek(SeekFrom::End(-2)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![6, 7]);
+        }
+
+        #[tokio::test]
+        async fn seek_from_current() {
+            let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
+            let downloader = TestDownloader::new_with_blob(expected.clone());
+            let mut reader = downloader.reader(42).await.unwrap();
+
+            reader.seek(SeekFrom::Current(1)).await.unwrap();
+            let mut buf = vec![0, 0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![1, 2, 3], "SeekFrom::Current 1");
+
+            reader.seek(SeekFrom::Current(2)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![4, 5], "SeekFrom::Current 2");
+
+            reader.seek(SeekFrom::Current(1)).await.unwrap();
+            let mut buf = vec![0, 0];
+            reader.read_exact(&mut buf).await.unwrap();
+            assert_eq!(buf, vec![6, 7], "SeekFrom::Current 3");
         }
     }
 }
