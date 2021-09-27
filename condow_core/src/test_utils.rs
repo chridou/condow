@@ -323,7 +323,7 @@ impl Downloads<usize> for TestDownloader {
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
         Box::pin(make_a_stream(
-            self.blob.lock().unwrap().clone(),
+            self.blob.as_ref(),
             range.into(),
             self.pattern.lock().unwrap().clone(),
         ))
@@ -343,25 +343,64 @@ impl Downloads<usize> for TestDownloader {
 }
 
 async fn make_a_stream(
-    blob: Vec<u8>,
+    blob: &Mutex<Vec<u8>>,
     range: DownloadRange,
     pattern: Vec<Option<usize>>,
 ) -> Result<ChunkStream, CondowError> {
-    let blob = self.blob.lock().unwrap();
-    let range_incl = if let Some(range) = range.into().incl_range_from_size(blob.len()) {
+    let blob_guard = blob.lock().unwrap();
+    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len()) {
         range
     } else {
-        return futures::future::err(CondowError::new_invalid_range("invalid range")).boxed();
+        return Err(CondowError::new_invalid_range("invalid range"));
     };
 
-    let streams = self.streams.lock().unwrap();
-    let stream = if !streams.is_empty() {
-        streams.remove(0)
-    } else {
-        futures::stream::iter(std::iter::once(Err(CondowError::new_other(
-            "no more test streams",
-        ))))
-        .boxed()
-    };
-    todo!()
+    let range = range_incl.start()..range_incl.end_incl() + 1;
+
+    let bytes = blob_guard[range].to_vec();
+
+    drop(blob_guard);
+
+    let mut chunk_patterns = pattern.into_iter().enumerate().cycle();
+
+    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len()));
+
+    tokio::spawn(async move {
+        let mut start = 0;
+        loop {
+            if start == bytes.len() {
+                return;
+            }
+
+            let (chunk_index, chunk_len) =
+                if let Some((chunk_index, pattern)) = chunk_patterns.next() {
+                    if let Some(pattern) = pattern {
+                        (chunk_index, pattern)
+                    } else {
+                        let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
+                        break;
+                    };
+                } else {
+                    break;
+                };
+
+            let end_excl = bytes.len().min(start + chunk_len);
+
+            let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
+
+            let chunk = Chunk {
+                part_index: 0,
+                chunk_index,
+                blob_offset: start,
+                range_offset: start,
+                bytes: chunk,
+                bytes_left: bytes.len() - end_excl,
+            };
+
+            let _ = tx.unbounded_send(Ok(chunk));
+
+            start = end_excl;
+        }
+    });
+
+    Ok(chunk_stream)
 }
