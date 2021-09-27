@@ -26,6 +26,7 @@ mod random_access_reader {
 
     const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FetchAheadMode {
         /// Don't fetch any data in excess of those requested.
         None,
@@ -38,6 +39,18 @@ mod random_access_reader {
     impl Default for FetchAheadMode {
         fn default() -> Self {
             Self::Bytes(FETCH_AHEAD_BYTES)
+        }
+    }
+
+    impl From<usize> for FetchAheadMode {
+        fn from(v: usize) -> Self {
+            Self::Bytes(v as u64)
+        }
+    }
+
+    impl From<u64> for FetchAheadMode {
+        fn from(v: u64) -> Self {
+            Self::Bytes(v)
         }
     }
 
@@ -68,7 +81,7 @@ mod random_access_reader {
         /// total length of the BLOB
         length: u64,
         state: State,
-        pub fetch_ahead_mode: FetchAheadMode,
+        fetch_ahead_mode: FetchAheadMode,
     }
 
     impl<D, L> RandomAccessReader<D, L>
@@ -116,6 +129,14 @@ mod random_access_reader {
                     .await
             }
             .boxed()
+        }
+
+        pub fn set_fetch_ahead_mode<T: Into<FetchAheadMode>>(&mut self, mode: T) {
+            self.fetch_ahead_mode = mode.into();
+        }
+
+        pub fn fetch_ahead_mode(&self) -> FetchAheadMode {
+            self.fetch_ahead_mode
         }
     }
 
