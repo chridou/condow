@@ -6,7 +6,7 @@ use std::{
 use bytes::Bytes;
 use futures::{
     future::{self, BoxFuture, FutureExt, TryFutureExt},
-    stream, StreamExt as _,
+    stream, AsyncReadExt, StreamExt as _,
 };
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
@@ -268,7 +268,7 @@ async fn check_chunk_stream_variable_chunk_size() {
 }
 
 #[derive(Clone)]
-struct TestDownloader {
+pub struct TestDownloader {
     blob: Arc<Mutex<Vec<u8>>>,
     pattern: Arc<Mutex<Vec<Option<usize>>>>,
 }
@@ -284,7 +284,7 @@ impl TestDownloader {
         }
         Self {
             blob: Arc::new(Mutex::new(blob)),
-            pattern: Arc::new(Mutex::new(vec![Some(5), Some(3), Some(7)])),
+            pattern: Arc::new(Mutex::new(vec![Some(2), Some(5), Some(3), Some(7)])),
         }
     }
 
@@ -319,7 +319,7 @@ impl Downloads<usize> for TestDownloader {
 
     fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: usize,
+        _location: usize,
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
         Box::pin(make_a_stream(
@@ -329,7 +329,7 @@ impl Downloads<usize> for TestDownloader {
         ))
     }
 
-    fn get_size<'a>(&'a self, location: usize) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, _location: usize) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
@@ -378,7 +378,7 @@ async fn make_a_stream(
                     } else {
                         let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
                         break;
-                    };
+                    }
                 } else {
                     break;
                 };

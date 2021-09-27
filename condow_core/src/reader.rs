@@ -195,10 +195,29 @@ mod random_access_reader {
         use std::sync::{Arc, Mutex};
 
         use bytes::Bytes;
+        use futures::io::AsyncReadExt;
 
+        use crate::test_utils::TestDownloader;
         use crate::DownloadRange;
 
         use super::*;
+
+        #[tokio::test]
+        async fn check_test_downloader() {
+            for n in 1..255 {
+                let expected: Vec<u8> = (0..n).collect();
+
+                let downloader = TestDownloader::new(n as usize);
+
+                let mut reader = downloader.reader(42).await.unwrap();
+
+                let mut buf = Vec::new();
+                let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+                assert_eq!(bytes_read, expected.len(), "n bytes read ({} items)", n);
+                assert_eq!(buf, expected, "bytes read ({} items)", n);
+            }
+        }
     }
 }
 
