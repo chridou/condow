@@ -121,7 +121,9 @@ mod random_access_reader {
             }
             .boxed()
         }
+    }
 
+    impl<D, L> RandomAccessReader<D, L> {
         pub fn set_fetch_ahead_mode<T: Into<FetchAheadMode>>(&mut self, mode: T) {
             self.fetch_ahead_mode = mode.into();
         }
