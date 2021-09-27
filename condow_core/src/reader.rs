@@ -199,82 +199,9 @@ mod random_access_reader {
         use crate::DownloadRange;
 
         use super::*;
-
-        #[derive(Clone)]
-        struct TestDownloader {
-            blob: Arc<Mutex<Vec<u8>>>,
-            pattern: Arc<Mutex<Vec<Result<usize, CondowError>>>>,
-
-        }
-
-        impl TestDownloader {
-            pub fn new(len: usize) -> Self {
-                let mut blob = Vec::with_capacity(len);
-                for n in 0..len {
-                    blob.push(n as u8)
-                }
-                Self {
-                    blob: Arc::new(Mutex::new(blob)),
-                    pattern: Arc::new(Mutex::new(vec![Ok(5), Ok(3), Ok(7)])),
-                }
-            }
-
-            pub fn pattern(self, pattern: Vec<Result<usize, CondowError>>) {
-                *self.pattern.lock().unwrap() = pattern;
-            }
-        }
-
-        impl Downloads<usize> for TestDownloader {
-            fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
-                &'a self,
-                location: usize,
-                range: R,
-            ) -> BoxFuture<
-                'a,
-                Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>,
-            > {
-                let blob = self.blob.lock().unwrap();
-                let range_incl = if let Some(range) = range.into().incl_range_from_size(blob.len()) {
-                    range
-                } else {
-                    return futures::future::err(CondowError::new_invalid_range("invalid range")).boxed()
-                };
-
-
-                let streams = self.streams.lock().unwrap();
-                let stream = if !streams.is_empty() {
-                    streams.remove(0)
-                } else {
-                    futures::stream::iter(std::iter::once(Err(CondowError::new_other("no more test streams")))).boxed()
-                };
-           }
-
-            fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
-                &'a self,
-                location: usize,
-                range: R,
-            ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
-                unimplemented!()
-            }
-
-            fn get_size<'a>(&'a self, location: usize) -> BoxFuture<'a, Result<u64, CondowError>> {
-                let len = self.bytes.lock().unwrap().len();
-                futures::future::ok(len as u64).boxed()
-            }
-
-            fn reader_with_length(
-                &self,
-                location: usize,
-                length: u64,
-            ) -> RandomAccessReader<Self, usize>
-            where
-                Self: Sized,
-            {
-                RandomAccessReader::new_with_length(self.clone(), location, length)
-            }
-        }
     }
 }
+
 mod bytes_async_reader {
     use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
     use std::pin::Pin;
