@@ -367,7 +367,6 @@ async fn make_a_stream(
     tokio::spawn(async move {
         let mut start = 0;
         loop {
-
             if start == bytes.len() {
                 return;
             }
@@ -386,7 +385,7 @@ async fn make_a_stream(
 
             let end_excl = bytes.len().min(start + chunk_len);
             let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
-            
+
             let bytes_left = bytes.len() - end_excl;
             let chunk = Chunk {
                 part_index: 0,
@@ -416,8 +415,7 @@ async fn check_test_downloader() {
         let parts = downloader.download(42, ..).await.unwrap();
 
         let result = parts.into_vec().await.unwrap();
-        
+
         assert_eq!(result, expected, "bytes read ({} items)", n);
     }
 }
-

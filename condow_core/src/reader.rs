@@ -140,25 +140,38 @@ mod random_access_reader {
                     cx.waker().wake_by_ref();
                     task::Poll::Pending
                 }
-                State::GetNewReaderFuture(mut fut) => match ready!(fut.as_mut().poll(cx)) {
-                    Ok(reader) => {
+                State::GetNewReaderFuture(mut fut) => match fut.as_mut().poll(cx) {
+                    task::Poll::Ready(Ok(reader)) => {
                         self.state = State::PollingReader(reader);
                         cx.waker().wake_by_ref();
                         task::Poll::Pending
                     }
-                    Err(err) => task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err))),
+                    task::Poll::Ready(Err(err)) => {
+                        self.state = State::Finished;
+                        task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                    }
+                    task::Poll::Pending => {
+                        self.state = State::GetNewReaderFuture(fut);
+                        task::Poll::Pending
+                    }
                 },
                 State::PollingReader(mut reader) => {
-                    match ready!(Pin::new(&mut reader).poll_read(cx, dest_buf)) {
-                        Ok(bytes_written) => {
+                    match Pin::new(&mut reader).poll_read(cx, dest_buf) {
+                        task::Poll::Ready(Ok(bytes_written)) => {
                             if bytes_written == 0 {
                                 self.state = State::Finished;
+                            } else {
+                                self.state = State::PollingReader(reader);
                             }
                             task::Poll::Ready(Ok(bytes_written))
                         }
-                        Err(err) => {
+                        task::Poll::Ready(Err(err)) => {
                             self.state = State::Finished;
                             task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                        }
+                        task::Poll::Pending => {
+                            self.state = State::PollingReader(reader);
+                            task::Poll::Pending
                         }
                     }
                 }
@@ -203,7 +216,7 @@ mod random_access_reader {
         use super::*;
 
         #[tokio::test]
-        async fn check_test() {
+        async fn check_reader() {
             for n in 1..255 {
                 let expected: Vec<u8> = (0..n).collect();
 
@@ -268,30 +281,32 @@ mod bytes_async_reader {
             let current_state = std::mem::replace(&mut self.state, State::Finished);
 
             match current_state {
-                State::PollingStream(mut stream) => {
-                    match ready!(Pin::new(&mut stream).poll_next(cx)) {
-                        Some(Ok(bytes)) => {
-                            let mut buffer = Buffer(0, bytes);
-                            let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+                State::PollingStream(mut stream) => match Pin::new(&mut stream).poll_next(cx) {
+                    task::Poll::Ready(Some(Ok(bytes))) => {
+                        let mut buffer = Buffer(0, bytes);
+                        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
 
-                            if buffer.is_empty() {
-                                self.state = State::PollingStream(stream);
-                            } else {
-                                self.state = State::Buffered { buffer, stream };
-                            }
+                        if buffer.is_empty() {
+                            self.state = State::PollingStream(stream);
+                        } else {
+                            self.state = State::Buffered { buffer, stream };
+                        }
 
-                            task::Poll::Ready(Ok(bytes_written))
-                        }
-                        Some(Err(err)) => {
-                            self.state = State::Finished;
-                            task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
-                        }
-                        None => {
-                            self.state = State::Finished;
-                            task::Poll::Ready(Ok(0))
-                        }
+                        task::Poll::Ready(Ok(bytes_written))
                     }
-                }
+                    task::Poll::Ready(Some(Err(err))) => {
+                        self.state = State::Finished;
+                        task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
+                    }
+                    task::Poll::Ready(None) => {
+                        self.state = State::Finished;
+                        task::Poll::Ready(Ok(0))
+                    }
+                    task::Poll::Pending => {
+                        self.state = State::PollingStream(stream);
+                        task::Poll::Pending
+                    }
+                },
                 State::Buffered { mut buffer, stream } => {
                     let n_bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
 
