@@ -34,11 +34,11 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Reporter] if the download was successful.**
-    fn download_completed(&self) {}
+    fn download_completed(&self, time: Duration) {}
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Reporter] if the download failed.**
-    fn download_failed(&self) {}
+    fn download_failed(&self, time: Option<Duration>) {}
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed
@@ -91,14 +91,14 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
         self.1.download_started();
     }
 
-    fn download_completed(&self) {
-        self.0.download_completed();
-        self.1.download_completed();
+    fn download_completed(&self, time: Duration) {
+        self.0.download_completed(time);
+        self.1.download_completed(time);
     }
 
-    fn download_failed(&self) {
-        self.0.download_failed();
-        self.1.download_failed();
+    fn download_failed(&self, time: Option<Duration>) {
+        self.0.download_failed(time);
+        self.1.download_failed(time);
     }
 
     fn queue_full(&self) {
@@ -310,11 +310,11 @@ mod simple_reporter {
             *self.inner.download_started_at.lock().unwrap() = Instant::now();
         }
 
-        fn download_completed(&self) {
+        fn download_completed(&self, _time: Duration) {
             *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
         }
 
-        fn download_failed(&self) {
+        fn download_failed(&self, _time: Option<Duration>) {
             *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
             self.inner.is_failed.store(true, Ordering::SeqCst);
         }

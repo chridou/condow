@@ -58,6 +58,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
         location: C::Location,
         reporter: R,
     ) -> Self {
+        let started_at = Instant::now();
         let kill_switch = KillSwitch::new();
         let counter = Arc::new(AtomicUsize::new(0));
         let downloaders: Vec<_> = (0..n_concurrent)
@@ -68,7 +69,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
                     kill_switch.clone(),
                     location.clone(),
                     config.buffer_size.into(),
-                    DownloadersWatcher::new(Arc::clone(&counter), reporter.clone()),
+                    DownloadersWatcher::new(Arc::clone(&counter), reporter.clone(), started_at),
                 )
             })
             .collect();
@@ -209,18 +210,20 @@ impl Downloader {
 }
 
 struct DownloadersWatcher<R: Reporter> {
+    started_at: Instant,
     counter: Arc<AtomicUsize>,
     is_failed: Arc<AtomicBool>,
     reporter: R,
 }
 
 impl<R: Reporter> DownloadersWatcher<R> {
-    pub fn new(counter: Arc<AtomicUsize>, reporter: R) -> Self {
+    pub fn new(counter: Arc<AtomicUsize>, reporter: R, started_at: Instant) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
         Self {
             counter,
             reporter,
             is_failed: Arc::new(AtomicBool::new(false)),
+            started_at,
         }
     }
 
@@ -234,9 +237,10 @@ impl<R: Reporter> Drop for DownloadersWatcher<R> {
         self.counter.fetch_sub(1, Ordering::SeqCst);
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.is_failed.load(Ordering::SeqCst) {
-                self.reporter.download_failed()
+                self.reporter
+                    .download_failed(Some(self.started_at.elapsed()))
             } else {
-                self.reporter.download_completed()
+                self.reporter.download_completed(self.started_at.elapsed())
             }
         }
     }
@@ -325,7 +329,10 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicUsize, Arc};
+    use std::{
+        sync::{atomic::AtomicUsize, Arc},
+        time::Instant,
+    };
 
     use futures::StreamExt;
 
@@ -375,7 +382,7 @@ mod tests {
             KillSwitch::new(),
             NoLocation,
             config.buffer_size.into(),
-            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporting),
+            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporting, Instant::now()),
         );
 
         while let Some(next) = ranges_stream.next().await {

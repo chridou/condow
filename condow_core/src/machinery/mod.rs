@@ -24,7 +24,7 @@ pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
     download_range(condow, location, range, get_size_mode, reporter.clone())
         .await
         .map_err(|err| {
-            reporter.download_failed();
+            reporter.download_failed(None);
             err
         })
 }
