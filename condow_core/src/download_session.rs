@@ -7,7 +7,6 @@ use crate::{
     condow_client::CondowClient,
     errors::CondowError,
     machinery,
-    multi::MultiRangeDownloader,
     reader::RandomAccessReader,
     reporter::{CompositeReporter, NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
@@ -183,14 +182,6 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// Get the size of a file at the BLOB at location
     pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
         self.condow.get_size(location).await
-    }
-
-    /// Create a new [MultiRangeDownloader] using this sessions reporting
-    pub fn multi_range(&self) -> MultiRangeDownloader<C, RF> {
-        MultiRangeDownloader::new_with_reporting_arc(
-            self.condow.clone(),
-            Arc::clone(&self.reporter_factory),
-        )
     }
 
     /// Creates a [RandomAccessReader] for the given location

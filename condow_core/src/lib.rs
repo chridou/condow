@@ -24,7 +24,6 @@ use futures::{future::BoxFuture, FutureExt, Stream};
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, Config};
 use errors::CondowError;
-use multi::MultiRangeDownloader;
 use reader::RandomAccessReader;
 use reporter::{NoReporting, Reporter, ReporterFactory};
 use streams::{ChunkStream, ChunkStreamItem, PartStream};
@@ -38,7 +37,6 @@ mod download_session;
 mod downloader;
 pub mod errors;
 mod machinery;
-pub mod multi;
 pub mod reader;
 pub mod reporter;
 pub mod streams;
@@ -164,11 +162,6 @@ impl<C: CondowClient> Condow<C> {
         rep_fac: Arc<RF>,
     ) -> DownloadSession<C, RF> {
         DownloadSession::new_with_reporting_arc(self.clone(), rep_fac)
-    }
-
-    /// Create a new [MultiRangeDownloader] without reporting
-    pub fn multi_range_downloader(&self) -> MultiRangeDownloader<C> {
-        MultiRangeDownloader::new_with_reporting_arc(self.clone(), Arc::new(NoReporting))
     }
 
     /// Download a BLOB range (potentially) concurrently
