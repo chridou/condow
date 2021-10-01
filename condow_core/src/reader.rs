@@ -149,7 +149,6 @@ mod random_access_reader {
             match current_state {
                 State::Initial => {
                     // Get next stream with a future
-                    println!("Initial");
                     let fut = self.get_next_reader(dest_buf.len() as u64);
                     self.state = State::GetNewReaderFuture(fut);
                     cx.waker().wake_by_ref();
