@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `AsyncRead` for stream of bytes
 * `Asyncread` + `AsyncSeek` for downloaders (as seperate struct)
 
+### CHANGED
+
+* Use `u64` in range or IO based intefaces
+
 ### Removed
 
 * `MultiRangeDownloader`
