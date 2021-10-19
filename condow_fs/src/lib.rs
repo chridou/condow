@@ -76,7 +76,14 @@ impl CondowClient for FsClient {
                     file.seek(SeekFrom::Start(range.start() as u64)).await?;
 
                     let n_bytes_to_read = range.len();
-                    let mut buffer = Vec::with_capacity(n_bytes_to_read as usize); // FIX: usize overflow
+
+                    if n_bytes_to_read > usize::MAX as u64 {
+                        return Err(CondowError::new_other(
+                            "usize overflow while casting from u64",
+                        ));
+                    }
+
+                    let mut buffer = Vec::with_capacity(n_bytes_to_read as usize);
 
                     let n_bytes_read = file.read(&mut buffer).await?;
 
