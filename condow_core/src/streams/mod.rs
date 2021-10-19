@@ -17,24 +17,24 @@ pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
 /// Specifically, `bytes_hint()` returns a tuple where the first element is
 /// the lower bound, and the second element is the upper bound.
 ///
-/// The second half of the tuple that is returned is an `Option<usize>`.
+/// The second half of the tuple that is returned is an `Option<u64>`.
 /// A None here means that either there is no known upper bound,
-/// or the upper bound is larger than usize.
+/// or the upper bound is larger than `u64`.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct BytesHint(usize, Option<usize>);
+pub struct BytesHint(u64, Option<u64>);
 
 impl BytesHint {
-    pub fn new(lower_bound: usize, upper_bound: Option<usize>) -> Self {
+    pub fn new(lower_bound: u64, upper_bound: Option<u64>) -> Self {
         BytesHint(lower_bound, upper_bound)
     }
 
     /// An exact number of bytes will be returned.
-    pub fn new_exact(bytes: usize) -> Self {
+    pub fn new_exact(bytes: u64) -> Self {
         Self(bytes, Some(bytes))
     }
 
     /// Create a hint of `min=0` and `max=bytes` bytes
-    pub fn new_at_max(bytes: usize) -> Self {
+    pub fn new_at_max(bytes: u64) -> Self {
         Self(0, Some(bytes))
     }
 
@@ -46,13 +46,13 @@ impl BytesHint {
     }
 
     /// Returns the lower bound
-    pub fn lower_bound(&self) -> usize {
+    pub fn lower_bound(&self) -> u64 {
         self.0
     }
 
     /// A `None` here means that either there is no known upper bound,
     /// or the upper bound is larger than usize.
-    pub fn upper_bound(&self) -> Option<usize> {
+    pub fn upper_bound(&self) -> Option<u64> {
         self.1
     }
 
@@ -70,7 +70,7 @@ impl BytesHint {
     /// Returns the exact bytes if size hint specifies an exact amount of bytes.
     ///
     /// This means that the lower bound must equal the upper bound: `(a, Some(a))`.
-    pub fn exact(&self) -> Option<usize> {
+    pub fn exact(&self) -> Option<u64> {
         if self.is_exact() {
             self.1
         } else {
@@ -79,7 +79,7 @@ impl BytesHint {
     }
 
     /// Bytes have been send and `by` less will be received from now on
-    pub fn reduce_by(&mut self, by: usize) {
+    pub fn reduce_by(&mut self, by: u64) {
         if by == 0 {
             return;
         }
@@ -133,7 +133,7 @@ impl BytesHint {
     }
 
     /// Turns this into the inner tuple
-    pub fn into_inner(self) -> (usize, Option<usize>) {
+    pub fn into_inner(self) -> (u64, Option<u64>) {
         (self.lower_bound(), self.upper_bound())
     }
 }

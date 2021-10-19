@@ -7,7 +7,7 @@ use crate::{
     condow_client::CondowClient,
     errors::CondowError,
     machinery,
-    multi::MultiRangeDownloader,
+    reader::RandomAccessReader,
     reporter::{NoReporting, Reporter, ReporterFactory},
     streams::{ChunkStream, PartStream},
     Condow, DownloadRange, Downloads, GetSizeMode, StreamWithReport,
@@ -180,9 +180,32 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         self.condow.get_size(location).await
     }
 
-    /// Create a new [MultiRangeDownloader] without reporting
-    pub fn multi_range(&self) -> MultiRangeDownloader<C> {
-        MultiRangeDownloader::new_with_reporting_arc(self.condow.clone(), Arc::new(NoReporting))
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// The reader will use the configured [ReporterFactory].
+    pub async fn reader(
+        &self,
+        location: C::Location,
+    ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
+        let length = self.get_size(location.clone()).await?;
+        Ok(RandomAccessReader::new_with_length(
+            self.clone(),
+            location,
+            length,
+        ))
+    }
+
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// The reader will use the configured [ReporterFactory].
+    pub fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64,
+    ) -> RandomAccessReader<Self, C::Location> {
+        let mut me = self.clone();
+        me.get_size_mode = GetSizeMode::Required;
+        RandomAccessReader::new_with_length(me, location, length)
     }
 }
 
@@ -219,5 +242,13 @@ where
 
     fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
+    }
+
+    fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64,
+    ) -> RandomAccessReader<Self, C::Location> {
+        Downloader::reader_with_length(self, location, length)
     }
 }

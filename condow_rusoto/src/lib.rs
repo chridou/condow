@@ -238,7 +238,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
 
             let bytes_hint = response
                 .content_length
-                .map(|s| BytesHint::new_exact(s as usize))
+                .map(|s| BytesHint::new_exact(s as u64))
                 .unwrap_or_else(BytesHint::new_no_hint);
 
             let stream = if let Some(stream) = response.body {

@@ -23,17 +23,17 @@ pub type ChunkStreamItem = Result<Chunk, CondowError>;
 #[derive(Debug, Clone)]
 pub struct Chunk {
     /// Index of the part this chunk belongs to
-    pub part_index: usize,
+    pub part_index: u64,
     /// Index of the chunk within the part
     pub chunk_index: usize,
     /// Offset of the chunk within the BLOB
-    pub blob_offset: usize,
+    pub blob_offset: u64,
     /// Offset of the chunk within the downloaded range
-    pub range_offset: usize,
+    pub range_offset: u64,
     /// The bytes
     pub bytes: Bytes,
     /// Bytes left in following chunks. If 0 this is the last chunk of the part.
-    pub bytes_left: usize,
+    pub bytes_left: u64,
 }
 
 impl Chunk {
@@ -83,7 +83,7 @@ impl ChunkStream {
 
     /// Returns true if no more items can be pulled from this stream.
     ///
-    /// Also `true` if an error occured
+    /// Also `true` if an error occurred
     pub fn empty() -> Self {
         let (mut me, _) = Self::new(BytesHint(0, Some(0)));
         me.is_closed = true;
@@ -125,7 +125,7 @@ impl ChunkStream {
             ));
         }
 
-        if buffer.len() < self.bytes_hint.lower_bound() {
+        if (buffer.len() as u64) < self.bytes_hint.lower_bound() {
             return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
@@ -144,6 +144,14 @@ impl ChunkStream {
                 Err(err) => return Err(err),
                 Ok(next) => next,
             };
+
+            if range_offset > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
+            let range_offset = range_offset as usize;
 
             let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
@@ -171,7 +179,13 @@ impl ChunkStream {
     /// not know, whether we can fill the `Vec` in a contiguous way.
     pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
-            let mut buffer = vec![0; total_bytes];
+            if total_bytes > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
+            let mut buffer = vec![0; total_bytes as usize];
             let _ = self.write_buffer(buffer.as_mut()).await?;
             Ok(buffer)
         } else {
@@ -196,7 +210,14 @@ async fn stream_into_vec_with_unknown_size(
         ));
     }
 
-    let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound());
+    let lower_bound = stream.bytes_hint.lower_bound();
+    if lower_bound > usize::MAX as u64 {
+        return Err(CondowError::new_other(
+            "usize overflow while casting from u64",
+        ));
+    }
+
+    let mut buffer = Vec::with_capacity(lower_bound as usize);
 
     while let Some(next) = stream.next().await {
         let Chunk {
@@ -207,6 +228,14 @@ async fn stream_into_vec_with_unknown_size(
             Err(err) => return Err(err),
             Ok(next) => next,
         };
+
+        if range_offset > usize::MAX as u64 {
+            return Err(CondowError::new_other(
+                "usize overflow while casting from u64",
+            ));
+        }
+
+        let range_offset = range_offset as usize;
 
         let end_excl = range_offset + bytes.len();
         if end_excl >= buffer.len() {
@@ -235,7 +264,7 @@ impl Stream for ChunkStream {
         let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
         match next {
             Some(Ok(chunk_item)) => {
-                this.bytes_hint.reduce_by(chunk_item.len());
+                this.bytes_hint.reduce_by(chunk_item.len() as u64);
                 Poll::Ready(Some(Ok(chunk_item)))
             }
             Some(Err(err)) => {
@@ -281,7 +310,10 @@ mod tests {
         let mut first_blob_offset = 0;
         let mut got_first = false;
 
-        assert_eq!(result_stream.bytes_hint(), BytesHint::new_exact(bytes_left));
+        assert_eq!(
+            result_stream.bytes_hint(),
+            BytesHint::new_exact(bytes_left as u64)
+        );
         while let Some(next) = result_stream.next().await {
             let Chunk {
                 range_offset,
@@ -293,13 +325,19 @@ mod tests {
                 Ok(next) => next,
             };
 
+            let range_offset = range_offset as usize;
+            let blob_offset = blob_offset as usize;
+
             if !got_first {
                 first_blob_offset = blob_offset - range_offset;
                 got_first = true;
             }
 
             bytes_left -= bytes.len();
-            assert_eq!(result_stream.bytes_hint(), BytesHint::new_exact(bytes_left));
+            assert_eq!(
+                result_stream.bytes_hint(),
+                BytesHint::new_exact(bytes_left as u64)
+            );
 
             assert_eq!(
                 bytes[..],

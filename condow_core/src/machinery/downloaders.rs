@@ -58,6 +58,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
         location: C::Location,
         reporter: R,
     ) -> Self {
+        let started_at = Instant::now();
         let kill_switch = KillSwitch::new();
         let counter = Arc::new(AtomicUsize::new(0));
         let downloaders: Vec<_> = (0..n_concurrent)
@@ -68,7 +69,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
                     kill_switch.clone(),
                     location.clone(),
                     config.buffer_size.into(),
-                    DownloadersWatcher::new(Arc::clone(&counter), reporter.clone()),
+                    DownloadersWatcher::new(Arc::clone(&counter), reporter.clone(), started_at),
                 )
             })
             .collect();
@@ -209,18 +210,20 @@ impl Downloader {
 }
 
 struct DownloadersWatcher<R: Reporter> {
+    started_at: Instant,
     counter: Arc<AtomicUsize>,
     is_failed: Arc<AtomicBool>,
     reporter: R,
 }
 
 impl<R: Reporter> DownloadersWatcher<R> {
-    pub fn new(counter: Arc<AtomicUsize>, reporter: R) -> Self {
+    pub fn new(counter: Arc<AtomicUsize>, reporter: R, started_at: Instant) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
         Self {
             counter,
             reporter,
             is_failed: Arc::new(AtomicBool::new(false)),
+            started_at,
         }
     }
 
@@ -234,9 +237,10 @@ impl<R: Reporter> Drop for DownloadersWatcher<R> {
         self.counter.fetch_sub(1, Ordering::SeqCst);
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.is_failed.load(Ordering::SeqCst) {
-                self.reporter.download_failed()
+                self.reporter
+                    .download_failed(Some(self.started_at.elapsed()))
             } else {
-                self.reporter.download_completed()
+                self.reporter.download_completed(self.started_at.elapsed())
             }
         }
     }
@@ -263,7 +267,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 let t_chunk = chunk_start.elapsed();
                 chunk_start = Instant::now();
                 let n_bytes = bytes.len();
-                bytes_received += bytes.len();
+                bytes_received += bytes.len() as u64;
 
                 if bytes_received > bytes_expected {
                     let msg = Err(CondowError::new_other(format!(
@@ -291,7 +295,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                     }))
                     .map_err(|_| ())?;
                 chunk_index += 1;
-                offset_in_range += n_bytes;
+                offset_in_range += n_bytes as u64;
             }
             Err(IoError(msg)) => {
                 let _ = results_sender.unbounded_send(Err(CondowError::new_io(msg)));
@@ -325,7 +329,10 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::AtomicUsize, Arc};
+    use std::{
+        sync::{atomic::AtomicUsize, Arc},
+        time::Instant,
+    };
 
     use futures::StreamExt;
 
@@ -355,7 +362,7 @@ mod tests {
         }
     }
 
-    async fn check(range: InclusiveRange, client: TestCondowClient, part_size_bytes: usize) {
+    async fn check(range: InclusiveRange, client: TestCondowClient, part_size_bytes: u64) {
         let config = Config::default()
             .buffer_size(10)
             .buffers_full_delay_ms(0)
@@ -375,7 +382,7 @@ mod tests {
             KillSwitch::new(),
             NoLocation,
             config.buffer_size.into(),
-            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporting),
+            DownloadersWatcher::new(Arc::new(AtomicUsize::new(0)), NoReporting, Instant::now()),
         );
 
         while let Some(next) = ranges_stream.next().await {
@@ -387,7 +394,7 @@ mod tests {
         let result = result_stream.collect::<Vec<_>>().await;
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
 
-        let total_bytes: usize = result.iter().map(|c| c.bytes.len()).sum();
+        let total_bytes: u64 = result.iter().map(|c| c.bytes.len() as u64).sum();
         assert_eq!(total_bytes, range.len(), "total_bytes");
 
         let mut next_range_offset = 0;
@@ -411,8 +418,8 @@ mod tests {
                 "part {}, blob_offset: {:?}",
                 part_index, range
             );
-            next_range_offset += bytes.len();
-            next_blob_offset += bytes.len();
+            next_range_offset += bytes.len() as u64;
+            next_blob_offset += bytes.len() as u64;
         });
     }
 }

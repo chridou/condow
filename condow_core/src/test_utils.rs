@@ -1,8 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use futures::{
-    future::{self, BoxFuture},
+    future::{self, BoxFuture, FutureExt, TryFutureExt},
     stream, StreamExt as _,
 };
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
@@ -11,7 +14,9 @@ use tokio::time;
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     errors::CondowError,
+    reader::RandomAccessReader,
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
+    DownloadRange, Downloads,
 };
 
 #[derive(Debug, Clone)]
@@ -91,7 +96,10 @@ impl CondowClient for TestCondowClient {
     > {
         let range = match spec {
             DownloadSpec::Complete => 0..self.data.len(),
-            DownloadSpec::Range(r) => r.to_std_range_excl(),
+            DownloadSpec::Range(r) => {
+                let r = r.to_std_range_excl();
+                r.start as usize..r.end as usize
+            }
         };
 
         if range.end > self.data.len() {
@@ -105,7 +113,7 @@ impl CondowClient for TestCondowClient {
         let slice = &self.data[range];
 
         let bytes_hint = if self.include_size_hint {
-            BytesHint::new_exact(slice.len())
+            BytesHint::new_exact(slice.len() as u64)
         } else {
             BytesHint::new_no_hint()
         };
@@ -145,7 +153,7 @@ pub fn create_test_data() -> Vec<u8> {
 }
 
 pub fn create_chunk_stream(
-    n_parts: usize,
+    n_parts: u64,
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
@@ -164,12 +172,12 @@ pub fn create_chunk_stream(
     };
 
     let mut rng = rand::thread_rng();
-    let blob_offset: usize = rng.gen_range(0..1_000);
+    let blob_offset: u64 = rng.gen_range(0..1_000);
 
     let mut parts: Vec<Vec<ChunkStreamItem>> = Vec::new();
 
-    let mut range_offset = 0;
-    for part_index in 0usize..n_parts {
+    let mut range_offset: u64 = 0;
+    for part_index in 0u64..n_parts {
         let mut chunks = Vec::with_capacity(n_chunks);
 
         let mut chunks_bytes = Vec::with_capacity(n_chunks);
@@ -186,10 +194,13 @@ pub fn create_chunk_stream(
             chunks_bytes.push((chunk_index, bytes));
         }
 
-        let mut bytes_left_in_part = chunks_bytes.iter().map(|(_, bytes)| bytes.len()).sum();
+        let mut bytes_left_in_part: u64 = chunks_bytes
+            .iter()
+            .map(|(_, bytes)| bytes.len() as u64)
+            .sum();
 
         for (chunk_index, bytes) in chunks_bytes {
-            let n_bytes = bytes.len();
+            let n_bytes = bytes.len() as u64;
             bytes_left_in_part -= n_bytes;
             let chunk = Chunk {
                 part_index,
@@ -206,9 +217,9 @@ pub fn create_chunk_stream(
     }
 
     let bytes_hint = if exact_hint {
-        BytesHint::new_exact(values.len())
+        BytesHint::new_exact(values.len() as u64)
     } else {
-        BytesHint::new_at_max(values.len())
+        BytesHint::new_at_max(values.len() as u64)
     };
 
     parts.shuffle(&mut rng);
@@ -234,7 +245,7 @@ pub fn create_chunk_stream(
 }
 
 pub fn create_part_stream(
-    n_parts: usize,
+    n_parts: u64,
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
@@ -260,4 +271,157 @@ async fn check_chunk_stream_variable_chunk_size() {
     let result = stream.into_vec().await.unwrap();
 
     assert_eq!(result, expected);
+}
+
+#[derive(Clone)]
+pub struct TestDownloader {
+    blob: Arc<Mutex<Vec<u8>>>,
+    pattern: Arc<Mutex<Vec<Option<usize>>>>,
+}
+
+impl TestDownloader {
+    /// Create a new [TestDownloader] with a BLOB of size `len`.
+    ///
+    /// Cycles the bytes starting with 0.
+    pub fn new(len: usize) -> Self {
+        let mut blob = Vec::with_capacity(len);
+        for n in 0..len {
+            blob.push(n as u8)
+        }
+        Self {
+            blob: Arc::new(Mutex::new(blob)),
+            pattern: Arc::new(Mutex::new(vec![Some(2), Some(5), Some(3), Some(7)])),
+        }
+    }
+
+    /// Create a new [TestDownloader] using the given BLOB.
+    pub fn new_with_blob(blob: Vec<u8>) -> Self {
+        Self {
+            blob: Arc::new(Mutex::new(blob)),
+            pattern: Arc::new(Mutex::new(vec![Some(5), Some(3), Some(7)])),
+        }
+    }
+
+    pub fn set_pattern(self, pattern: Vec<Option<usize>>) {
+        *self.pattern.lock().unwrap() = pattern;
+    }
+
+    pub fn blob(&self) -> Vec<u8> {
+        self.blob.lock().unwrap().clone()
+    }
+}
+
+impl Downloads<usize> for TestDownloader {
+    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        location: usize,
+        range: R,
+    ) -> BoxFuture<'a, Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>>
+    {
+        self.download_chunks(location, range)
+            .and_then(|st| async move { PartStream::from_chunk_stream(st) })
+            .boxed()
+    }
+
+    fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
+        &'a self,
+        _location: usize,
+        range: R,
+    ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
+        Box::pin(make_a_stream(
+            self.blob.as_ref(),
+            range.into(),
+            self.pattern.lock().unwrap().clone(),
+        ))
+    }
+
+    fn get_size<'a>(&'a self, _location: usize) -> BoxFuture<'a, Result<u64, CondowError>> {
+        let len = self.blob.lock().unwrap().len();
+        futures::future::ok(len as u64).boxed()
+    }
+
+    fn reader_with_length(&self, location: usize, length: u64) -> RandomAccessReader<Self, usize>
+    where
+        Self: Sized,
+    {
+        RandomAccessReader::new_with_length(self.clone(), location, length)
+    }
+}
+
+async fn make_a_stream(
+    blob: &Mutex<Vec<u8>>,
+    range: DownloadRange,
+    pattern: Vec<Option<usize>>,
+) -> Result<ChunkStream, CondowError> {
+    let blob_guard = blob.lock().unwrap();
+    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len() as u64) {
+        range
+    } else {
+        return Err(CondowError::new_invalid_range("invalid range"));
+    };
+
+    let range = range_incl.start() as usize..(range_incl.end_incl() + 1) as usize;
+
+    let bytes = blob_guard[range].to_vec();
+
+    drop(blob_guard);
+
+    let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
+
+    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len() as u64));
+
+    tokio::spawn(async move {
+        let mut start = 0;
+        loop {
+            if start == bytes.len() {
+                return;
+            }
+
+            let (chunk_index, chunk_len) =
+                if let Some((chunk_index, pattern)) = chunk_patterns.next() {
+                    if let Some(pattern) = pattern {
+                        (chunk_index, pattern)
+                    } else {
+                        let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
+                        break;
+                    }
+                } else {
+                    break;
+                };
+
+            let end_excl = bytes.len().min(start + chunk_len);
+            let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
+
+            let bytes_left = (bytes.len() - end_excl) as u64;
+            let chunk = Chunk {
+                part_index: 0,
+                chunk_index,
+                blob_offset: start as u64,
+                range_offset: start as u64,
+                bytes: chunk,
+                bytes_left,
+            };
+
+            let _ = tx.unbounded_send(Ok(chunk));
+
+            start = end_excl;
+        }
+    });
+
+    Ok(chunk_stream)
+}
+
+#[tokio::test]
+async fn check_test_downloader() {
+    for n in 1..255 {
+        let expected: Vec<u8> = (0..n).collect();
+
+        let downloader = TestDownloader::new(n as usize);
+
+        let parts = downloader.download(42, ..).await.unwrap();
+
+        let result = parts.into_vec().await.unwrap();
+
+        assert_eq!(result, expected, "bytes read ({} items)", n);
+    }
 }
