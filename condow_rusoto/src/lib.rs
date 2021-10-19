@@ -308,11 +308,15 @@ fn response_to_condow_err(response: BufferedHttpResponse) -> CondowError {
 
     let status = response.status;
     let message = format!("{} - {}", status, message);
-    if status.is_client_error() {
-        CondowError::new_other(message)
-    } else if status.is_server_error() {
-        CondowError::new_remote(message)
-    } else {
-        CondowError::new_other(message)
+    match status.as_u16() {
+        404 => CondowError::new_not_found(message),
+        401 | 403 => CondowError::new_access_denied(message),
+        _ => {
+            if status.is_server_error() {
+                CondowError::new_remote(message)
+            } else {
+                CondowError::new_other(message)
+            }
+        }
     }
 }
