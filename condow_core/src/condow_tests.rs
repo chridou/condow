@@ -21,7 +21,7 @@ mod blob {
                 max_chunk_size: chunk_size,
             };
 
-            for part_size in [1usize, 3, 50, 1_000] {
+            for part_size in [1u64, 3, 50, 1_000] {
                 for n_concurrency in [1usize, 10] {
                     let config = Config::default()
                         .buffer_size(buffer_size)
@@ -57,7 +57,7 @@ mod blob {
                 max_chunk_size: chunk_size,
             };
 
-            for part_size in [1usize, 3, 50, 1_000] {
+            for part_size in [1u64, 3, 50, 1_000] {
                 for n_concurrency in [1usize, 10] {
                     let config = Config::default()
                         .buffer_size(buffer_size)
@@ -101,7 +101,7 @@ mod range {
                     max_chunk_size: chunk_size,
                 };
 
-                for part_size in [1usize, 3, 50, 1_000] {
+                for part_size in [1u64, 3, 50, 1_000] {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
@@ -110,7 +110,7 @@ mod range {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for from_idx in [0usize, 101, 255, 256] {
+                        for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
                             let result_stream = machinery::download(
@@ -125,7 +125,7 @@ mod range {
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
-                            let check_range = from_idx.min(data.len())..;
+                            let check_range = (from_idx as usize).min(data.len())..;
                             assert_eq!(&result, &data[check_range]);
                         }
                     }
@@ -147,7 +147,7 @@ mod range {
                     max_chunk_size: chunk_size,
                 };
 
-                for part_size in [1usize, 3, 50, 1_000] {
+                for part_size in [1u64, 3, 50, 1_000] {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
@@ -156,7 +156,7 @@ mod range {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for from_idx in [0usize, 101, 255, 256] {
+                        for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
                             let result_stream = machinery::download(
@@ -171,7 +171,7 @@ mod range {
 
                             let result = result_stream.into_stream().into_vec().await.unwrap();
 
-                            let check_range = from_idx.min(data.len())..;
+                            let check_range = (from_idx as usize).min(data.len())..;
                             assert_eq!(&result, &data[check_range]);
                         }
                     }
@@ -201,7 +201,7 @@ mod range {
                     max_chunk_size: chunk_size,
                 };
 
-                for part_size in [1usize, 3, 50, 1_000] {
+                for part_size in [1u64, 3, 50, 1_000] {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
@@ -210,9 +210,9 @@ mod range {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for end_incl in [0usize, 2, 101, 255] {
+                        for end_incl in [0u64, 2, 101, 255] {
                             let range = 0..=end_incl;
-                            let expected_range_end = (end_incl + 1).min(data.len());
+                            let expected_range_end = (end_incl as usize + 1).min(data.len());
 
                             let result_stream = machinery::download(
                                 &condow,
@@ -247,7 +247,7 @@ mod range {
                     max_chunk_size: chunk_size,
                 };
 
-                for part_size in [1usize, 3, 50, 1_000] {
+                for part_size in [1u64, 3, 50, 1_000] {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
@@ -256,9 +256,9 @@ mod range {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for end_excl in [0usize, 2, 101, 255, 256] {
+                        for end_excl in [0u64, 2, 101, 255, 256] {
                             let range = 0..end_excl;
-                            let expected_range_end = end_excl.min(data.len());
+                            let expected_range_end = (end_excl as usize).min(data.len());
 
                             let result_stream = machinery::download(
                                 &condow,
@@ -301,7 +301,7 @@ mod range {
                             max_chunk_size: chunk_size,
                         };
 
-                        for part_size in [1usize, 3, 50, 1_000] {
+                        for part_size in [1u64, 3, 50, 1_000] {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
@@ -310,9 +310,10 @@ mod range {
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
 
-                                for end_incl in [0usize, 2, 101, 255, 255] {
+                                for end_incl in [0u64, 2, 101, 255, 255] {
                                     let range = 0..=end_incl;
-                                    let expected_range_end = (end_incl + 1).min(data.len());
+                                    let expected_range_end =
+                                        (end_incl as usize + 1).min(data.len());
 
                                     let result_stream = machinery::download(
                                         &condow,
@@ -348,7 +349,7 @@ mod range {
                             max_chunk_size: chunk_size,
                         };
 
-                        for part_size in [1usize, 3, 50, 1_000] {
+                        for part_size in [1u64, 3, 50, 1_000] {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
@@ -357,9 +358,9 @@ mod range {
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
 
-                                for end_excl in [0usize, 2, 101, 255, 256] {
+                                for end_excl in [0u64, 2, 101, 255, 256] {
                                     let range = 0..end_excl;
-                                    let expected_range_end = end_excl.min(data.len());
+                                    let expected_range_end = (end_excl as usize).min(data.len());
 
                                     let result_stream = machinery::download(
                                         &condow,
@@ -403,7 +404,7 @@ mod range {
                             max_chunk_size: chunk_size,
                         };
 
-                        for part_size in [1usize, 33] {
+                        for part_size in [1u64, 33] {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
@@ -412,11 +413,12 @@ mod range {
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
 
-                                for start in [1usize, 87, 101, 201] {
+                                for start in [1u64, 87, 101, 201] {
                                     for len in [1, 10, 100] {
                                         let end_incl = start + len;
                                         let range = start..=(end_incl);
-                                        let expected_range_end = (end_incl + 1).min(data.len());
+                                        let expected_range_end =
+                                            (end_incl as usize + 1).min(data.len());
 
                                         let result_stream = machinery::download(
                                             &condow,
@@ -431,7 +433,10 @@ mod range {
                                         let result =
                                             result_stream.into_stream().into_vec().await.unwrap();
 
-                                        assert_eq!(&result, &data[start..expected_range_end]);
+                                        assert_eq!(
+                                            &result,
+                                            &data[start as usize..expected_range_end]
+                                        );
                                     }
                                 }
                             }
@@ -453,7 +458,7 @@ mod range {
                             max_chunk_size: chunk_size,
                         };
 
-                        for part_size in [1usize, 33] {
+                        for part_size in [1u64, 33] {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
@@ -462,11 +467,12 @@ mod range {
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
 
-                                for start in [1usize, 87, 101, 201] {
+                                for start in [1u64, 87, 101, 201] {
                                     for len in [1, 10, 100] {
                                         let end_excl = start + len;
                                         let range = start..(end_excl);
-                                        let expected_range_end = end_excl.min(data.len());
+                                        let expected_range_end =
+                                            (end_excl as usize).min(data.len());
 
                                         let result_stream = machinery::download(
                                             &condow,
@@ -481,7 +487,10 @@ mod range {
                                         let result =
                                             result_stream.into_stream().into_vec().await.unwrap();
 
-                                        assert_eq!(&result, &data[start..expected_range_end]);
+                                        assert_eq!(
+                                            &result,
+                                            &data[start as usize..expected_range_end]
+                                        );
                                     }
                                 }
                             }

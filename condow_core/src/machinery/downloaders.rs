@@ -267,7 +267,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 let t_chunk = chunk_start.elapsed();
                 chunk_start = Instant::now();
                 let n_bytes = bytes.len();
-                bytes_received += bytes.len();
+                bytes_received += bytes.len() as u64;
 
                 if bytes_received > bytes_expected {
                     let msg = Err(CondowError::new_other(format!(
@@ -295,7 +295,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                     }))
                     .map_err(|_| ())?;
                 chunk_index += 1;
-                offset_in_range += n_bytes;
+                offset_in_range += n_bytes as u64;
             }
             Err(IoError(msg)) => {
                 let _ = results_sender.unbounded_send(Err(CondowError::new_io(msg)));
@@ -362,7 +362,7 @@ mod tests {
         }
     }
 
-    async fn check(range: InclusiveRange, client: TestCondowClient, part_size_bytes: usize) {
+    async fn check(range: InclusiveRange, client: TestCondowClient, part_size_bytes: u64) {
         let config = Config::default()
             .buffer_size(10)
             .buffers_full_delay_ms(0)
@@ -394,7 +394,7 @@ mod tests {
         let result = result_stream.collect::<Vec<_>>().await;
         let result = result.into_iter().collect::<Result<Vec<_>, _>>().unwrap();
 
-        let total_bytes: usize = result.iter().map(|c| c.bytes.len()).sum();
+        let total_bytes: u64 = result.iter().map(|c| c.bytes.len() as u64).sum();
         assert_eq!(total_bytes, range.len(), "total_bytes");
 
         let mut next_range_offset = 0;
@@ -418,8 +418,8 @@ mod tests {
                 "part {}, blob_offset: {:?}",
                 part_index, range
             );
-            next_range_offset += bytes.len();
-            next_blob_offset += bytes.len();
+            next_range_offset += bytes.len() as u64;
+            next_blob_offset += bytes.len() as u64;
         });
     }
 }

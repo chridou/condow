@@ -42,18 +42,12 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed
-    fn chunk_completed(
-        &self,
-        part_index: usize,
-        chunk_index: usize,
-        n_bytes: usize,
-        time: Duration,
-    ) {
+    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
     }
     /// Download of a part has started
-    fn part_started(&self, part_index: usize, range: InclusiveRange) {}
+    fn part_started(&self, part_index: u64, range: InclusiveRange) {}
     /// Download of a part was completed
-    fn part_completed(&self, part_index: usize, n_chunks: usize, n_bytes: usize, time: Duration) {}
+    fn part_completed(&self, part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {}
 }
 
 /// Disables reporting
@@ -108,7 +102,7 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
 
     fn chunk_completed(
         &self,
-        part_index: usize,
+        part_index: u64,
         chunk_index: usize,
         n_bytes: usize,
         time: std::time::Duration,
@@ -119,16 +113,16 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
             .chunk_completed(part_index, chunk_index, n_bytes, time);
     }
 
-    fn part_started(&self, part_index: usize, range: crate::InclusiveRange) {
+    fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
         self.0.part_started(part_index, range);
         self.1.part_started(part_index, range);
     }
 
     fn part_completed(
         &self,
-        part_index: usize,
+        part_index: u64,
         n_chunks: usize,
-        n_bytes: usize,
+        n_bytes: u64,
         time: std::time::Duration,
     ) {
         self.0.part_completed(part_index, n_chunks, n_bytes, time);
@@ -278,15 +272,15 @@ mod simple_reporter {
         pub gigabits_per_second: f64,
         pub gibibits_per_second: f64,
         pub n_queue_full: usize,
-        pub n_bytes_received: usize,
-        pub n_chunks_received: usize,
-        pub n_parts_received: usize,
+        pub n_bytes_received: u64,
+        pub n_chunks_received: u64,
+        pub n_parts_received: u64,
         pub min_chunk_bytes: usize,
         pub max_chunk_bytes: usize,
         pub min_chunk_time: Duration,
         pub max_chunk_time: Duration,
-        pub min_part_bytes: usize,
-        pub max_part_bytes: usize,
+        pub min_part_bytes: u64,
+        pub max_part_bytes: u64,
         pub min_chunks_per_part: usize,
         pub max_chunks_per_part: usize,
         pub min_part_time: Duration,
@@ -325,7 +319,7 @@ mod simple_reporter {
 
         fn chunk_completed(
             &self,
-            _part_index: usize,
+            _part_index: u64,
             chunk_index: usize,
             n_bytes: usize,
             time: Duration,
@@ -341,13 +335,7 @@ mod simple_reporter {
             }
         }
 
-        fn part_completed(
-            &self,
-            _part_index: usize,
-            n_chunks: usize,
-            n_bytes: usize,
-            time: Duration,
-        ) {
+        fn part_completed(&self, _part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {
             let inner = self.inner.as_ref();
             inner.n_parts_received.fetch_add(1, Ordering::SeqCst);
             inner.n_bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
@@ -372,15 +360,15 @@ mod simple_reporter {
         download_finished_at: Mutex<Option<Instant>>,
         is_failed: AtomicBool,
         n_queue_full: AtomicUsize,
-        n_bytes_received: AtomicUsize,
-        n_chunks_received: AtomicUsize,
-        n_parts_received: AtomicUsize,
+        n_bytes_received: AtomicU64,
+        n_chunks_received: AtomicU64,
+        n_parts_received: AtomicU64,
         min_chunk_bytes: AtomicUsize,
         max_chunk_bytes: AtomicUsize,
         min_chunk_us: AtomicU64,
         max_chunk_us: AtomicU64,
-        min_part_bytes: AtomicUsize,
-        max_part_bytes: AtomicUsize,
+        min_part_bytes: AtomicU64,
+        max_part_bytes: AtomicU64,
         min_chunks_per_part: AtomicUsize,
         max_chunks_per_part: AtomicUsize,
         min_part_us: AtomicU64,
@@ -395,16 +383,16 @@ mod simple_reporter {
                 download_started_at: Mutex::new(Instant::now()),
                 download_finished_at: Mutex::new(None),
                 is_failed: AtomicBool::new(false),
-                n_bytes_received: AtomicUsize::new(0),
-                n_chunks_received: AtomicUsize::new(0),
-                n_parts_received: AtomicUsize::new(0),
+                n_bytes_received: AtomicU64::new(0),
+                n_chunks_received: AtomicU64::new(0),
+                n_parts_received: AtomicU64::new(0),
                 n_queue_full: AtomicUsize::new(0),
                 min_chunk_bytes: AtomicUsize::new(usize::MAX),
                 max_chunk_bytes: AtomicUsize::new(0),
                 min_chunk_us: AtomicU64::new(u64::MAX),
                 max_chunk_us: AtomicU64::new(0),
-                min_part_bytes: AtomicUsize::new(usize::MAX),
-                max_part_bytes: AtomicUsize::new(0),
+                min_part_bytes: AtomicU64::new(u64::MAX),
+                max_part_bytes: AtomicU64::new(0),
                 min_chunks_per_part: AtomicUsize::new(usize::MAX),
                 max_chunks_per_part: AtomicUsize::new(0),
                 min_part_us: AtomicU64::new(u64::MAX),

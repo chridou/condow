@@ -49,7 +49,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
             let size = condow.client.get_size(location.clone()).await?;
-            if let Some(range) = or.incl_range_from_size(size as usize) {
+            if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
                 return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
@@ -58,7 +58,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
         DownloadRange::Closed(cl) => {
             if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
                 let size = condow.client.get_size(location.clone()).await?;
-                if let Some(range) = cl.incl_range_from_size(size as usize) {
+                if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
                     return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
@@ -105,7 +105,7 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     tokio::spawn(async move {
         downloaders::download_concurrently(
             ranges_stream,
-            config.max_concurrency.into_inner().min(n_parts),
+            config.max_concurrency.into_inner().min(n_parts as usize), // FIX: Check overflow
             sender,
             client,
             config,
@@ -147,7 +147,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_std_range()]);
+        assert_eq!(&result, &data[range.to_std_range_usize()]);
     }
 
     #[tokio::test]
@@ -172,7 +172,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_std_range()]);
+        assert_eq!(&result, &data[range.to_std_range_usize()]);
     }
 
     #[tokio::test]
@@ -197,7 +197,7 @@ mod tests {
 
         let result = result_stream.into_vec().await.unwrap();
 
-        assert_eq!(&result, &data[range.to_std_range()]);
+        assert_eq!(&result, &data[range.to_std_range_usize()]);
     }
 }
 

@@ -105,12 +105,9 @@ mod random_access_reader {
 
             let end_incl = (self.pos + len - 1).min(self.length - 1);
 
-            let pos = self.pos as usize;
-            let end_incl = end_incl as usize;
-
             let dl = self.downloader.clone();
             let location = self.location.clone();
-            let range = DownloadRange::from(pos..=end_incl);
+            let range = DownloadRange::from(self.pos..=end_incl);
             async move {
                 dl.download(location, range)
                     .map_ok(|stream| {

@@ -19,19 +19,19 @@ pub type PartStreamItem = Result<Part, CondowError>;
 #[derive(Debug, Clone)]
 pub struct Part {
     /// Index of the part this chunk belongs to
-    pub part_index: usize,
+    pub part_index: u64,
     /// Offset of the first chunk within the BLOB
-    pub blob_offset: usize,
+    pub blob_offset: u64,
     /// Offset of the first chunk within the downloaded range
-    pub range_offset: usize,
+    pub range_offset: u64,
     /// The chunks of bytes in the order received for this part
     pub chunks: Vec<Bytes>,
 }
 
 impl Part {
     /// Length of this [Part] in bytes
-    pub fn len(&self) -> usize {
-        self.chunks.iter().map(|b| b.len()).sum()
+    pub fn len(&self) -> u64 {
+        self.chunks.iter().map(|b| b.len() as u64).sum()
     }
 
     /// Returns `true` if there are no bytes in this [Part]
@@ -42,9 +42,9 @@ impl Part {
 
 /// A struct to collect and aggregate received chunks for a part
 struct PartEntry {
-    part_index: usize,
-    blob_offset: usize,
-    range_offset: usize,
+    part_index: u64,
+    blob_offset: u64,
+    range_offset: u64,
     chunks: Vec<Bytes>,
     is_complete: bool,
 }
@@ -59,8 +59,8 @@ pin_project! {
         #[pin]
         stream: St,
         is_closed: bool,
-        next_part_idx: usize,
-        collected_parts: HashMap<usize, PartEntry>
+        next_part_idx: u64,
+        collected_parts: HashMap<u64, PartEntry>
     }
 }
 
@@ -93,7 +93,7 @@ where
     ///
     /// Fails if the buffer is too small or there was an error on the stream.
     pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
-        if buffer.len() < self.bytes_hint.lower_bound() {
+        if (buffer.len() as u64) < self.bytes_hint.lower_bound() {
             return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
@@ -129,12 +129,13 @@ where
     ///
     /// Fails if there is an error on the stream
     pub async fn into_vec(mut self) -> Result<Vec<u8>, CondowError> {
+        // FIX: return error on overflow of usize
         if let Some(total_bytes) = self.bytes_hint.exact() {
-            let mut buffer = vec![0; total_bytes];
+            let mut buffer = vec![0; total_bytes as usize];
             let _ = self.write_buffer(buffer.as_mut()).await?;
             Ok(buffer)
         } else {
-            let mut buffer = Vec::with_capacity(self.bytes_hint.lower_bound());
+            let mut buffer = Vec::with_capacity(self.bytes_hint.lower_bound() as usize);
 
             while let Some(next) = self.next().await {
                 let part = next?;
@@ -188,7 +189,7 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
                     && chunk.is_last()
                     && chunk.part_index == *this.next_part_idx
                 {
-                    this.bytes_hint.reduce_by(chunk.len());
+                    this.bytes_hint.reduce_by(chunk.len() as u64);
                     *this.next_part_idx += 1;
                     Poll::Ready(Some(Ok(Part {
                         part_index: chunk.part_index,
@@ -220,7 +221,7 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
                                 ..
                             } = this.collected_parts.remove(this.next_part_idx).unwrap();
                             this.bytes_hint
-                                .reduce_by(chunks.iter().map(|c| c.len()).sum());
+                                .reduce_by(chunks.iter().map(|c| c.len() as u64).sum());
                             *this.next_part_idx += 1;
                             Poll::Ready(Some(Ok(Part {
                                 part_index,
@@ -247,7 +248,7 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
                 if let Some(next) = this.collected_parts.remove(this.next_part_idx) {
                     *this.next_part_idx += 1;
                     this.bytes_hint
-                        .reduce_by(next.chunks.iter().map(|c| c.len()).sum());
+                        .reduce_by(next.chunks.iter().map(|c| c.len() as u64).sum());
                     Poll::Ready(Some(Ok(Part {
                         part_index: next.part_index,
                         blob_offset: next.blob_offset,

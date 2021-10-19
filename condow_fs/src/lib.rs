@@ -76,11 +76,11 @@ impl CondowClient for FsClient {
                     file.seek(SeekFrom::Start(range.start() as u64)).await?;
 
                     let n_bytes_to_read = range.len();
-                    let mut buffer = Vec::with_capacity(n_bytes_to_read);
+                    let mut buffer = Vec::with_capacity(n_bytes_to_read as usize); // FIX: usize overflow
 
                     let n_bytes_read = file.read(&mut buffer).await?;
 
-                    if n_bytes_read != n_bytes_to_read {
+                    if n_bytes_read as u64 != n_bytes_to_read {
                         return Err(CondowError::new_io(format!(
                             "not enough bytes read (expected {} got {})",
                             n_bytes_to_read, n_bytes_read
@@ -93,7 +93,7 @@ impl CondowClient for FsClient {
 
             let bytes = Bytes::from(bytes);
 
-            let bytes_hint = BytesHint::new_exact(bytes.len());
+            let bytes_hint = BytesHint::new_exact(bytes.len() as u64);
 
             let stream = futures::stream::once(futures::future::ready(Ok(bytes)));
 

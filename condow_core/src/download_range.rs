@@ -10,19 +10,19 @@ use crate::errors::CondowError;
 ///
 /// A replacement for [RangeInclusive] with some sugar.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct InclusiveRange(pub usize, pub usize);
+pub struct InclusiveRange(pub u64, pub u64);
 
 impl InclusiveRange {
-    pub fn start(&self) -> usize {
+    pub fn start(&self) -> u64 {
         self.0
     }
 
-    pub fn end_incl(&self) -> usize {
+    pub fn end_incl(&self) -> u64 {
         self.1
     }
 
     #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u64 {
         if self.1 < self.0 {
             return 0;
         }
@@ -30,11 +30,16 @@ impl InclusiveRange {
         self.1 - self.0 + 1
     }
 
-    pub fn to_std_range(self) -> RangeInclusive<usize> {
+    pub fn to_std_range(self) -> RangeInclusive<u64> {
         self.0..=self.1
     }
 
-    pub fn to_std_range_excl(self) -> Range<usize> {
+    #[cfg(test)]
+    pub fn to_std_range_usize(self) -> RangeInclusive<usize> {
+        self.0 as usize..=self.1 as usize
+    }
+
+    pub fn to_std_range_excl(self) -> Range<u64> {
         self.0..self.1 + 1
     }
 
@@ -46,23 +51,23 @@ impl InclusiveRange {
 
 impl fmt::Display for InclusiveRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}..={}", self.0, self.1)
+        write!(f, "[{},{}]", self.0, self.1)
     }
 }
 
-impl From<RangeInclusive<usize>> for InclusiveRange {
-    fn from(ri: RangeInclusive<usize>) -> Self {
+impl From<RangeInclusive<u64>> for InclusiveRange {
+    fn from(ri: RangeInclusive<u64>) -> Self {
         Self(*ri.start(), *ri.end())
     }
 }
 
-impl From<InclusiveRange> for RangeInclusive<usize> {
+impl From<InclusiveRange> for RangeInclusive<u64> {
     fn from(ir: InclusiveRange) -> Self {
         ir.to_std_range()
     }
 }
 
-impl From<InclusiveRange> for Range<usize> {
+impl From<InclusiveRange> for Range<u64> {
     fn from(ir: InclusiveRange) -> Self {
         ir.to_std_range_excl()
     }
@@ -70,23 +75,23 @@ impl From<InclusiveRange> for Range<usize> {
 
 /// A range defined by an offset and a length.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct OffsetRange(pub usize, pub usize);
+pub struct OffsetRange(pub u64, pub u64);
 
 impl OffsetRange {
-    pub fn new(offset: usize, len: usize) -> Self {
+    pub fn new(offset: u64, len: u64) -> Self {
         Self(offset, len)
     }
 
-    pub fn start(&self) -> usize {
+    pub fn start(&self) -> u64 {
         self.0
     }
 
-    pub fn end_excl(&self) -> usize {
+    pub fn end_excl(&self) -> u64 {
         self.0 + self.1
     }
 
     #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u64 {
         self.1
     }
 }
@@ -108,10 +113,10 @@ impl fmt::Display for OffsetRange {
 /// range which does not exceed the end of the file is supplied.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClosedRange {
-    FromTo(usize, usize),
-    FromToInclusive(usize, usize),
-    To(usize),
-    ToInclusive(usize),
+    FromTo(u64, u64),
+    FromToInclusive(u64, u64),
+    To(u64),
+    ToInclusive(u64),
 }
 
 impl ClosedRange {
@@ -161,7 +166,7 @@ impl ClosedRange {
         Some(self)
     }
 
-    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
         if size == 0 {
             return None;
         }
@@ -229,13 +234,13 @@ impl ClosedRange {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OpenRange {
     /// Download from the specified byte to the end
-    From(usize),
+    From(u64),
     /// Download the whole file
     Full,
 }
 
 impl OpenRange {
-    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
         if size == 0 {
             return None;
         }
@@ -324,7 +329,7 @@ impl DownloadRange {
         }
     }
 
-    pub fn incl_range_from_size(self, size: usize) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
             DownloadRange::Closed(r) => r.incl_range_from_size(size),
@@ -338,32 +343,32 @@ impl From<RangeFull> for DownloadRange {
     }
 }
 
-impl From<Range<usize>> for DownloadRange {
-    fn from(r: Range<usize>) -> Self {
+impl From<Range<u64>> for DownloadRange {
+    fn from(r: Range<u64>) -> Self {
         Self::Closed(ClosedRange::FromTo(r.start, r.end))
     }
 }
 
-impl From<RangeInclusive<usize>> for DownloadRange {
-    fn from(r: RangeInclusive<usize>) -> Self {
+impl From<RangeInclusive<u64>> for DownloadRange {
+    fn from(r: RangeInclusive<u64>) -> Self {
         Self::Closed(ClosedRange::FromToInclusive(*r.start(), *r.end()))
     }
 }
 
-impl From<RangeFrom<usize>> for DownloadRange {
-    fn from(r: RangeFrom<usize>) -> Self {
+impl From<RangeFrom<u64>> for DownloadRange {
+    fn from(r: RangeFrom<u64>) -> Self {
         Self::Open(OpenRange::From(r.start))
     }
 }
 
-impl From<RangeTo<usize>> for DownloadRange {
-    fn from(r: RangeTo<usize>) -> Self {
+impl From<RangeTo<u64>> for DownloadRange {
+    fn from(r: RangeTo<u64>) -> Self {
         Self::Closed(ClosedRange::To(r.end))
     }
 }
 
-impl From<RangeToInclusive<usize>> for DownloadRange {
-    fn from(r: RangeToInclusive<usize>) -> Self {
+impl From<RangeToInclusive<u64>> for DownloadRange {
+    fn from(r: RangeToInclusive<u64>) -> Self {
         Self::Closed(ClosedRange::ToInclusive(r.end))
     }
 }

@@ -5,15 +5,15 @@ use crate::InclusiveRange;
 #[derive(Debug)]
 pub struct RangeRequest {
     /// Index of the part
-    pub part_index: usize,
+    pub part_index: u64,
     pub blob_range: InclusiveRange,
     /// Offset of the part within the downloaded range
-    pub range_offset: usize,
+    pub range_offset: u64,
 }
 
 #[cfg(test)]
 impl RangeRequest {
-    pub fn len(&self) -> usize {
+    pub fn len(&self) -> u64 {
         self.blob_range.len()
     }
 }
@@ -23,14 +23,14 @@ pub struct RangeStream;
 impl RangeStream {
     pub fn create(
         range: InclusiveRange,
-        part_size: usize,
-    ) -> (usize, impl Stream<Item = RangeRequest>) {
+        part_size: u64,
+    ) -> (u64, impl Stream<Item = RangeRequest>) {
         if part_size == 0 {
             panic!("part_size must not be 0. This is a bug.");
         }
 
-        let mut start: usize = range.start();
-        let mut next_range_offset: usize = 0;
+        let mut start = range.start();
+        let mut next_range_offset = 0;
 
         let num_parts = calc_num_parts(range, part_size);
 
@@ -60,7 +60,7 @@ impl RangeStream {
     }
 }
 
-fn calc_num_parts(range: InclusiveRange, part_size: usize) -> usize {
+fn calc_num_parts(range: InclusiveRange, part_size: u64) -> u64 {
     let mut n_parts = range.len() / part_size;
     if range.len() % part_size != 0 {
         n_parts += 1;
@@ -197,14 +197,14 @@ async fn test_n_parts_vs_stream_count() {
                 let items = stream.collect::<Vec<_>>().await;
 
                 assert_eq!(
-                    items.len(),
+                    items.len() as u64,
                     n_parts,
                     "count: part_size={} start={}, end_incl={}",
                     part_size,
                     start,
                     end_incl
                 );
-                let total_len: usize = items.iter().map(|r| r.len()).sum();
+                let total_len: u64 = items.iter().map(|r| r.len()).sum();
                 assert_eq!(
                     total_len,
                     end_offset + 1,

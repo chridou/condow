@@ -163,10 +163,10 @@ impl Config {
 /// assert!(res.is_err());
 /// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct PartSizeBytes(usize);
+pub struct PartSizeBytes(u64);
 
 impl PartSizeBytes {
-    pub fn new<T: Into<usize>>(part_size_bytes: T) -> Self {
+    pub fn new<T: Into<u64>>(part_size_bytes: T) -> Self {
         Self(part_size_bytes.into())
     }
 
@@ -179,13 +179,13 @@ impl Default for PartSizeBytes {
     }
 }
 
-impl From<usize> for PartSizeBytes {
-    fn from(v: usize) -> Self {
+impl From<u64> for PartSizeBytes {
+    fn from(v: u64) -> Self {
         PartSizeBytes(v)
     }
 }
 
-impl From<PartSizeBytes> for usize {
+impl From<PartSizeBytes> for u64 {
     fn from(v: PartSizeBytes) -> Self {
         v.0
     }
@@ -240,7 +240,7 @@ impl FromStr for PartSizeBytes {
             let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
             let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
 
-            let bytes = digits.parse::<usize>()?;
+            let bytes = digits.parse::<u64>()?;
 
             match unit {
                 "k" => Ok(Kilo(bytes).into()),
@@ -252,7 +252,7 @@ impl FromStr for PartSizeBytes {
                 s => bail!("invalid unit: '{}'", s),
             }
         } else {
-            Ok(Self::new(s.parse::<usize>()?))
+            Ok(Self::new(s.parse::<u64>()?))
         }
     }
 }
@@ -311,103 +311,103 @@ impl From<BuffersFullDelayMs> for Duration {
     }
 }
 
-/// Multiplies by 1_000 when converted to a usize
+/// Multiplies by 1_000 when converted to a u64
 ///
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Kilo;
-/// assert_eq!(usize::from(Kilo(2)), 2*1_000);
+/// assert_eq!(u64::from(Kilo(2)), 2*1_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Kilo(pub usize);
+pub struct Kilo(pub u64);
 
-impl From<Kilo> for usize {
+impl From<Kilo> for u64 {
     fn from(m: Kilo) -> Self {
         m.0 * 1_000
     }
 }
 
-/// Multiplies by 1_000_000 when converted to a usize
+/// Multiplies by 1_000_000 when converted to a u64
 ///
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Mega;
-/// assert_eq!(usize::from(Mega(2)), 2*1_000_000);
+/// assert_eq!(u64::from(Mega(2)), 2*1_000_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Mega(pub usize);
+pub struct Mega(pub u64);
 
-impl From<Mega> for usize {
+impl From<Mega> for u64 {
     fn from(m: Mega) -> Self {
         m.0 * 1_000_000
     }
 }
 
-/// Multiplies by 1_000_000_000 when converted to a usize
+/// Multiplies by 1_000_000_000 when converted to a u64
 ///
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Giga;
-/// assert_eq!(usize::from(Giga(2)), 2*1_000_000_000);
+/// assert_eq!(u64::from(Giga(2)), 2*1_000_000_000);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Giga(pub usize);
+pub struct Giga(pub u64);
 
-impl From<Giga> for usize {
+impl From<Giga> for u64 {
     fn from(m: Giga) -> Self {
         m.0 * 1_000_000_000
     }
 }
 
-/// Multiplies by 1_024 when converted to a usize
+/// Multiplies by 1_024 when converted to a u64
 ///
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Kibi;
-/// assert_eq!(usize::from(Kibi(2)), 2*1_024);
+/// assert_eq!(u64::from(Kibi(2)), 2*1_024);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Kibi(pub usize);
+pub struct Kibi(pub u64);
 
-impl From<Kibi> for usize {
+impl From<Kibi> for u64 {
     fn from(m: Kibi) -> Self {
         m.0 * 1_024
     }
 }
 
-/// Multiplies by 1_048_576 when converted to a usize
+/// Multiplies by 1_048_576 when converted to a u64
 ///
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Mebi;
-/// assert_eq!(usize::from(Mebi(2)), 2*1_048_576);
+/// assert_eq!(u64::from(Mebi(2)), 2*1_048_576);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Mebi(pub usize);
+pub struct Mebi(pub u64);
 
-impl From<Mebi> for usize {
+impl From<Mebi> for u64 {
     fn from(m: Mebi) -> Self {
         m.0 * 1_048_576
     }
 }
 
-/// Multiplies by 1_073_741_824 when converted to a usize
+/// Multiplies by 1_073_741_824 when converted to a u64
 //
 // # Examples
 ///
 /// ```rust
 /// # use condow_core::config::Gibi;
-/// assert_eq!(usize::from(Gibi(2)), 2*1_073_741_824);
+/// assert_eq!(u64::from(Gibi(2)), 2*1_073_741_824);
 /// ```
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Gibi(pub usize);
+pub struct Gibi(pub u64);
 
-impl From<Gibi> for usize {
+impl From<Gibi> for u64 {
     fn from(m: Gibi) -> Self {
         m.0 * 1_073_741_824
     }

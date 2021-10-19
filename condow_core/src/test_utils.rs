@@ -96,7 +96,10 @@ impl CondowClient for TestCondowClient {
     > {
         let range = match spec {
             DownloadSpec::Complete => 0..self.data.len(),
-            DownloadSpec::Range(r) => r.to_std_range_excl(),
+            DownloadSpec::Range(r) => {
+                let r = r.to_std_range_excl();
+                r.start as usize..r.end as usize
+            }
         };
 
         if range.end > self.data.len() {
@@ -110,7 +113,7 @@ impl CondowClient for TestCondowClient {
         let slice = &self.data[range];
 
         let bytes_hint = if self.include_size_hint {
-            BytesHint::new_exact(slice.len())
+            BytesHint::new_exact(slice.len() as u64)
         } else {
             BytesHint::new_no_hint()
         };
@@ -150,7 +153,7 @@ pub fn create_test_data() -> Vec<u8> {
 }
 
 pub fn create_chunk_stream(
-    n_parts: usize,
+    n_parts: u64,
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
@@ -169,12 +172,12 @@ pub fn create_chunk_stream(
     };
 
     let mut rng = rand::thread_rng();
-    let blob_offset: usize = rng.gen_range(0..1_000);
+    let blob_offset: u64 = rng.gen_range(0..1_000);
 
     let mut parts: Vec<Vec<ChunkStreamItem>> = Vec::new();
 
-    let mut range_offset = 0;
-    for part_index in 0usize..n_parts {
+    let mut range_offset: u64 = 0;
+    for part_index in 0u64..n_parts {
         let mut chunks = Vec::with_capacity(n_chunks);
 
         let mut chunks_bytes = Vec::with_capacity(n_chunks);
@@ -191,10 +194,13 @@ pub fn create_chunk_stream(
             chunks_bytes.push((chunk_index, bytes));
         }
 
-        let mut bytes_left_in_part = chunks_bytes.iter().map(|(_, bytes)| bytes.len()).sum();
+        let mut bytes_left_in_part: u64 = chunks_bytes
+            .iter()
+            .map(|(_, bytes)| bytes.len() as u64)
+            .sum();
 
         for (chunk_index, bytes) in chunks_bytes {
-            let n_bytes = bytes.len();
+            let n_bytes = bytes.len() as u64;
             bytes_left_in_part -= n_bytes;
             let chunk = Chunk {
                 part_index,
@@ -211,9 +217,9 @@ pub fn create_chunk_stream(
     }
 
     let bytes_hint = if exact_hint {
-        BytesHint::new_exact(values.len())
+        BytesHint::new_exact(values.len() as u64)
     } else {
-        BytesHint::new_at_max(values.len())
+        BytesHint::new_at_max(values.len() as u64)
     };
 
     parts.shuffle(&mut rng);
@@ -239,7 +245,7 @@ pub fn create_chunk_stream(
 }
 
 pub fn create_part_stream(
-    n_parts: usize,
+    n_parts: u64,
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
@@ -348,13 +354,13 @@ async fn make_a_stream(
     pattern: Vec<Option<usize>>,
 ) -> Result<ChunkStream, CondowError> {
     let blob_guard = blob.lock().unwrap();
-    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len()) {
+    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len() as u64) {
         range
     } else {
         return Err(CondowError::new_invalid_range("invalid range"));
     };
 
-    let range = range_incl.start()..range_incl.end_incl() + 1;
+    let range = range_incl.start() as usize..(range_incl.end_incl() + 1) as usize;
 
     let bytes = blob_guard[range].to_vec();
 
@@ -362,7 +368,7 @@ async fn make_a_stream(
 
     let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
 
-    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len()));
+    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len() as u64));
 
     tokio::spawn(async move {
         let mut start = 0;
@@ -386,12 +392,12 @@ async fn make_a_stream(
             let end_excl = bytes.len().min(start + chunk_len);
             let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
 
-            let bytes_left = bytes.len() - end_excl;
+            let bytes_left = (bytes.len() - end_excl) as u64;
             let chunk = Chunk {
                 part_index: 0,
                 chunk_index,
-                blob_offset: start,
-                range_offset: start,
+                blob_offset: start as u64,
+                range_offset: start as u64,
                 bytes: chunk,
                 bytes_left,
             };
