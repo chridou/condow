@@ -73,7 +73,7 @@ impl CondowClient for FsClient {
                 DownloadSpec::Complete => fs::read(location.as_str()).await?,
                 DownloadSpec::Range(range) => {
                     let mut file = fs::File::open(location.as_str()).await?;
-                    file.seek(SeekFrom::Start(range.start() as u64)).await?;
+                    file.seek(SeekFrom::Start(range.start())).await?;
 
                     let n_bytes_to_read = range.len();
 
