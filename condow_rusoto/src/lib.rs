@@ -258,7 +258,12 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
 
 fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError {
     match err {
-        RusotoError::Service(err) => CondowError::new_remote("remote error").with_source(err),
+        RusotoError::Service(err) => match err {
+            GetObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
+            GetObjectError::InvalidObjectState(s) => {
+                CondowError::new_other(format!("invalid object state: {}", s))
+            }
+        },
         RusotoError::Validation(cause) => {
             CondowError::new_other(format!("validation error: {}", cause))
         }
@@ -276,7 +281,9 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
 
 fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowError {
     match err {
-        RusotoError::Service(err) => CondowError::new_remote("remote error").with_source(err),
+        RusotoError::Service(err) => match err {
+            HeadObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
+        },
         RusotoError::Validation(cause) => {
             CondowError::new_other(format!("validation error: {}", cause))
         }
