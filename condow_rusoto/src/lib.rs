@@ -30,7 +30,7 @@ use std::{
 
 use anyhow::Error as AnyError;
 use futures::{future::BoxFuture, stream::TryStreamExt};
-use rusoto_core::RusotoError;
+use rusoto_core::{request::BufferedHttpResponse, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
 
 pub use rusoto_core::Region;
@@ -274,7 +274,7 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
             CondowError::new_other("http dispatch error").with_source(dispatch_error)
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
-        RusotoError::Unknown(_cause) => CondowError::new_other("unknown"), //.with_source(cause),
+        RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
     }
 }
@@ -294,7 +294,25 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
             CondowError::new_other("http dispatch error").with_source(dispatch_error)
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
-        RusotoError::Unknown(_cause) => CondowError::new_other("unknown"), //.with_source(cause),
+        RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
+    }
+}
+
+fn response_to_condow_err(response: BufferedHttpResponse) -> CondowError {
+    let message = if let Ok(body_str) = std::str::from_utf8(response.body.as_ref()) {
+        body_str
+    } else {
+        "<<< response body received from AWS not UTF-8 >>>"
+    };
+
+    let status = response.status;
+    let message = format!("{} - {}", status, message);
+    if status.is_client_error() {
+        CondowError::new_other(message)
+    } else if status.is_server_error() {
+        CondowError::new_remote(message)
+    } else {
+        CondowError::new_other(message)
     }
 }
