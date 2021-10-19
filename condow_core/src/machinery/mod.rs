@@ -102,10 +102,17 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
 
     let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
 
+    if n_parts > usize::MAX as u64 {
+        return Err(CondowError::new_other(
+            "usize overflow while casting from u64",
+        ));
+    }
+    let n_parts = n_parts as usize;
+
     tokio::spawn(async move {
         downloaders::download_concurrently(
             ranges_stream,
-            config.max_concurrency.into_inner().min(n_parts as usize), // FIX: Check overflow
+            config.max_concurrency.into_inner().min(n_parts),
             sender,
             client,
             config,

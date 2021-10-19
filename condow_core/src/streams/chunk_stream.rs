@@ -83,7 +83,7 @@ impl ChunkStream {
 
     /// Returns true if no more items can be pulled from this stream.
     ///
-    /// Also `true` if an error occured
+    /// Also `true` if an error occurred
     pub fn empty() -> Self {
         let (mut me, _) = Self::new(BytesHint(0, Some(0)));
         me.is_closed = true;
@@ -145,7 +145,12 @@ impl ChunkStream {
                 Ok(next) => next,
             };
 
-            // FIX: error on usize overflow
+            if range_offset > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
             let range_offset = range_offset as usize;
 
             let end_excl = range_offset + bytes.len();
@@ -173,8 +178,13 @@ impl ChunkStream {
     /// Since the parts and therefore the chunks are not ordered we can
     /// not know, whether we can fill the `Vec` in a contiguous way.
     pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
-        // FIX: Return error when overflowing usize
         if let Some(total_bytes) = self.bytes_hint.exact() {
+            if total_bytes > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
             let mut buffer = vec![0; total_bytes as usize];
             let _ = self.write_buffer(buffer.as_mut()).await?;
             Ok(buffer)
@@ -200,8 +210,14 @@ async fn stream_into_vec_with_unknown_size(
         ));
     }
 
-    // FIX: Return error on overflow of usize
-    let mut buffer = Vec::with_capacity(stream.bytes_hint.lower_bound() as usize);
+    let lower_bound = stream.bytes_hint.lower_bound();
+    if lower_bound > usize::MAX as u64 {
+        return Err(CondowError::new_other(
+            "usize overflow while casting from u64",
+        ));
+    }
+
+    let mut buffer = Vec::with_capacity(lower_bound as usize);
 
     while let Some(next) = stream.next().await {
         let Chunk {
@@ -213,7 +229,12 @@ async fn stream_into_vec_with_unknown_size(
             Ok(next) => next,
         };
 
-        // FIX: error on usize overflow
+        if range_offset > usize::MAX as u64 {
+            return Err(CondowError::new_other(
+                "usize overflow while casting from u64",
+            ));
+        }
+
         let range_offset = range_offset as usize;
 
         let end_excl = range_offset + bytes.len();

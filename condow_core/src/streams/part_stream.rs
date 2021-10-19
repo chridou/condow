@@ -129,8 +129,13 @@ where
     ///
     /// Fails if there is an error on the stream
     pub async fn into_vec(mut self) -> Result<Vec<u8>, CondowError> {
-        // FIX: return error on overflow of usize
         if let Some(total_bytes) = self.bytes_hint.exact() {
+            if total_bytes > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
             let mut buffer = vec![0; total_bytes as usize];
             let _ = self.write_buffer(buffer.as_mut()).await?;
             Ok(buffer)
