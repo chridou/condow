@@ -226,6 +226,17 @@ impl ClosedRange {
     }
 }
 
+impl fmt::Display for ClosedRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ClosedRange::To(to) => write!(f, "[0..{}[", to),
+            ClosedRange::ToInclusive(to) => write!(f, "[0..{}]", to),
+            ClosedRange::FromTo(from, to) => write!(f, "[{}..{}[", from, to),
+            ClosedRange::FromToInclusive(from, to) => write!(f, "[{}..{}]", from, to),
+        }
+    }
+}
+
 /// An open range
 ///
 /// An open range has no "defined end".
@@ -258,6 +269,15 @@ impl OpenRange {
         }
 
         inclusive
+    }
+}
+
+impl fmt::Display for OpenRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OpenRange::From(from) => write!(f, "[{}..]", from),
+            OpenRange::Full => write!(f, "[0..]"),
+        }
     }
 }
 
@@ -333,6 +353,15 @@ impl DownloadRange {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
             DownloadRange::Closed(r) => r.incl_range_from_size(size),
+        }
+    }
+}
+
+impl fmt::Display for DownloadRange {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DownloadRange::Open(open) => open.fmt(f),
+            DownloadRange::Closed(closed) => closed.fmt(f),
         }
     }
 }
