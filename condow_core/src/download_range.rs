@@ -276,7 +276,7 @@ impl fmt::Display for OpenRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             OpenRange::From(from) => write!(f, "[{}..]", from),
-            OpenRange::Full => write!(f, "[..]"),
+            OpenRange::Full => write!(f, "[0..]"),
         }
     }
 }
