@@ -275,7 +275,9 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
-        RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
+        RusotoError::Blocking => {
+            CondowError::new_other("failed to run blocking future withi rusoto")
+        }
     }
 }
 
@@ -295,7 +297,9 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
-        RusotoError::Blocking => CondowError::new_other("failed to run blocking future"),
+        RusotoError::Blocking => {
+            CondowError::new_other("failed to run blocking future withi rusoto")
+        }
     }
 }
 
