@@ -5,11 +5,10 @@ fn create_condow_condow() -> Condow<FsClient> {
 }
 
 fn get_test_file_path() -> String {
-    // format!(
-    //     "{}/tests/test_data",
-    //     std::env::current_dir().unwrap().display()
-    // )
-    "/home/cdouven/git/condow/condow_fs/tests/test_data".to_string()
+    format!(
+        "{}/tests/test_data",
+        std::env::current_dir().unwrap().display()
+    )
 }
 
 #[tokio::test]
