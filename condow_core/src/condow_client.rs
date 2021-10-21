@@ -86,7 +86,7 @@ mod in_memory {
 
         pub fn new_with_chunk_size(blob: Vec<u8>, chunk_size: usize) -> Self {
             if chunk_size == 0 {
-                panic!("'chunk_size' ay not be 0");
+                panic!("'chunk_size' may not be 0");
             }
 
             Self {
