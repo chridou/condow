@@ -203,7 +203,7 @@ mod in_memory {
         if range.end > blob.len() {
             return Box::pin(future::ready(Err(CondowError::new_invalid_range(format!(
                 "max upper bound is {} but {} was requested",
-                blob.len(),
+                blob.len() - 1,
                 range.end - 1
             )))));
         }
@@ -223,5 +223,92 @@ mod in_memory {
         let f = future::ready(Ok((stream, bytes_hint)));
 
         Box::pin(f)
+    }
+
+    #[cfg(test)]
+    mod test {
+        use futures::{pin_mut, StreamExt};
+
+        use crate::{
+            condow_client::DownloadSpec, errors::CondowError, streams::BytesHint, InclusiveRange,
+        };
+
+        const BLOB: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
+
+        async fn download_to_vec(
+            blob: &[u8],
+            chunk_size: usize,
+            spec: DownloadSpec,
+        ) -> Result<(Vec<u8>, BytesHint), CondowError> {
+            let (stream, bytes_hint) = super::download(blob, chunk_size, spec).await?;
+
+            let mut buf = Vec::with_capacity(bytes_hint.lower_bound() as usize);
+            pin_mut!(stream);
+            while let Some(next) = stream.next().await {
+                let bytes = next?;
+                buf.extend_from_slice(bytes.as_ref())
+            }
+            Ok((buf, bytes_hint))
+        }
+
+        #[tokio::test]
+        async fn download_all() {
+            for chunk_size in 1..30 {
+                let (bytes, bytes_hint) = download_to_vec(BLOB, chunk_size, DownloadSpec::Complete)
+                    .await
+                    .unwrap();
+
+                assert_eq!(&bytes, BLOB);
+                assert_eq!(bytes_hint, BytesHint::new_exact(bytes.len() as u64));
+            }
+        }
+
+        #[tokio::test]
+        async fn download_range_begin() {
+            for chunk_size in 1..30 {
+                let range = InclusiveRange(0, 9);
+                let (bytes, bytes_hint) =
+                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
+                        .await
+                        .unwrap();
+
+                let expected = b"abcdefghij";
+
+                assert_eq!(&bytes, expected);
+                assert_eq!(bytes_hint, BytesHint::new_exact(expected.len() as u64));
+            }
+        }
+
+        #[tokio::test]
+        async fn download_range_middle() {
+            for chunk_size in 1..30 {
+                let range = InclusiveRange(10, 19);
+                let (bytes, bytes_hint) =
+                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
+                        .await
+                        .unwrap();
+
+                let expected = b"klmnopqrst";
+
+                assert_eq!(&bytes, expected);
+                assert_eq!(bytes_hint, BytesHint::new_exact(expected.len() as u64));
+            }
+        }
+
+        #[tokio::test]
+        async fn download_range_end() {
+            for chunk_size in 1..30 {
+                let range = InclusiveRange(16, 25);
+                let (bytes, bytes_hint) =
+                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
+                        .await
+                        .unwrap();
+
+                let expected = b"qrstuvwxyz";
+
+                assert_eq!(&bytes, expected);
+                assert_eq!(bytes_hint, BytesHint::new_exact(expected.len() as u64));
+            }
+        }
     }
 }
