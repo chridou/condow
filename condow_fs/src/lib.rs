@@ -85,7 +85,7 @@ impl CondowClient for FsClient {
 
                     let mut buffer = Vec::with_capacity(n_bytes_to_read as usize);
 
-                    let n_bytes_read = file.read(&mut buffer).await?;
+                    let n_bytes_read = file.read_exact(&mut buffer).await?;
 
                     if n_bytes_read as u64 != n_bytes_to_read {
                         return Err(CondowError::new_io(format!(
