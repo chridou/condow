@@ -83,7 +83,7 @@ impl CondowClient for FsClient {
                         ));
                     }
 
-                    let mut buffer = Vec::with_capacity(n_bytes_to_read as usize);
+                    let mut buffer = vec![0; n_bytes_to_read as usize];
 
                     let n_bytes_read = file.read_exact(&mut buffer).await?;
 
