@@ -105,7 +105,7 @@ impl CondowClient for TestCondowClient {
         if range.end > self.data.len() {
             return Box::pin(future::ready(Err(CondowError::new_invalid_range(format!(
                 "max upper bound is {} but {} was requested",
-                self.data.len(),
+                self.data.len() - 1,
                 range.end - 1
             )))));
         }
