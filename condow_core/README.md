@@ -1,7 +1,5 @@
 # Condow
 
-**WARNING! Not yet for production usage**
-
 Condow is a CONcurrent DOWnloader which downloads BLOBs
 by splitting the download into parts and downloading them 
 concurrently.
@@ -13,7 +11,8 @@ speed improved, if BLOBs are downloaded concurrently by
 This crate provides the core functionality only. To actually
 use it, use one of the implementation crates:
 
-* `condow_rusoto`: AWS S3
+* `condow_rusoto`: AWS S3 via the [rusoto-s3] crate
+* `condow_fs`: Using async file access via [tokio]
 
 All that is required to add more "services" is to implement
 the `CondowClient` trait.
@@ -25,3 +24,6 @@ condow is distributed under the terms of both the MIT license and the Apache Lic
 See LICENSE-APACHE and LICENSE-MIT for details.
 
 License: Apache-2.0/MIT
+
+[rusoto-s3]:https://crates.io/crates/rusoto_s3
+[tokio]:https://crates.io/crates/tokio

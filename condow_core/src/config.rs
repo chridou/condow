@@ -322,9 +322,16 @@ impl From<BuffersFullDelayMs> for Duration {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kilo(pub u64);
 
+impl Kilo {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_000
+    }
+}
+
 impl From<Kilo> for u64 {
     fn from(m: Kilo) -> Self {
-        m.0 * 1_000
+        m.value()
     }
 }
 
@@ -339,9 +346,16 @@ impl From<Kilo> for u64 {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mega(pub u64);
 
+impl Mega {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_000_000
+    }
+}
+
 impl From<Mega> for u64 {
     fn from(m: Mega) -> Self {
-        m.0 * 1_000_000
+        m.value()
     }
 }
 
@@ -356,9 +370,16 @@ impl From<Mega> for u64 {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Giga(pub u64);
 
+impl Giga {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_000_000_000
+    }
+}
+
 impl From<Giga> for u64 {
     fn from(m: Giga) -> Self {
-        m.0 * 1_000_000_000
+        m.value()
     }
 }
 
@@ -373,9 +394,16 @@ impl From<Giga> for u64 {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kibi(pub u64);
 
+impl Kibi {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_024
+    }
+}
+
 impl From<Kibi> for u64 {
     fn from(m: Kibi) -> Self {
-        m.0 * 1_024
+        m.value()
     }
 }
 
@@ -390,9 +418,16 @@ impl From<Kibi> for u64 {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mebi(pub u64);
 
+impl Mebi {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_048_576
+    }
+}
+
 impl From<Mebi> for u64 {
     fn from(m: Mebi) -> Self {
-        m.0 * 1_048_576
+        m.value()
     }
 }
 
@@ -407,8 +442,15 @@ impl From<Mebi> for u64 {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Gibi(pub u64);
 
+impl Gibi {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0 * 1_073_741_824
+    }
+}
+
 impl From<Gibi> for u64 {
     fn from(m: Gibi) -> Self {
-        m.0 * 1_073_741_824
+        m.value()
     }
 }

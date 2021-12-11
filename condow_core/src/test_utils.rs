@@ -24,7 +24,7 @@ pub struct NoLocation;
 
 impl std::fmt::Display for NoLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NoLocation")
+        write!(f, "{:?}", self)
     }
 }
 

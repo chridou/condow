@@ -15,7 +15,7 @@ mod random_access_reader {
         AsyncRead, AsyncSeek,
     };
 
-    use crate::{errors::CondowError, DownloadRange, Downloads};
+    use crate::{config::Mebi, errors::CondowError, DownloadRange, Downloads};
 
     use super::BytesAsyncReader;
 
@@ -23,15 +23,27 @@ mod random_access_reader {
     type AsyncReader = BytesAsyncReader<BytesStream>;
     type GetNewReaderFuture = BoxFuture<'static, Result<AsyncReader, CondowError>>;
 
-    const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
+    /// 8 MiBytes
+    const FETCH_AHEAD_BYTES: u64 = Mebi(8).value();
 
+    /// Specifies whether to fetch data ahead and if so how.
+    ///
+    /// The default is to fetch 8 MiBi ahead.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FetchAheadMode {
         /// Don't fetch any data in excess of those requested.
         None,
         /// Fetch n bytes ahead of the current position when bytes are requested.
+        ///
+        /// If the number of bytes queried is larger than the size of the
+        /// parts to be downloaded the download will be executed with the
+        /// parts downloaded concurrently.
         Bytes(u64),
         /// Fetch all data from the current position to the end of the BLOB.
+        ///
+        /// If the number of bytes queried is larger than the size of the
+        /// parts to be downloaded the download will be executed with the
+        /// parts downloaded concurrently.
         ToEnd,
     }
 
@@ -62,6 +74,21 @@ mod random_access_reader {
     }
 
     /// Implements [AsyncRead] and [AsyncSeek]
+    ///
+    /// This reader allows for random access on the BLOB.
+    ///
+    /// # Behaviour
+    ///
+    /// The download is initiated once the first bytes have been
+    /// queried from the reader. Seek does not intiate a download
+    /// but currently farces a new download to be started once the reader
+    /// is polled for bytes again.
+    ///
+    /// The BLOB is only downloaded concurrently
+    /// if prefetching is enable via [FetchAheadMode::Bytes] or
+    /// [FetchAheadMode::ToEnd]]. The In these cases the number of bytes
+    /// to be downloaded must be greater than the configured part size
+    /// for concurrent downloading.
     pub struct RandomAccessReader<D, L> {
         /// Reading position of the next byte
         pos: u64,
@@ -216,12 +243,16 @@ mod random_access_reader {
             pos: SeekFrom,
         ) -> task::Poll<IoResult<u64>> {
             let this = self.get_mut();
-            match pos {
-                SeekFrom::Start(pos) => this.pos = pos,
-                SeekFrom::End(pos) => this.pos = (this.length as i64 + pos) as u64,
-                SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
+            let new_pos = match pos {
+                SeekFrom::Start(pos) => pos,
+                SeekFrom::End(pos) => (this.length as i64 + pos) as u64,
+                SeekFrom::Current(pos) => (this.pos as i64 + pos) as u64,
             };
-            this.state = State::Initial;
+            if new_pos != this.pos {
+                this.pos = new_pos;
+                // Initiate a new download
+                this.state = State::Initial;
+            }
             task::Poll::Ready(Ok(this.pos))
         }
     }
