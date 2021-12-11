@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.11.0] -  - 2021/12/11
 
+### Fixed
+
+- Async reader did not return an error when offset was set before byte 0.
+
 ### Added
 
 - `value` const methods added to units `Mebi`, `Gibi`, etc for allowing them to be used to initialize constants

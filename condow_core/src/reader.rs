@@ -123,6 +123,13 @@ mod random_access_reader {
             }
         }
 
+        /// Returns the current offset of the next byte to read.
+        ///
+        /// The offset is from the start of the BLOB.
+        pub fn pos(&self) -> u64 {
+            return self.pos;
+        }
+
         fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
             let len = match self.fetch_ahead_mode {
                 FetchAheadMode::None => dest_buf_len,
@@ -244,9 +251,25 @@ mod random_access_reader {
         ) -> task::Poll<IoResult<u64>> {
             let this = self.get_mut();
             let new_pos = match pos {
-                SeekFrom::Start(pos) => pos,
-                SeekFrom::End(pos) => (this.length as i64 + pos) as u64,
-                SeekFrom::Current(pos) => (this.pos as i64 + pos) as u64,
+                SeekFrom::Start(offset) => offset,
+                SeekFrom::End(offset) => {
+                    if offset < 0 && (offset * (-1)) as u64 > this.length {
+                        // This would go before the start
+                        // and is an error by the specification of SeekFrom::End
+                        let err = CondowError::new_invalid_range("Seek before start");
+                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
+                    }
+                    (this.length as i64 + offset) as u64
+                }
+                SeekFrom::Current(offset) => {
+                    if offset < 0 && (offset * (-1)) as u64 > this.pos {
+                        // This would go before the start
+                        // and is an error by the specification of SeekFrom::End
+                        let err = CondowError::new_invalid_range("Seek before start");
+                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
+                    }
+                    (this.pos as i64 + offset) as u64
+                }
             };
             if new_pos != this.pos {
                 this.pos = new_pos;
@@ -261,7 +284,7 @@ mod random_access_reader {
     mod tests {
         use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-        use crate::test_utils::TestDownloader;
+        use crate::test_utils::{NoLocation, TestDownloader};
 
         use super::*;
 
@@ -272,7 +295,7 @@ mod random_access_reader {
 
                 let downloader = TestDownloader::new(n as usize);
 
-                let mut reader = downloader.reader(42).await.unwrap();
+                let mut reader = downloader.reader(NoLocation).await.unwrap();
 
                 let mut buf = Vec::new();
                 let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
@@ -283,10 +306,68 @@ mod random_access_reader {
         }
 
         #[tokio::test]
+        async fn offsets_and_seek_from_start() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0);
+
+            reader.seek(SeekFrom::Start(0)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::Start(0)");
+
+            reader.seek(SeekFrom::Start(1)).await.unwrap();
+            assert_eq!(reader.pos(), 1, "SeekFrom::Start(1)");
+
+            reader.seek(SeekFrom::Start(1_000)).await.unwrap();
+            assert_eq!(reader.pos(), 1_000, "SeekFrom::Start(1_000)");
+        }
+
+        #[tokio::test]
+        async fn offsets_and_seek_from_end() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            reader.seek(SeekFrom::End(0)).await.unwrap();
+            assert_eq!(reader.pos(), 4, "SeekFrom::End(0)");
+
+            reader.seek(SeekFrom::End(-1)).await.unwrap();
+            assert_eq!(reader.pos(), 3, "SeekFrom::End(-1)");
+
+            reader.seek(SeekFrom::End(-4)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::End(-4)");
+        }
+
+        #[tokio::test]
+        async fn offsets_and_seek_from_current() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0, "Fresh");
+
+            reader.seek(SeekFrom::Current(3)).await.unwrap();
+            assert_eq!(reader.pos(), 3, "SeekFrom::Current(3)");
+
+            reader.seek(SeekFrom::Current(-1)).await.unwrap();
+            assert_eq!(reader.pos(), 2, "SeekFrom::Current(-1)");
+
+            reader.seek(SeekFrom::Current(1_000)).await.unwrap();
+            assert_eq!(reader.pos(), 1_002, "SeekFrom::Current(1_000)");
+
+            reader.seek(SeekFrom::Current(-1_002)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::Current(-1_002)");
+        }
+
+        #[tokio::test]
         async fn seek_from_start() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Start(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -308,7 +389,7 @@ mod random_access_reader {
         async fn seek_from_end() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::End(-10)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -327,10 +408,24 @@ mod random_access_reader {
         }
 
         #[tokio::test]
+        async fn seek_from_end_before_byte_zero_must_err() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+            // Hit 0 is ok
+            let result = reader.seek(SeekFrom::End(-4)).await;
+            assert!(result.is_ok());
+            // Hit -1 is not ok
+            let result = reader.seek(SeekFrom::End(-5)).await;
+            assert!(result.is_err());
+        }
+
+        #[tokio::test]
         async fn seek_from_current() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Current(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -346,6 +441,22 @@ mod random_access_reader {
             let mut buf = vec![0, 0];
             reader.read_exact(&mut buf).await.unwrap();
             assert_eq!(buf, vec![6, 7], "SeekFrom::Current 3");
+        }
+
+        #[tokio::test]
+        async fn seek_from_current_before_byte_zero_must_err() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0);
+
+            let result = reader.seek(SeekFrom::Current(0)).await;
+            assert!(result.is_ok());
+
+            let result = reader.seek(SeekFrom::Current(-1)).await;
+            assert!(result.is_err());
         }
 
         #[tokio::test]
@@ -366,7 +477,7 @@ mod random_access_reader {
 
                     let downloader = TestDownloader::new_with_blob(expected.clone());
 
-                    let mut reader = downloader.reader(42).await.unwrap();
+                    let mut reader = downloader.reader(NoLocation).await.unwrap();
                     reader.set_fetch_ahead_mode(mode);
 
                     let mut buf = Vec::new();

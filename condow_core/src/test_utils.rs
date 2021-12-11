@@ -311,10 +311,10 @@ impl TestDownloader {
     }
 }
 
-impl Downloads<usize> for TestDownloader {
+impl Downloads<NoLocation> for TestDownloader {
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: usize,
+        location: NoLocation,
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>>
     {
@@ -325,7 +325,7 @@ impl Downloads<usize> for TestDownloader {
 
     fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        _location: usize,
+        _location: NoLocation,
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
         Box::pin(make_a_stream(
@@ -335,12 +335,16 @@ impl Downloads<usize> for TestDownloader {
         ))
     }
 
-    fn get_size<'a>(&'a self, _location: usize) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 
-    fn reader_with_length(&self, location: usize, length: u64) -> RandomAccessReader<Self, usize>
+    fn reader_with_length(
+        &self,
+        location: NoLocation,
+        length: u64,
+    ) -> RandomAccessReader<Self, NoLocation>
     where
         Self: Sized,
     {
@@ -418,7 +422,7 @@ async fn check_test_downloader() {
 
         let downloader = TestDownloader::new(n as usize);
 
-        let parts = downloader.download(42, ..).await.unwrap();
+        let parts = downloader.download(NoLocation, ..).await.unwrap();
 
         let result = parts.into_vec().await.unwrap();
 
