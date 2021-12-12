@@ -86,7 +86,7 @@ mod random_access_reader {
     ///
     /// The BLOB is only downloaded concurrently
     /// if prefetching is enable via [FetchAheadMode::Bytes] or
-    /// [FetchAheadMode::ToEnd]]. The In these cases the number of bytes
+    /// [FetchAheadMode::ToEnd]. The In these cases the number of bytes
     /// to be downloaded must be greater than the configured part size
     /// for concurrent downloading.
     pub struct RandomAccessReader<D, L> {
@@ -253,7 +253,7 @@ mod random_access_reader {
             let new_pos = match pos {
                 SeekFrom::Start(offset) => offset,
                 SeekFrom::End(offset) => {
-                    if offset < 0 && (offset * (-1)) as u64 > this.length {
+                    if offset < 0 && -offset as u64 > this.length {
                         // This would go before the start
                         // and is an error by the specification of SeekFrom::End
                         let err = CondowError::new_invalid_range("Seek before start");
@@ -262,9 +262,9 @@ mod random_access_reader {
                     (this.length as i64 + offset) as u64
                 }
                 SeekFrom::Current(offset) => {
-                    if offset < 0 && (offset * (-1)) as u64 > this.pos {
+                    if offset < 0 && -offset as u64 > this.pos {
                         // This would go before the start
-                        // and is an error by the specification of SeekFrom::End
+                        // and is an error by the specification of SeekFrom::Current
                         let err = CondowError::new_invalid_range("Seek before start");
                         return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
                     }
