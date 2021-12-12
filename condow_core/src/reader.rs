@@ -28,7 +28,7 @@ mod random_access_reader {
 
     /// Specifies whether to fetch data ahead and if so how.
     ///
-    /// The default is to fetch 8 MiBi ahead.
+    /// The default is to fetch 8 Mebibytes ahead.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FetchAheadMode {
         /// Don't fetch any data in excess of those requested.
@@ -81,11 +81,11 @@ mod random_access_reader {
     ///
     /// The download is initiated once the first bytes have been
     /// queried from the reader. Seek does not intiate a download
-    /// but currently farces a new download to be started once the reader
+    /// but currently forces a new download to be started once the reader
     /// is polled for bytes again.
     ///
     /// The BLOB is only downloaded concurrently
-    /// if prefetching is enable via [FetchAheadMode::Bytes] or
+    /// if prefetching is enabled via [FetchAheadMode::Bytes] or
     /// [FetchAheadMode::ToEnd]. The In these cases the number of bytes
     /// to be downloaded must be greater than the configured part size
     /// for concurrent downloading.
@@ -94,9 +94,9 @@ mod random_access_reader {
         pos: u64,
         /// Download logic
         downloader: D,
-        /// location of the BLOB
+        /// Location of the BLOB
         location: L,
-        /// total length of the BLOB
+        /// Total length of the BLOB
         length: u64,
         state: State,
         fetch_ahead_mode: FetchAheadMode,
