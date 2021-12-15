@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `value` const methods added to units `Mebi`, `Gibi`, etc for allowing them to be used to initialize constants
-- Documentation for async reader
+- Documentation for async reader iteself and on the `Downloads` trait.
 
 ### Changes
 

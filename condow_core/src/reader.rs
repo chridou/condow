@@ -107,11 +107,18 @@ mod random_access_reader {
         D: Downloads<L> + Clone + Send + Sync + 'static,
         L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
     {
+        /// Creates a new instance without a given BLOB length
+        ///
+        /// This function will query the size of the BLOB. If the size is already known
+        /// call [RandomAccessReader::new_with_length]
         pub async fn new(downloader: D, location: L) -> Result<Self, CondowError> {
             let length = downloader.get_size(location.clone()).await?;
             Ok(Self::new_with_length(downloader, location, length))
         }
 
+        /// Will create a reader with the given known size of the BLOB.
+        ///
+        /// This function will create a new reader immediately
         pub fn new_with_length(downloader: D, location: L, length: u64) -> Self {
             Self {
                 downloader,
