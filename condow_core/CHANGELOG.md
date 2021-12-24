@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `RetryConfig` to configure a optional retries
 - Changed the behaviour so that all requests can do retries. Also broken streams will be retried with the remaining data only queried.
+- `Reporter` trait is notified on retries and broken streams
+- `CompositeReporter` propagates retry and broken stream to children
 
 ### CHANGED
 
@@ -17,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Added a new field for retry config to the Config struct
 - **BREAKING**: Config is now non-exhaustive
 - **BREAKING**: Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.
+
 
 
 ## [0.11.0] -  2021/12/11
