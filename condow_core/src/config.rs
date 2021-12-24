@@ -96,12 +96,32 @@ impl Config {
         self
     }
 
-    /// Configure retries starting with the default [RetryConfig]
-    pub fn configure_retries<F>(self, f: F) -> Self
+    /// Configure retries
+    ///
+    /// Uses the currently configured [RetryConfig] or the default of [RetryConfig]
+    /// if none is configured
+    pub fn configure_retries<F>(mut self, mut f: F) -> Self
     where
-        F: Fn(RetryConfig) -> RetryConfig,
+        F: FnMut(RetryConfig) -> RetryConfig,
+    {
+        let retries = self.retries.take().unwrap_or_default();
+        self.retries(f(retries))
+    }
+
+    /// Configure retries starting with the default
+    pub fn configure_retries_from_default<F>(self, mut f: F) -> Self
+    where
+        F: FnMut(RetryConfig) -> RetryConfig,
     {
         self.retries(f(RetryConfig::default()))
+    }
+
+    /// Disables retries
+    ///
+    /// Retries are enabled by default.
+    pub fn no_retries(mut self) -> Self {
+        self.retries = None;
+        self
     }
 
     /// Validate this [Config]
