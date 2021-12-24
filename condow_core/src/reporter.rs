@@ -113,6 +113,24 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
         self.1.download_failed(time);
     }
 
+    fn retry(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
+        self.0.retry(location, error, next_in);
+        self.1.retry(location, error, next_in);
+    }
+
+    fn stream_broke(
+        &self,
+        location: &dyn fmt::Display,
+        error: &IoError,
+        orig_range: InclusiveRange,
+        current_range: InclusiveRange,
+    ) {
+        self.0
+            .stream_broke(location, error, orig_range, current_range);
+        self.1
+            .stream_broke(location, error, orig_range, current_range);
+    }
+
     fn queue_full(&self) {
         self.0.queue_full();
         self.1.queue_full();
