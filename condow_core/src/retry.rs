@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Error as AnyError;
 use bytes::Bytes;
-use futures::{channel::mpsc, Future, Stream, StreamExt, TryFutureExt};
+use futures::{channel::mpsc, Stream, StreamExt};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -159,6 +159,12 @@ impl<C> ClientRetryWrapper<C>
 where
     C: CondowClient,
 {
+    pub fn new(client: C, config: Option<RetryConfig>) -> Self {
+        Self {
+            inner: Arc::new((client, config)),
+        }
+    }
+
     pub async fn get_size<R: Reporter>(
         &self,
         location: C::Location,
@@ -187,6 +193,16 @@ where
         } else {
             Ok(client.download(location, spec).await?)
         }
+    }
+}
+
+#[cfg(test)]
+impl<C> From<C> for ClientRetryWrapper<C>
+where
+    C: CondowClient,
+{
+    fn from(client: C) -> Self {
+        Self::new(client, None)
     }
 }
 

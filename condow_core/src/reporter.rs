@@ -3,10 +3,9 @@
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
-use std::{fmt, ops::RangeInclusive, time::Duration};
+use std::{fmt, time::Duration};
 
 use crate::{
-    condow_client::DownloadSpec,
     errors::{CondowError, IoError},
     InclusiveRange,
 };

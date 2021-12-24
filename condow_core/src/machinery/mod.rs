@@ -3,9 +3,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::condow_client::CondowClient;
-use crate::config::Config;
+use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::CondowError;
-use crate::retry::RetryConfig;
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Reporter;
 use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange, StreamWithReport};
@@ -49,7 +48,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
 
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
-            let size = condow.client.get_size(location.clone()).await?;
+            let size = condow.client.get_size(location.clone(), &reporter).await?;
             if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
@@ -58,7 +57,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
         }
         DownloadRange::Closed(cl) => {
             if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
-                let size = condow.client.get_size(location.clone()).await?;
+                let size = condow.client.get_size(location.clone(), &reporter).await?;
                 if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
@@ -86,7 +85,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
 }
 
 async fn download_chunks<C: CondowClient, R: Reporter>(
-    client: C,
+    client: ClientRetryWrapper<C>,
     location: C::Location,
     range: InclusiveRange,
     bytes_hint: BytesHint,
@@ -148,10 +147,16 @@ mod tests {
         let range = InclusiveRange(0, 8);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream =
-            download_chunks(client, NoLocation, range, bytes_hint, config, NoReporting)
-                .await
-                .unwrap();
+        let result_stream = download_chunks(
+            client.into(),
+            NoLocation,
+            range,
+            bytes_hint,
+            config,
+            NoReporting,
+        )
+        .await
+        .unwrap();
 
         let result = result_stream.into_vec().await.unwrap();
 
@@ -173,10 +178,16 @@ mod tests {
         let range = InclusiveRange(0, 9);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream =
-            download_chunks(client, NoLocation, range, bytes_hint, config, NoReporting)
-                .await
-                .unwrap();
+        let result_stream = download_chunks(
+            client.into(),
+            NoLocation,
+            range,
+            bytes_hint,
+            config,
+            NoReporting,
+        )
+        .await
+        .unwrap();
 
         let result = result_stream.into_vec().await.unwrap();
 
@@ -198,10 +209,16 @@ mod tests {
         let range = InclusiveRange(0, 10);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let result_stream =
-            download_chunks(client, NoLocation, range, bytes_hint, config, NoReporting)
-                .await
-                .unwrap();
+        let result_stream = download_chunks(
+            client.into(),
+            NoLocation,
+            range,
+            bytes_hint,
+            config,
+            NoReporting,
+        )
+        .await
+        .unwrap();
 
         let result = result_stream.into_vec().await.unwrap();
 

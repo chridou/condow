@@ -22,7 +22,7 @@ use std::sync::Arc;
 use futures::{future::BoxFuture, FutureExt, Stream};
 
 use condow_client::CondowClient;
-use config::{AlwaysGetSize, Config};
+use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
 use reader::RandomAccessReader;
 use reporter::{NoReporting, Reporter, ReporterFactory};
@@ -117,7 +117,7 @@ where
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
 pub struct Condow<C> {
-    client: C,
+    client: ClientRetryWrapper<C>,
     config: Config,
 }
 
@@ -136,7 +136,10 @@ impl<C: CondowClient> Condow<C> {
     /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
-        Ok(Self { client, config })
+        Ok(Self {
+            client: ClientRetryWrapper::new(client, config.retries.clone()),
+            config,
+        })
     }
 
     /// Create a reusable [Downloader] which has a richer API.
@@ -200,7 +203,7 @@ impl<C: CondowClient> Condow<C> {
 
     /// Get the size of a file at the given location
     pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
-        self.client.get_size(location).await
+        self.client.get_size(location, &NoReporting).await
     }
 
     /// Creates a [RandomAccessReader] for the given location

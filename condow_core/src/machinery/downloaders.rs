@@ -13,7 +13,7 @@ use futures::{
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
-    config::Config,
+    config::{ClientRetryWrapper, Config},
     errors::{CondowError, IoError},
     reporter::Reporter,
     streams::{BytesStream, Chunk, ChunkStreamItem},
@@ -21,11 +21,11 @@ use crate::{
 
 use super::{range_stream::RangeRequest, KillSwitch};
 
-pub async fn download_concurrently<C: CondowClient, R: Reporter>(
+pub(crate) async fn download_concurrently<C: CondowClient, R: Reporter>(
     ranges_stream: impl Stream<Item = RangeRequest>,
     n_concurrent: usize,
     results_sender: UnboundedSender<ChunkStreamItem>,
-    client: C,
+    client: ClientRetryWrapper<C>,
     config: Config,
     location: C::Location,
     reporter: R,
@@ -53,7 +53,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
     pub fn new<C: CondowClient>(
         n_concurrent: usize,
         results_sender: UnboundedSender<ChunkStreamItem>,
-        client: C,
+        client: ClientRetryWrapper<C>,
         config: Config,
         location: C::Location,
         reporter: R,
@@ -130,7 +130,7 @@ struct Downloader {
 
 impl Downloader {
     pub fn new<C: CondowClient, R: Reporter>(
-        client: C,
+        client: ClientRetryWrapper<C>,
         results_sender: UnboundedSender<ChunkStreamItem>,
         kill_switch: KillSwitch,
         location: C::Location,
@@ -152,6 +152,7 @@ impl Downloader {
                         .download(
                             location.clone(),
                             DownloadSpec::Range(range_request.blob_range),
+                            &watcher.reporter,
                         )
                         .await
                     {
@@ -377,7 +378,7 @@ mod tests {
         let (result_stream, results_sender) = ChunkStream::new(bytes_hint);
 
         let mut downloader = Downloader::new(
-            client,
+            client.into(),
             results_sender,
             KillSwitch::new(),
             NoLocation,
