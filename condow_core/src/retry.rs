@@ -146,21 +146,27 @@ impl RetryConfig {
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
         &mut self,
         prefix: T,
-    ) -> Result<(), AnyError> {
+    ) -> Result<bool, AnyError> {
+        let mut found_any = false;
+
         if let Some(max_attempts) = RetryMaxAttempts::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.max_attempts = max_attempts;
         }
         if let Some(initial_delay) = RetryInitialDelayMs::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.initial_delay = initial_delay;
         }
         if let Some(delay_factor) = RetryDelayFactor::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.delay_factor = delay_factor;
         }
         if let Some(max_delay) = RetryDelayMaxMs::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.max_delay = max_delay;
         }
 
-        Ok(())
+        Ok(found_any)
     }
 }
 

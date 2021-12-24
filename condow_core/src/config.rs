@@ -118,26 +118,38 @@ impl Config {
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
         &mut self,
         prefix: T,
-    ) -> Result<(), AnyError> {
+    ) -> Result<bool, AnyError> {
+        let mut found_any = false;
+
         if let Some(part_size_bytes) = PartSizeBytes::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.part_size_bytes = part_size_bytes;
         }
         if let Some(max_concurrency) = MaxConcurrency::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.max_concurrency = max_concurrency;
         }
         if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.buffer_size = buffer_size;
         }
         if let Some(buffers_full_delay_ms) =
             BuffersFullDelayMs::try_from_env_prefixed(prefix.as_ref())?
         {
+            found_any = true;
             self.buffers_full_delay_ms = buffers_full_delay_ms;
         }
         if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.always_get_size = always_get_size;
         }
 
-        Ok(())
+        if let Some(retries) = RetryConfig::from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
+            self.retries = Some(retries);
+        }
+
+        Ok(found_any)
     }
 }
 
