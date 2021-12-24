@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use anyhow::Error as AnyError;
+use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Stream, StreamExt};
 
@@ -150,6 +150,23 @@ impl RetryConfig {
     pub fn max_delay<T: Into<RetryDelayMaxMs>>(mut self, max_delay: T) -> Self {
         self.max_delay = max_delay.into();
         self
+    }
+
+    /// Validate this [RetryConfig]
+    pub fn validate(&self) -> Result<(), AnyError> {
+        if self.delay_factor.0.is_sign_negative() {
+            bail!("'delay_factor' must not be negative");
+        }
+
+        if self.delay_factor.0.is_nan() {
+            bail!("'delay_factor' must not be NaN");
+        }
+
+        if self.delay_factor.0.is_infinite() {
+            bail!("'delay_factor' must not be infinite");
+        }
+
+        Ok(())
     }
 
     pub(crate) fn iterator(&self) -> impl Iterator<Item = Duration> {

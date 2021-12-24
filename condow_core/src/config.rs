@@ -114,6 +114,10 @@ impl Config {
             bail!("'part_size_bytes' must not be 0");
         }
 
+        if let Some(retries) = &self.retries {
+            retries.validate()?;
+        }
+
         Ok(self)
     }
 
