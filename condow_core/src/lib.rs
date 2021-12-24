@@ -75,6 +75,9 @@ where
     fn get_size<'a>(&'a self, location: L) -> BoxFuture<'a, Result<u64, CondowError>>;
 
     /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will query the size of the BLOB. If the size is already known
+    /// call [Downloads::reader_with_length]
     fn reader<'a>(
         &'a self,
         location: L,
@@ -91,6 +94,8 @@ where
     }
 
     /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will create a new reader immediately
     fn reader_with_length(&self, location: L, length: u64) -> RandomAccessReader<Self, L>
     where
         Self: Sized;

@@ -69,11 +69,23 @@ mod in_memory {
 
     use super::{CondowClient, DownloadSpec};
 
+    /// A location usable for testing.
+    ///
+    /// The clients in this module do not support downloading BLOBs from
+    /// different locations.
+    #[derive(Debug, Clone, Copy)]
+    pub struct NoLocation;
+
+    impl std::fmt::Display for NoLocation {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "<no location>")
+        }
+    }
     /// Holds the BLOB in memory as owned data.
     ///
     /// Use for testing.
     #[derive(Clone)]
-    pub struct InMemoryClient<L = ()> {
+    pub struct InMemoryClient<L = NoLocation> {
         blob: Arc<Vec<u8>>,
         chunk_size: usize,
         _location: PhantomData<L>,
@@ -132,7 +144,7 @@ mod in_memory {
     ///
     /// Use for testing especially with `include_bytes!`
     #[derive(Clone)]
-    pub struct StaticBlobClient<L = ()> {
+    pub struct StaticBlobClient<L = NoLocation> {
         blob: &'static [u8],
         chunk_size: usize,
         _location: PhantomData<L>,

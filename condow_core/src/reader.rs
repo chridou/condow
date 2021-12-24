@@ -15,7 +15,7 @@ mod random_access_reader {
         AsyncRead, AsyncSeek,
     };
 
-    use crate::{errors::CondowError, DownloadRange, Downloads};
+    use crate::{config::Mebi, errors::CondowError, DownloadRange, Downloads};
 
     use super::BytesAsyncReader;
 
@@ -23,15 +23,27 @@ mod random_access_reader {
     type AsyncReader = BytesAsyncReader<BytesStream>;
     type GetNewReaderFuture = BoxFuture<'static, Result<AsyncReader, CondowError>>;
 
-    const FETCH_AHEAD_BYTES: u64 = 8 * 1024 * 1024;
+    /// 8 MiBytes
+    const FETCH_AHEAD_BYTES: u64 = Mebi(8).value();
 
+    /// Specifies whether to fetch data ahead and if so how.
+    ///
+    /// The default is to fetch 8 Mebibytes ahead.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub enum FetchAheadMode {
         /// Don't fetch any data in excess of those requested.
         None,
         /// Fetch n bytes ahead of the current position when bytes are requested.
+        ///
+        /// If the number of bytes queried is larger than the size of the
+        /// parts to be downloaded the download will be executed with the
+        /// parts downloaded concurrently.
         Bytes(u64),
         /// Fetch all data from the current position to the end of the BLOB.
+        ///
+        /// If the number of bytes queried is larger than the size of the
+        /// parts to be downloaded the download will be executed with the
+        /// parts downloaded concurrently.
         ToEnd,
     }
 
@@ -62,14 +74,29 @@ mod random_access_reader {
     }
 
     /// Implements [AsyncRead] and [AsyncSeek]
+    ///
+    /// This reader allows for random access on the BLOB.
+    ///
+    /// # Behaviour
+    ///
+    /// The download is initiated once the first bytes have been
+    /// queried from the reader. Seek does not intiate a download
+    /// but currently forces a new download to be started once the reader
+    /// is polled for bytes again.
+    ///
+    /// The BLOB is only downloaded concurrently
+    /// if prefetching is enabled via [FetchAheadMode::Bytes] or
+    /// [FetchAheadMode::ToEnd]. The In these cases the number of bytes
+    /// to be downloaded must be greater than the configured part size
+    /// for concurrent downloading.
     pub struct RandomAccessReader<D, L> {
         /// Reading position of the next byte
         pos: u64,
         /// Download logic
         downloader: D,
-        /// location of the BLOB
+        /// Location of the BLOB
         location: L,
-        /// total length of the BLOB
+        /// Total length of the BLOB
         length: u64,
         state: State,
         fetch_ahead_mode: FetchAheadMode,
@@ -80,11 +107,18 @@ mod random_access_reader {
         D: Downloads<L> + Clone + Send + Sync + 'static,
         L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
     {
+        /// Creates a new instance without a given BLOB length
+        ///
+        /// This function will query the size of the BLOB. If the size is already known
+        /// call [RandomAccessReader::new_with_length]
         pub async fn new(downloader: D, location: L) -> Result<Self, CondowError> {
             let length = downloader.get_size(location.clone()).await?;
             Ok(Self::new_with_length(downloader, location, length))
         }
 
+        /// Will create a reader with the given known size of the BLOB.
+        ///
+        /// This function will create a new reader immediately
         pub fn new_with_length(downloader: D, location: L, length: u64) -> Self {
             Self {
                 downloader,
@@ -94,6 +128,13 @@ mod random_access_reader {
                 state: State::Initial,
                 fetch_ahead_mode: FetchAheadMode::default(),
             }
+        }
+
+        /// Returns the current offset of the next byte to read.
+        ///
+        /// The offset is from the start of the BLOB.
+        pub fn pos(&self) -> u64 {
+            return self.pos;
         }
 
         fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
@@ -216,12 +257,32 @@ mod random_access_reader {
             pos: SeekFrom,
         ) -> task::Poll<IoResult<u64>> {
             let this = self.get_mut();
-            match pos {
-                SeekFrom::Start(pos) => this.pos = pos,
-                SeekFrom::End(pos) => this.pos = (this.length as i64 + pos) as u64,
-                SeekFrom::Current(pos) => this.pos = (this.pos as i64 + pos) as u64,
+            let new_pos = match pos {
+                SeekFrom::Start(offset) => offset,
+                SeekFrom::End(offset) => {
+                    if offset < 0 && -offset as u64 > this.length {
+                        // This would go before the start
+                        // and is an error by the specification of SeekFrom::End
+                        let err = CondowError::new_invalid_range("Seek before start");
+                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
+                    }
+                    (this.length as i64 + offset) as u64
+                }
+                SeekFrom::Current(offset) => {
+                    if offset < 0 && -offset as u64 > this.pos {
+                        // This would go before the start
+                        // and is an error by the specification of SeekFrom::Current
+                        let err = CondowError::new_invalid_range("Seek before start");
+                        return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
+                    }
+                    (this.pos as i64 + offset) as u64
+                }
             };
-            this.state = State::Initial;
+            if new_pos != this.pos {
+                this.pos = new_pos;
+                // Initiate a new download
+                this.state = State::Initial;
+            }
             task::Poll::Ready(Ok(this.pos))
         }
     }
@@ -230,7 +291,7 @@ mod random_access_reader {
     mod tests {
         use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-        use crate::test_utils::TestDownloader;
+        use crate::test_utils::{NoLocation, TestDownloader};
 
         use super::*;
 
@@ -241,7 +302,7 @@ mod random_access_reader {
 
                 let downloader = TestDownloader::new(n as usize);
 
-                let mut reader = downloader.reader(42).await.unwrap();
+                let mut reader = downloader.reader(NoLocation).await.unwrap();
 
                 let mut buf = Vec::new();
                 let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
@@ -252,10 +313,68 @@ mod random_access_reader {
         }
 
         #[tokio::test]
+        async fn offsets_and_seek_from_start() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0);
+
+            reader.seek(SeekFrom::Start(0)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::Start(0)");
+
+            reader.seek(SeekFrom::Start(1)).await.unwrap();
+            assert_eq!(reader.pos(), 1, "SeekFrom::Start(1)");
+
+            reader.seek(SeekFrom::Start(1_000)).await.unwrap();
+            assert_eq!(reader.pos(), 1_000, "SeekFrom::Start(1_000)");
+        }
+
+        #[tokio::test]
+        async fn offsets_and_seek_from_end() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            reader.seek(SeekFrom::End(0)).await.unwrap();
+            assert_eq!(reader.pos(), 4, "SeekFrom::End(0)");
+
+            reader.seek(SeekFrom::End(-1)).await.unwrap();
+            assert_eq!(reader.pos(), 3, "SeekFrom::End(-1)");
+
+            reader.seek(SeekFrom::End(-4)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::End(-4)");
+        }
+
+        #[tokio::test]
+        async fn offsets_and_seek_from_current() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0, "Fresh");
+
+            reader.seek(SeekFrom::Current(3)).await.unwrap();
+            assert_eq!(reader.pos(), 3, "SeekFrom::Current(3)");
+
+            reader.seek(SeekFrom::Current(-1)).await.unwrap();
+            assert_eq!(reader.pos(), 2, "SeekFrom::Current(-1)");
+
+            reader.seek(SeekFrom::Current(1_000)).await.unwrap();
+            assert_eq!(reader.pos(), 1_002, "SeekFrom::Current(1_000)");
+
+            reader.seek(SeekFrom::Current(-1_002)).await.unwrap();
+            assert_eq!(reader.pos(), 0, "SeekFrom::Current(-1_002)");
+        }
+
+        #[tokio::test]
         async fn seek_from_start() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Start(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -277,7 +396,7 @@ mod random_access_reader {
         async fn seek_from_end() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::End(-10)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -296,10 +415,24 @@ mod random_access_reader {
         }
 
         #[tokio::test]
+        async fn seek_from_end_before_byte_zero_must_err() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+            // Hit 0 is ok
+            let result = reader.seek(SeekFrom::End(-4)).await;
+            assert!(result.is_ok());
+            // Hit -1 is not ok
+            let result = reader.seek(SeekFrom::End(-5)).await;
+            assert!(result.is_err());
+        }
+
+        #[tokio::test]
         async fn seek_from_current() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(42).await.unwrap();
+            let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Current(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -315,6 +448,22 @@ mod random_access_reader {
             let mut buf = vec![0, 0];
             reader.read_exact(&mut buf).await.unwrap();
             assert_eq!(buf, vec![6, 7], "SeekFrom::Current 3");
+        }
+
+        #[tokio::test]
+        async fn seek_from_current_before_byte_zero_must_err() {
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
+                .reader(NoLocation)
+                .await
+                .unwrap();
+
+            assert_eq!(reader.pos(), 0);
+
+            let result = reader.seek(SeekFrom::Current(0)).await;
+            assert!(result.is_ok());
+
+            let result = reader.seek(SeekFrom::Current(-1)).await;
+            assert!(result.is_err());
         }
 
         #[tokio::test]
@@ -335,7 +484,7 @@ mod random_access_reader {
 
                     let downloader = TestDownloader::new_with_blob(expected.clone());
 
-                    let mut reader = downloader.reader(42).await.unwrap();
+                    let mut reader = downloader.reader(NoLocation).await.unwrap();
                     reader.set_fetch_ahead_mode(mode);
 
                     let mut buf = Vec::new();
