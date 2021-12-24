@@ -88,6 +88,20 @@ impl Config {
         self
     }
 
+    /// Enables retries with the given configuration
+    pub fn retries(mut self, config: RetryConfig) -> Self {
+        self.retries = Some(config);
+        self
+    }
+
+    /// Configure retries starting with the default [RetryConfig]
+    pub fn configure_retries<F>(self, f: F) -> Self
+    where
+        F: Fn(RetryConfig) -> RetryConfig,
+    {
+        self.retries(f(RetryConfig::default()))
+    }
+
     /// Validate this [Config]
     pub fn validated(self) -> Result<Self, AnyError> {
         if self.max_concurrency.0 == 0 {
