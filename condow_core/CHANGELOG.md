@@ -6,12 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.12.0] - unreleased
 
+### ADDED
+
+- `RetryConfig` to configure a optional retries
+- Changed the behaviour so that all requests can do retries. Also broken streams will be retried with the remaining data only queried.
+
 ### CHANGED
 
-- [BREAKING] Config does no more implement equality traits (there is now an f64 in there)
-- [BREAKING] Added a new field for retry config to the Config struct
-- [BREAKING] Config is now non-exhaustive
-- [BREAKING] Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.
+- **BREAKING**: Config does no more implement equality traits (there is now an f64 in there)
+- **BREAKING**: Added a new field for retry config to the Config struct
+- **BREAKING**: Config is now non-exhaustive
+- **BREAKING**: Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.
 
 
 ## [0.11.0] -  2021/12/11

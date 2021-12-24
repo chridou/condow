@@ -14,7 +14,7 @@ use anyhow::{bail, Error as AnyError};
 pub use crate::retry::*;
 
 /// A configuration for [Condow](super::Condow).
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct Config {
     /// Size in bytes of the parts the download is split into
@@ -48,6 +48,8 @@ pub struct Config {
     /// Configures retries if there.
     ///
     /// Otherwise there won't be any retry attempts made
+    ///
+    /// Retries are turned on by default
     pub retries: Option<RetryConfig>,
 }
 
@@ -150,6 +152,19 @@ impl Config {
         }
 
         Ok(found_any)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            part_size_bytes: Default::default(),
+            max_concurrency: Default::default(),
+            buffer_size: Default::default(),
+            buffers_full_delay_ms: Default::default(),
+            always_get_size: Default::default(),
+            retries: Some(Default::default()),
+        }
     }
 }
 

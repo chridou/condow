@@ -91,6 +91,24 @@ impl From<Duration> for RetryDelayMaxMs {
 }
 
 /// Configures retries with exponential backoff
+///
+/// # Overview
+///
+/// Retries can be done on the downloads themselves
+/// as well on the byte streams returned from a client. If an error occurs
+/// while streaming bytes ConDow will try to reconnect with retries and
+/// continue streaming where the previous stream failed.
+///
+/// Retries can also be attempted on size requests.
+///
+/// Be aware that some clients might also do retries themselves based on
+/// their underlying implementation. In this case you should disable retries for either the
+/// client or ConDow itself.
+///
+/// # Limitations
+///
+/// ConDow can only try to continue on byte stream errors if the underlying [CondowClient]
+/// returns an upper bound of the number of bytes returned when a new stream is created.
 #[derive(Debug, Default, Clone)]
 #[non_exhaustive]
 pub struct RetryConfig {
