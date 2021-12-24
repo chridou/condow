@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::condow_client::CondowClient;
 use crate::config::Config;
 use crate::errors::CondowError;
+use crate::retry::RetryConfig;
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Reporter;
 use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange, StreamWithReport};

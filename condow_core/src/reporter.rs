@@ -3,9 +3,13 @@
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
-use std::{fmt, time::Duration};
+use std::{fmt, ops::RangeInclusive, time::Duration};
 
-use crate::InclusiveRange;
+use crate::{
+    condow_client::DownloadSpec,
+    errors::{CondowError, IoError},
+    InclusiveRange,
+};
 
 pub use simple_reporter::*;
 
@@ -39,6 +43,21 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     ///
     /// **This always is the last method called on a [Reporter] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
+    /// An error occurd but a retry will be attempted
+    fn retry(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+    /// A stream for fetching a part broke and a reconnect might happen
+    /// 
+    /// `orig_range` is the original range for the download attempted.
+    /// `curret_range` is the range which was queried from the client which might change
+    /// since on a stream error a new range with the missing bytes will be created.
+    fn stream_broke(
+        &self,
+        location: &dyn fmt::Display,
+        error: &IoError,
+        orig_range: InclusiveRange,
+        current_range: InclusiveRange,
+    ) {
+    }
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed

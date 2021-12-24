@@ -47,7 +47,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         }
     }
 
-    /// Change the behaviour on when to query the file size
+    /// Change the behaviour on when to query the BLOB size
     pub fn get_size_mode<T: Into<GetSizeMode>>(mut self, get_size_mode: T) -> Self {
         self.get_size_mode = get_size_mode.into();
         self

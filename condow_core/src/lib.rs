@@ -39,6 +39,7 @@ pub mod errors;
 mod machinery;
 pub mod reader;
 pub mod reporter;
+pub(crate) mod retry;
 pub mod streams;
 
 pub use download_range::*;

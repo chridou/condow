@@ -27,6 +27,13 @@ impl DownloadSpec {
             DownloadSpec::Range(r) => Some(r.http_range_value()),
         }
     }
+
+    pub fn start(&self) -> u64 {
+        match self {
+            DownloadSpec::Complete => 0,
+            DownloadSpec::Range(r) => r.start(),
+        }
+    }
 }
 
 /// A client to some service or other resource which supports

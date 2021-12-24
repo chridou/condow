@@ -58,6 +58,10 @@ impl CondowError {
     pub fn kind(&self) -> CondowErrorKind {
         self.kind
     }
+
+    pub fn is_retryable(&self) -> bool {
+        self.kind.is_retryable()
+    }
 }
 
 impl fmt::Display for CondowError {
@@ -75,6 +79,21 @@ pub enum CondowErrorKind {
     Remote,
     Io,
     Other,
+}
+
+impl CondowErrorKind {
+    pub fn is_retryable(self) -> bool {
+        use CondowErrorKind::*;
+
+        match self {
+            InvalidRange => false,
+            NotFound => false,
+            AccessDenied => false,
+            Remote => true,
+            Io => true,
+            Other => false,
+        }
+    }
 }
 
 impl From<std::io::Error> for CondowError {
