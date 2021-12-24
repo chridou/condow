@@ -13,6 +13,20 @@ use crate::{
 };
 
 new_type! {
+    #[doc="The maximum number of retry attempts."]
+    #[doc="This excludes the original attempt."]
+    #[doc="Default is 2."]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub copy struct RetryMaxAttempts(usize, env="RETRY_MAX_ATTEMPTS");
+}
+
+impl Default for RetryMaxAttempts {
+    fn default() -> Self {
+        Self(2)
+    }
+}
+
+new_type! {
     #[doc="The delay for the first retry attempt in ms."]
     #[doc="Default is 50ms."]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -31,8 +45,15 @@ impl From<RetryInitialDelayMs> for Duration {
     }
 }
 
+impl From<Duration> for RetryInitialDelayMs {
+    fn from(dur: Duration) -> Self {
+        Self(dur.as_micros() as u64)
+    }
+}
+
 new_type! {
     #[doc="The factor the previous retry is multiplied by."]
+    #[doc="This is actually what makes it exponentially when greater than 1.0."]
     #[doc="Default is 1.5."]
     #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
     pub copy struct RetryDelayFactor(f64, env="RETRY_DELAY_FACTOR");
@@ -45,7 +66,7 @@ impl Default for RetryDelayFactor {
 }
 
 new_type! {
-    #[doc="The maximum retry for a retry attempt."]
+    #[doc="The maximum retry for a retry attempt in milliseconds."]
     #[doc="Default 5 seconds."]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub copy struct RetryDelayMaxMs(u64, env="RETRY_DELAY_MAX_MS");
@@ -63,17 +84,9 @@ impl From<RetryDelayMaxMs> for Duration {
     }
 }
 
-new_type! {
-    #[doc="The maximum number of retry attempts."]
-    #[doc="This excludes the original attempt."]
-    #[doc="Default is 2."]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-    pub copy struct RetryMaxAttempts(usize, env="RETRY_MAX_ATTEMPTS");
-}
-
-impl Default for RetryMaxAttempts {
-    fn default() -> Self {
-        Self(2)
+impl From<Duration> for RetryDelayMaxMs {
+    fn from(dur: Duration) -> Self {
+        Self(dur.as_micros() as u64)
     }
 }
 
@@ -94,6 +107,32 @@ pub struct RetryConfig {
 
 impl RetryConfig {
     env_ctors!(no_fill);
+
+    /// Set the maximum number of attempt for retries
+    pub fn max_attempts<T: Into<RetryMaxAttempts>>(mut self, max_attempts: T) -> Self {
+        self.max_attempts = max_attempts.into();
+        self
+    }
+
+    /// Set the delay for the first retry attempt after the original operation failed
+    pub fn initial_delay<T: Into<RetryInitialDelayMs>>(mut self, initial_delay: T) -> Self {
+        self.initial_delay = initial_delay.into();
+        self
+    }
+
+    /// Set the delay for by each each subsequent will be multiplied by to get the next delay
+    ///
+    /// This is actually what makes it exponentially when greater than 1.0.
+    pub fn delay_factor<T: Into<RetryDelayFactor>>(mut self, delay_factor: T) -> Self {
+        self.delay_factor = delay_factor.into();
+        self
+    }
+
+    /// Set the maximum duration in milliseconds for a single delay
+    pub fn max_delay<T: Into<RetryDelayMaxMs>>(mut self, max_delay: T) -> Self {
+        self.max_delay = max_delay.into();
+        self
+    }
 
     pub(crate) fn iterator(&self) -> impl Iterator<Item = Duration> {
         RetryIterator {
