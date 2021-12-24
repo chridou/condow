@@ -46,7 +46,7 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// An error occurd but a retry will be attempted
     fn retry(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
     /// A stream for fetching a part broke and a reconnect might happen
-    /// 
+    ///
     /// `orig_range` is the original range for the download attempted.
     /// `curret_range` is the range which was queried from the client which might change
     /// since on a stream error a new range with the missing bytes will be created.

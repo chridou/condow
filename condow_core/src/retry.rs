@@ -226,7 +226,7 @@ where
 }
 
 /// Retries on attempts to get a stream.
-/// 
+///
 /// If a stream breaks with an [IO] error retries to get
 /// a new stream starting where the broken one ended will be made.
 async fn retry_download<C, R>(
@@ -272,9 +272,9 @@ where
 }
 
 /// Tries to complete the given stream.
-/// 
+///
 /// If a stream breaks it tries to complete the `original_range` by
-/// requesting new stream for the remainder of `original_range` 
+/// requesting new stream for the remainder of `original_range`
 async fn loop_retry_complete_stream<C, R>(
     mut stream: BytesStream,
     location: C::Location,
@@ -320,7 +320,7 @@ async fn loop_retry_complete_stream<C, R>(
 }
 
 /// Consume a stream until it is finished or broken.
-/// 
+///
 /// If it finished [Ok] will be returned otherwise an [Err] containing
 /// the bytes read and the [IoError].
 async fn consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
