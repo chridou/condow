@@ -11,6 +11,8 @@ use std::{
 
 use anyhow::{bail, Error as AnyError};
 
+pub use crate::retry::*;
+
 /// A configuration for [Condow](super::Condow).
 #[derive(Debug, Clone, Default, Eq, PartialEq)]
 pub struct Config {

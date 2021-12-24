@@ -151,7 +151,7 @@ impl Iterator for RetryIterator {
 }
 
 #[derive(Clone)]
-pub struct ClientRetryWrapper<C> {
+pub(crate) struct ClientRetryWrapper<C> {
     inner: Arc<(C, Option<RetryConfig>)>,
 }
 
