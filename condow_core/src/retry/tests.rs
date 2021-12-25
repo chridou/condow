@@ -19,6 +19,26 @@ fn check_error_kinds() {
     assert!(!NON_RETRYABLE.is_retryable(), "NON_RETRYABLE is retryable!");
 }
 
+mod consume_stream {
+    #[test]
+    fn todo() {
+        todo!()
+    }
+}
+mod loop_retry_complete_stream {
+    #[test]
+    fn todo() {
+        todo!()
+    }
+}
+
+mod retry_download {
+    #[test]
+    fn todo() {
+        todo!()
+    }
+}
+
 mod retry_download_get_stream {
     //! Tests for the function `retry_download_get_stream`
     //!
@@ -151,6 +171,15 @@ mod retry_download_get_stream {
         let errors = vec![RETRYABLE, NON_RETRYABLE];
         let result = run_get_stream(errors, n_retries).await;
         assert_eq!(result, Err((1, NON_RETRYABLE)));
+    }
+
+    #[tokio::test]
+    async fn only_one_call_made_when_no_retries() {
+        let n_retries = 0;
+
+        let errors = vec![RETRYABLE, ANOTHER_RETRYABLE];
+        let result = run_get_stream(errors, n_retries).await;
+        assert_eq!(result, Err((0, RETRYABLE)));
     }
 
     #[tokio::test]
@@ -387,6 +416,15 @@ mod retry_get_size {
         let errors = vec![RETRYABLE, NON_RETRYABLE];
         let result = run_get_size(errors, n_retries).await;
         assert_eq!(result, Err((1, NON_RETRYABLE)));
+    }
+
+    #[tokio::test]
+    async fn only_one_call_made_when_no_retries() {
+        let n_retries = 0;
+
+        let errors = vec![RETRYABLE, ANOTHER_RETRYABLE];
+        let result = run_get_size(errors, n_retries).await;
+        assert_eq!(result, Err((0, RETRYABLE)));
     }
 
     #[tokio::test]

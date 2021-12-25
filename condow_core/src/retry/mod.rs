@@ -76,7 +76,7 @@ impl From<i32> for RetryDelayFactor {
 
 new_type! {
     #[doc="The maximum retry for a retry attempt in milliseconds."]
-    #[doc="Default 5 seconds."]
+    #[doc="Default is 5 seconds."]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub copy struct RetryDelayMaxMs(u64, env="RETRY_DELAY_MAX_MS");
 }
