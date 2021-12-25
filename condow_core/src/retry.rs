@@ -144,7 +144,7 @@ impl RetryConfig {
         self
     }
 
-    /// Set the delay for by each each subsequent will be multiplied by to get the next delay
+    /// Set the factor by which each current delay will be multiplied by to get the next delay
     ///
     /// This is actually what makes it exponentially when greater than 1.0.
     pub fn delay_factor<T: Into<RetryDelayFactor>>(mut self, delay_factor: T) -> Self {
@@ -177,6 +177,16 @@ impl RetryConfig {
         }
 
         Ok(())
+    }
+
+    /// Validate this [RetryConfig] and return it if it is valid.
+    /// 
+    /// Can be used as a finalizer after builder style construction.
+    ///
+    /// See also [RetryConfig::validate]
+    pub fn validated(self) -> Result<Self, AnyError> {
+        self.validate()?;
+        Ok(self)
     }
 
     /// Create an [Iterator] of delays to be applied before each retry attempt
