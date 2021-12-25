@@ -184,7 +184,7 @@ mod retry_download_get_stream {
     ) -> Result<usize, (usize, CondowErrorKind)> {
         #[derive(Clone)]
         struct Client {
-            fails: Arc<Mutex<Vec<CondowErrorKind>>>,
+            fails_reversed: Arc<Mutex<Vec<CondowErrorKind>>>,
         }
 
         impl CondowClient for Client {
@@ -203,7 +203,7 @@ mod retry_download_get_stream {
                 _spec: DownloadSpec,
             ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
             {
-                let mut fails = self.fails.lock().unwrap();
+                let mut fails = self.fails_reversed.lock().unwrap();
 
                 if fails.is_empty() {
                     let stream = Box::pin(stream::empty()) as BytesStream;
@@ -217,7 +217,7 @@ mod retry_download_get_stream {
 
         fails.reverse();
         let client = Client {
-            fails: Arc::new(Mutex::new(fails)),
+            fails_reversed: Arc::new(Mutex::new(fails)),
         };
 
         #[derive(Clone)]
@@ -420,7 +420,7 @@ mod retry_get_size {
     ) -> Result<usize, (usize, CondowErrorKind)> {
         #[derive(Clone)]
         struct Client {
-            fails: Arc<Mutex<Vec<CondowErrorKind>>>,
+            fails_reversed: Arc<Mutex<Vec<CondowErrorKind>>>,
         }
 
         impl CondowClient for Client {
@@ -430,7 +430,7 @@ mod retry_get_size {
                 &self,
                 _location: Self::Location,
             ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
-                let mut fails = self.fails.lock().unwrap();
+                let mut fails = self.fails_reversed.lock().unwrap();
 
                 if fails.is_empty() {
                     futures::future::ready(Ok(0)).boxed()
@@ -452,7 +452,7 @@ mod retry_get_size {
 
         fails.reverse();
         let client = Client {
-            fails: Arc::new(Mutex::new(fails)),
+            fails_reversed: Arc::new(Mutex::new(fails)),
         };
 
         #[derive(Clone)]
