@@ -180,7 +180,7 @@ impl RetryConfig {
     }
 
     /// Validate this [RetryConfig] and return it if it is valid.
-    /// 
+    ///
     /// Can be used as a finalizer after builder style construction.
     ///
     /// See also [RetryConfig::validate]
@@ -256,7 +256,7 @@ impl Iterator for RetryDelaysIterator {
         let current_delay_secs = self.next_delay_secs;
 
         // No check for overflows etc. since the maximum here is propably
-        // longer in the future than humanity will exist.
+        // farther in the future than humanity will exist.
         self.next_delay_secs *= self.delay_factor;
 
         let delay = Duration::from_secs_f64(current_delay_secs.min(self.max_delay_secs));
