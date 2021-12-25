@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed the behaviour so that all requests can do retries. Also broken streams will be retried with the remaining data only queried.
 - `Reporter` trait is notified on retries and broken streams
 - `CompositeReporter` propagates retry and broken stream to children
+- more documentation
 
 ### CHANGED
 
