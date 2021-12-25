@@ -28,6 +28,7 @@ impl DownloadSpec {
         }
     }
 
+    /// Returns the position of the first byte to be fetched
     pub fn start(&self) -> u64 {
         match self {
             DownloadSpec::Complete => 0,
