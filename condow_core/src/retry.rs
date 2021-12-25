@@ -115,7 +115,7 @@ impl From<Duration> for RetryDelayMaxMs {
 ///
 /// ConDow can only try to continue on byte stream errors if the underlying [CondowClient]
 /// returns an upper bound of the number of bytes returned when a new stream is created.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct RetryConfig {
     /// The maximum number of retry attempts.

@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CHANGED
 
-- **BREAKING**: Config does no more implement equality traits (there is now an f64 in there)
+- **BREAKING**: Config does no longer implement the `Eq` trait (there is now an f64 in there)
 - **BREAKING**: Added a new field for retry config to the Config struct
 - **BREAKING**: Config is now non-exhaustive
 - **BREAKING**: Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.

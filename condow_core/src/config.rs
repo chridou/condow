@@ -14,7 +14,7 @@ use anyhow::{bail, Error as AnyError};
 pub use crate::retry::*;
 
 /// A configuration for [Condow](super::Condow).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct Config {
     /// Size in bytes of the parts the download is split into
