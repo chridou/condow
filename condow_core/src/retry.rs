@@ -546,6 +546,14 @@ mod tests {
     }
 
     mod retry_download_get_stream {
+        //! Tests for the function `retry_download_get_stream`
+        //!
+        //! Tests are performed by using a function `run_get_stream`.
+        //!
+        //! This function returns an `Ok` with the number of retries that
+        //! have been attempted to achieve success. In case of a failure the
+        //! function returns a tuple containing the final error and
+        //! the number of retries that were made.
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Mutex,
@@ -769,7 +777,15 @@ mod tests {
         }
     }
 
-    mod get_size {
+    mod retry_get_size {
+        //! Tests for the function `retry_get_size`
+        //!
+        //! Tests are performed by using a function `run_get_size`.
+        //!
+        //! This function returns an `Ok` with the number of retries that
+        //! have been attempted to achieve success. In case of a failure the
+        //! function returns a tuple containing the final error and
+        //! the number of retries that were made.
         use std::sync::{
             atomic::{AtomicUsize, Ordering},
             Mutex,
