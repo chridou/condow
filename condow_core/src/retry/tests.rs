@@ -206,8 +206,7 @@ mod retry_download_get_stream {
                 let mut fails = self.fails.lock().unwrap();
 
                 if fails.is_empty() {
-                    let stream = stream::empty();
-                    let stream = Box::pin(stream) as BytesStream;
+                    let stream = Box::pin(stream::empty()) as BytesStream;
                     futures::future::ready(Ok((stream, BytesHint::new_no_hint()))).boxed()
                 } else {
                     let err = CondowError::from(fails.pop().unwrap());
