@@ -163,7 +163,7 @@ mod retry_download_get_stream {
     }
 
     #[tokio::test]
-    async fn success_after_to_retryables_with_2_retries() {
+    async fn success_after_two_retryables_with_2_retries() {
         let n_retries = 2;
 
         let errors = vec![RETRYABLE, ANOTHER_RETRYABLE];
@@ -171,6 +171,13 @@ mod retry_download_get_stream {
         assert_eq!(result, Ok(2));
     }
 
+    /// Simulates a call to a client
+    ///
+    /// `fails` are the errors to be returned before a success is delivered
+    /// `n_retries` is the number of retries to be attempted after a failure
+    ///
+    /// Always returns the number of attempted retries and in case of a final error
+    /// the kind of the error.
     async fn run_get_stream(
         mut fails: Vec<CondowErrorKind>,
         n_retries: usize,
@@ -393,7 +400,7 @@ mod retry_get_size {
     }
 
     #[tokio::test]
-    async fn success_after_to_retryables_with_2_retries() {
+    async fn success_after_two_retryables_with_2_retries() {
         let n_retries = 2;
 
         let errors = vec![RETRYABLE, ANOTHER_RETRYABLE];
@@ -401,6 +408,13 @@ mod retry_get_size {
         assert_eq!(result, Ok(2));
     }
 
+    /// Simulates a call to a client
+    ///
+    /// `fails` are the errors to be returned before a success is delivered
+    /// `n_retries` is the number of retries to be attempted after a failure
+    ///
+    /// Always returns the number of attempted retries and in case of a final error
+    /// the kind of the error.
     async fn run_get_size(
         mut fails: Vec<CondowErrorKind>,
         n_retries: usize,
