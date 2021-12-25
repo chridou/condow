@@ -119,7 +119,7 @@ impl Config {
     /// Disables retries
     ///
     /// Retries are enabled by default.
-    pub fn no_retries(mut self) -> Self {
+    pub fn disable_retries(mut self) -> Self {
         self.retries = None;
         self
     }
