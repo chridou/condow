@@ -16,6 +16,10 @@ fn check_error_kinds() {
         ANOTHER_RETRYABLE.is_retryable(),
         "ANOTHER_RETRYABLE is not retryable!"
     );
+    assert!(
+        RETRYABLE != ANOTHER_RETRYABLE,
+        "retryables must not be the same"
+    );
     assert!(!NON_RETRYABLE.is_retryable(), "NON_RETRYABLE is retryable!");
 }
 
