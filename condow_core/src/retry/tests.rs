@@ -24,9 +24,112 @@ fn check_error_kinds() {
 }
 
 mod consume_stream {
-    #[test]
-    fn todo() {
-        todo!()
+    use bytes::Bytes;
+    use futures::{channel::mpsc, stream, StreamExt};
+
+    use crate::{errors::IoError, streams::BytesStream};
+
+    #[tokio::test]
+    async fn empty_ok() {
+        let result = check_consume(Vec::new()).await;
+
+        assert_eq!(result, Ok(0));
+    }
+
+    #[tokio::test]
+    async fn fail_immediately() {
+        let result = check_consume(vec![None]).await;
+
+        assert_eq!(result, Err(0));
+    }
+
+    #[tokio::test]
+    async fn one_chunk_ok() {
+        let result = check_consume(vec![Some(vec![0, 1, 2])]).await;
+
+        assert_eq!(result, Ok(3));
+    }
+
+    #[tokio::test]
+    async fn one_chunk_err() {
+        let result = check_consume(vec![Some(vec![0, 1, 2]), None]).await;
+
+        assert_eq!(result, Err(3));
+    }
+
+    #[tokio::test]
+    async fn two_chunks_ok() {
+        let result = check_consume(vec![Some(vec![0, 1, 2]), Some(vec![3, 4])]).await;
+
+        assert_eq!(result, Ok(5));
+    }
+
+    #[tokio::test]
+    async fn two_chunks_err() {
+        let result = check_consume(vec![Some(vec![0, 1, 2]), Some(vec![3, 4]), None]).await;
+
+        assert_eq!(result, Err(5));
+    }
+
+    #[tokio::test]
+    async fn it_fuses_after_an_immediate_error() {
+        let result = check_consume(vec![None, Some(vec![0, 1])]).await;
+
+        assert_eq!(result, Err(0));
+    }
+
+    #[tokio::test]
+    async fn it_fuses_after_a_subsequent_error() {
+        let result = check_consume(vec![Some(vec![0, 1, 2]), None, Some(vec![3, 4])]).await;
+
+        assert_eq!(result, Err(3));
+    }
+
+    /// Simulates the consumption of a stream and return the number of bytes read in both
+    /// the error or the ok case.
+    ///
+    /// * `Some(bytes)` will be chunks of bytes
+    /// * `None`s will be transformed into an `IoError`
+    ///
+    /// Returns the number of bytes read in any case. If `Ok` no error occured
+    /// when consuming the stream.
+    async fn check_consume(items: Vec<Option<Vec<u8>>>) -> Result<u64, u64> {
+        let items = items.into_iter().map(|item| {
+            if let Some(bytes) = item {
+                return Ok(Bytes::from(bytes));
+            }
+
+            Err(IoError("bang!".to_string()))
+        });
+
+        let stream = stream::iter(items).boxed() as BytesStream;
+
+        let (next_elem_tx, chunk_receiver) = mpsc::unbounded();
+
+        let consume_result = super::consume_stream(stream, &next_elem_tx).await;
+
+        drop(next_elem_tx); // drop the only sender to prevent from deadlock
+
+        // count the number of bytes that would have been transmitted until an error occurred or
+        // the stream finished
+        let stream_bytes_transmitted_count = chunk_receiver
+            .map(|item| match item {
+                Ok(bytes) => bytes.len() as u64,
+                Err(_) => 0,
+            })
+            .fold(0u64, |agg, read| async move { agg + read })
+            .await;
+
+        match consume_result {
+            Ok(()) => Ok(stream_bytes_transmitted_count),
+            Err((_err, bytes_read)) => {
+                assert_eq!(
+                    bytes_read, stream_bytes_transmitted_count,
+                    "bytes read did not match in the error case"
+                );
+                Err(bytes_read)
+            }
+        }
     }
 }
 mod loop_retry_complete_stream {
