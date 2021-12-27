@@ -24,6 +24,12 @@ fn check_error_kinds() {
 }
 
 mod consume_stream {
+    //! Tests for the `consume_stream` function.
+
+    // Tests are performed using a function `check_consume`
+    // which returns wheter the stream broke or not by signaling `Ok` or `Err`.
+    // The result will contain the number of bytes read in both cases.
+
     use bytes::Bytes;
     use futures::{channel::mpsc, stream, StreamExt};
 
@@ -79,13 +85,13 @@ mod consume_stream {
     }
 
     #[tokio::test]
-    async fn it_fuses_after_a_subsequent_error() {
+    async fn it_fuses_after_an_error_when_bytes_were_already_received() {
         let result = check_consume(vec![Some(vec![0, 1, 2]), None, Some(vec![3, 4])]).await;
 
         assert_eq!(result, Err(3));
     }
 
-    /// Simulates the consumption of a stream and return the number of bytes read in both
+    /// Simulates the consumption of a stream and returns the number of bytes read in both
     /// the error or the ok case.
     ///
     /// * `Some(bytes)` will be chunks of bytes

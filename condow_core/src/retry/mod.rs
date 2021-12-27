@@ -199,12 +199,12 @@ impl RetryConfig {
     /// `RetryConfig::validate` should be called before creating a
     /// [RetryDelaysIterator].
     pub(crate) fn iterator(&self) -> impl Iterator<Item = Duration> {
-        RetryDelaysIterator {
-            attempts_left: self.max_attempts.into_inner(),
-            next_delay_secs: self.initial_delay_ms.into_inner() as f64 / 1_000.0,
-            max_delay_secs: self.max_delay_ms.into_inner() as f64 / 1_000.0,
-            delay_factor: self.delay_factor.into_inner(),
-        }
+        RetryDelaysIterator::new(
+            self.max_attempts.into_inner(),
+            self.initial_delay_ms.into_inner() as f64 / 1_000.0,
+            self.max_delay_ms.into_inner() as f64 / 1_000.0,
+            self.delay_factor.into_inner(),
+        )
     }
 
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
@@ -239,11 +239,30 @@ impl RetryConfig {
 ///
 /// The iterator returns a number of delays as
 /// there are retry attempts configured.
-pub struct RetryDelaysIterator {
+struct RetryDelaysIterator {
     attempts_left: usize,
     next_delay_secs: f64,
     max_delay_secs: f64,
     delay_factor: f64,
+}
+
+impl RetryDelaysIterator {
+    /// Creates a new instance
+    ///
+    /// All [f64]s are fused to be at least 0.0.
+    fn new(
+        attempts_left: usize,
+        next_delay_secs: f64,
+        max_delay_secs: f64,
+        delay_factor: f64,
+    ) -> Self {
+        Self {
+            attempts_left,
+            next_delay_secs: next_delay_secs.max(0.0),
+            max_delay_secs: max_delay_secs.max(0.0),
+            delay_factor: delay_factor.max(0.0),
+        }
+    }
 }
 
 impl Iterator for RetryDelaysIterator {
@@ -368,7 +387,7 @@ where
 
 /// Retries on attempts to get a stream.
 ///
-/// If a stream breaks with an [IO] error retries to get
+/// If a stream breaks with an [IoError] retries to get
 /// a new stream starting where the broken one ended will be made.
 async fn retry_download<C, R>(
     client: &C,
