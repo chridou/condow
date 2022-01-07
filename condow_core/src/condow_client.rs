@@ -774,6 +774,22 @@ pub mod failing_client_simulator {
         }
 
         #[tokio::test]
+        async fn failed_stream_3() {
+            let client = get_builder().next_stream_errors_at([5, 5, 5]).finish();
+
+            let range = DownloadSpec::Complete;
+
+            let result = download(&client, range).await.unwrap().unwrap_err();
+            assert_eq!(result, &BLOB[0..5], "err");
+            let result = download(&client, range).await.unwrap().unwrap_err();
+            assert_eq!(result, &BLOB[0..5], "err");
+            let result = download(&client, range).await.unwrap().unwrap_err();
+            assert_eq!(result, &BLOB[0..5], "err");
+            let result = download(&client, range).await.unwrap().unwrap();
+            assert_eq!(result, BLOB, "ok");
+        }
+
+        #[tokio::test]
         async fn failed_stream_end_1() {
             let client = get_builder().next_stream_error_at(BLOB.len() - 1).finish();
 

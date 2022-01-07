@@ -450,11 +450,25 @@ async fn loop_retry_complete_stream<C, R>(
     // We move the start of the range forward to determine the range
     // we need to complete the original download defined by `original_range`
     let mut remaining_range = original_range;
+    let mut n_times_made_no_progress = 0;
     loop {
         if let Err((stream_io_error, bytes_read)) = consume_stream(stream, &next_elem_tx).await {
             reporter.stream_broke(&location, &stream_io_error, original_range, remaining_range);
-            // we start right after where the previous one ended
-            remaining_range.0 += bytes_read;
+            if bytes_read > 0 {
+                // we start right after where the previous one ended
+                remaining_range.0 += bytes_read;
+                n_times_made_no_progress = 0;
+            } else {
+                n_times_made_no_progress += 1;
+                if n_times_made_no_progress == 3 {
+                    let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
+                        "failed to make progress on the stream {} times \
+                         with the last error being \"{}\"",
+                        n_times_made_no_progress, stream_io_error
+                    ))));
+                    break;
+                }
+            }
             let new_spec = DownloadSpec::Range(remaining_range);
             match retry_download_get_stream(&client, location.clone(), new_spec, &config, &reporter)
                 .await

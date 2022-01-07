@@ -233,19 +233,17 @@ mod loop_retry_complete_stream {
     }
 
     #[tokio::test]
-    async fn danger_full_range_5_broken_streams_questionable_behaviour() {
-        // TODO: This behaviour is questionable since we could theoretically end
-        // up with an infinite loop if a stream error always occures at a specific offset
+    async fn consumption_aborts_after_3_times_no_progress() {
         let n_retries = 1;
-        let client_builder = get_builder().next_stream_errors_at([5, 5, 5, 5, 5]);
+        let client_builder = get_builder().next_stream_errors_at([5, 5, 5, 5, 5, 5]);
 
         let (num_retries, num_broken_streams, received) =
             download(client_builder, n_retries, FULL_RANGE).await;
 
         assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 5, "num_broken_streams");
-        assert_eq!(received, Ok(BLOB.to_vec()));
-        panic!("FIXME: Abort if no progress was made 3 times");
+        // First breaks after having read 5 bytes. Then 3 times no progress.
+        assert_eq!(num_broken_streams, 4, "num_broken_streams");
+        assert_eq!(received, Err(BLOB[0..5].to_vec()));
     }
 
     #[tokio::test]
