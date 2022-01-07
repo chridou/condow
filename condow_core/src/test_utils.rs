@@ -12,21 +12,12 @@ use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec},
+    condow_client::{CondowClient, DownloadSpec, NoLocation},
     errors::CondowError,
     reader::RandomAccessReader,
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
     DownloadRange, Downloads,
 };
-
-#[derive(Debug, Clone)]
-pub struct NoLocation;
-
-impl std::fmt::Display for NoLocation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
 
 #[derive(Clone)]
 pub struct TestCondowClient {

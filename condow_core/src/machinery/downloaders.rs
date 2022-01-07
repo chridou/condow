@@ -338,6 +338,7 @@ mod tests {
     use futures::StreamExt;
 
     use crate::{
+        condow_client::NoLocation,
         config::Config,
         machinery::{
             downloaders::{Downloader, DownloadersWatcher},

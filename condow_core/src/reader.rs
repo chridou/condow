@@ -294,7 +294,7 @@ mod random_access_reader {
     mod tests {
         use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-        use crate::test_utils::{NoLocation, TestDownloader};
+        use crate::{condow_client::NoLocation, test_utils::TestDownloader};
 
         use super::*;
 

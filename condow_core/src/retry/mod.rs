@@ -454,7 +454,7 @@ async fn loop_retry_complete_stream<C, R>(
         if let Err((stream_io_error, bytes_read)) = consume_stream(stream, &next_elem_tx).await {
             reporter.stream_broke(&location, &stream_io_error, original_range, remaining_range);
             // we start right after where the previous one ended
-            remaining_range.0 += bytes_read + 1;
+            remaining_range.0 += bytes_read;
             let new_spec = DownloadSpec::Range(remaining_range);
             match retry_download_get_stream(&client, location.clone(), new_spec, &config, &reporter)
                 .await

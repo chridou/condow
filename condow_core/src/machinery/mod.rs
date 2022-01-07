@@ -128,8 +128,8 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
 #[cfg(test)]
 mod tests {
     use crate::{
-        config::Config, machinery::download_chunks, reporter::NoReporting, streams::BytesHint,
-        test_utils::*, InclusiveRange,
+        condow_client::NoLocation, config::Config, machinery::download_chunks,
+        reporter::NoReporting, streams::BytesHint, test_utils::*, InclusiveRange,
     };
 
     #[tokio::test]

@@ -139,9 +139,237 @@ mod consume_stream {
     }
 }
 mod loop_retry_complete_stream {
+    //! Tests for the function `loop_retry_complete_stream`
+
+    use std::{
+        fmt, iter,
+        ops::RangeInclusive,
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc, Mutex,
+        },
+        time::Duration,
+    };
+
+    use bytes::Bytes;
+    use futures::{channel::mpsc, stream, FutureExt, StreamExt};
+
+    use crate::{
+        condow_client::{
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, DownloadSpec,
+            NoLocation,
+        },
+        config::RetryConfig,
+        errors::{CondowError, CondowErrorKind, IoError},
+        reporter::Reporter,
+        retry::{loop_retry_complete_stream, tests::RETRYABLE},
+        streams::{BytesHint, BytesStream},
+        InclusiveRange,
+    };
+
+    #[tokio::test]
+    async fn full_range_no_error() {
+        let n_retries = 0;
+        let client_builder = get_builder();
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 0, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_1_broken_stream() {
+        let n_retries = 1;
+        let client_builder = get_builder().next_stream_error_at(5);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_2_broken_streams() {
+        let n_retries = 1;
+        let client_builder = get_builder().next_stream_errors_at([5, 9]);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 2, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_3_broken_streams() {
+        let n_retries = 1;
+        let client_builder = get_builder().next_stream_errors_at([5, 9, 15]);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 3, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_4_broken_streams() {
+        let n_retries = 1;
+        let client_builder = get_builder().next_stream_errors_at([0, 5, 9, 15]);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 4, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn danger_full_range_5_broken_streams_questionable_behaviour() {
+        // TODO: This behaviour is questionable since we could theoretically end
+        // up with an infinite loop if a stream error always occures at a specific offset
+        let n_retries = 1;
+        let client_builder = get_builder().next_stream_errors_at([5, 5, 5, 5, 5]);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 5, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+        panic!("FIXME: Abort if no progress was made 3 times");
+    }
+
+    #[tokio::test]
+    async fn full_range_1_retryable_error_with_1_retry() {
+        let n_retries = 1;
+        let client_builder = get_builder()
+            .next_stream_error_at(5)
+            .failed_request(RETRYABLE);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 1, "num_retries");
+        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_1_retryable_error_with_0_retries() {
+        let n_retries = 0;
+        let client_builder = get_builder()
+            .next_stream_error_at(5)
+            .failed_request(RETRYABLE);
+
+        let (num_retries, num_broken_streams, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(received, Err(BLOB[0..5].to_vec()));
+    }
+
     #[test]
     fn todo() {
         todo!()
+    }
+
+    const BLOB: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+    const FULL_RANGE: RangeInclusive<u64> = 0u64..=(BLOB.len() - 1) as u64;
+
+    fn get_builder() -> FailingClientSimulatorBuilder {
+        FailingClientSimulatorBuilder::default()
+            .successful_request()
+            .blob_from_slice(BLOB)
+            .chunk_size(3)
+    }
+
+    /// returns (num_retries, num_broken_streams, collected_bytes)
+    async fn download<R: Into<InclusiveRange>>(
+        client_builder: FailingClientSimulatorBuilder,
+        n_retries: usize,
+        range: R,
+    ) -> (usize, usize, Result<Vec<u8>, Vec<u8>>) {
+        let client = client_builder.finish();
+
+        let config = RetryConfig::default()
+            .max_attempts(n_retries)
+            .max_delay_ms(0);
+
+        #[derive(Clone, Default)]
+        struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+
+        impl Reporter for Probe {
+            fn retry(
+                &self,
+                _location: &dyn std::fmt::Display,
+                _error: &CondowError,
+                _next_in: Duration,
+            ) {
+                // Count the number of retries
+                self.0.as_ref().fetch_add(1, Ordering::SeqCst);
+            }
+
+            fn stream_broke(
+                &self,
+                _location: &dyn fmt::Display,
+                _error: &IoError,
+                _orig_range: InclusiveRange,
+                _current_range: InclusiveRange,
+            ) {
+                // Count the number of broken streams
+                self.1.as_ref().fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        let probe = Probe::default();
+
+        let (next_elem_tx, mut rx) = mpsc::unbounded();
+
+        let original_range: InclusiveRange = range.into();
+        let (initial_stream, _) = client
+            .download(NoLocation, original_range.into())
+            .await
+            .unwrap();
+
+        tokio::spawn(loop_retry_complete_stream(
+            initial_stream,
+            NoLocation,
+            original_range,
+            client,
+            next_elem_tx,
+            config,
+            probe.clone(),
+        ));
+
+        let mut received = Vec::new();
+
+        while let Some(next) = rx.next().await {
+            if let Ok(bytes) = next {
+                received.extend_from_slice(&bytes);
+            } else {
+                return (
+                    probe.0.load(Ordering::SeqCst),
+                    probe.1.load(Ordering::SeqCst),
+                    Err(received),
+                );
+            }
+        }
+
+        (
+            probe.0.load(Ordering::SeqCst),
+            probe.1.load(Ordering::SeqCst),
+            Ok(received),
+        )
     }
 }
 
@@ -168,7 +396,7 @@ mod retry_download_get_stream {
 
     use futures::{stream, FutureExt};
 
-    use crate::{errors::CondowErrorKind, test_utils::NoLocation};
+    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
 
     use super::*;
 
@@ -413,7 +641,7 @@ mod retry_get_size {
 
     use futures::FutureExt;
 
-    use crate::{errors::CondowErrorKind, test_utils::NoLocation};
+    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
 
     use super::*;
 

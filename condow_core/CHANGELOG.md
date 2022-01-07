@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Added a new field for retry config to the Config struct
 - **BREAKING**: Config is now non-exhaustive
 - **BREAKING**: Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.
+- `NoLocation` type available without test config
 
 
 
