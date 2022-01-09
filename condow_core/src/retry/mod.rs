@@ -464,7 +464,7 @@ where
     // The returned stream is a channel so that we can continue easily after a stream broke
     let (next_elem_tx, output_stream_rx) = mpsc::unbounded();
 
-    // Now we try to complete the stream by requesting new streams wit the remaining
+    // Now we try to complete the stream by requesting new streams with the remaining
     // bytes if a stream broke
     tokio::spawn(loop_retry_complete_stream(
         stream,
