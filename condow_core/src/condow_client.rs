@@ -9,7 +9,7 @@ use crate::{
     InclusiveRange,
 };
 
-pub use in_memory::{InMemoryClient, StaticBlobClient};
+pub use in_memory::InMemoryClient;
 
 /// Specifies whether a whole BLOB or part of it should be downloaded
 #[derive(Debug, Copy, Clone)]
@@ -90,7 +90,7 @@ mod in_memory {
     use std::{marker::PhantomData, sync::Arc};
 
     use crate::{
-        config::Config,
+        config::{Config, Mebi},
         errors::CondowError,
         streams::{BytesHint, BytesStream},
         Condow,
@@ -109,26 +109,43 @@ mod in_memory {
     /// Use for testing.
     #[derive(Clone)]
     pub struct InMemoryClient<L = NoLocation> {
-        blob: Arc<Vec<u8>>,
+        blob: Blob,
         chunk_size: usize,
         _location: PhantomData<L>,
     }
 
     impl<L> InMemoryClient<L> {
+        /// Blob from owned bytes
         pub fn new(blob: Vec<u8>) -> Self {
-            Self::new_with_chunk_size(blob, 4 * 1024)
+            Self::new_shared(Arc::new(blob))
         }
 
-        pub fn new_with_chunk_size(blob: Vec<u8>, chunk_size: usize) -> Self {
-            if chunk_size == 0 {
-                panic!("'chunk_size' may not be 0");
-            }
-
+        /// Blob from shared bytes
+        pub fn new_shared(blob: Arc<Vec<u8>>) -> Self {
             Self {
-                blob: Arc::new(blob),
-                chunk_size,
+                blob: Blob::Owned(blob),
+                chunk_size: Mebi(4).value() as usize,
                 _location: PhantomData,
             }
+        }
+
+        /// Blob copied from slice
+        pub fn new_from_slice(blob: &[u8]) -> Self {
+            Self::new(blob.to_vec())
+        }
+
+        /// Blob with static byte slice
+        pub fn new_static(blob: &'static [u8]) -> Self {
+            Self {
+                blob: Blob::Static(blob),
+                chunk_size: Mebi(4).value() as usize,
+                _location: PhantomData,
+            }
+        }
+
+        pub fn chunk_size(mut self, chunk_size: usize) -> Self {
+            self.chunk_size = chunk_size;
+            self
         }
     }
 
@@ -159,66 +176,7 @@ mod in_memory {
             _location: Self::Location,
             spec: DownloadSpec,
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-            download(&self.blob, self.chunk_size, spec)
-        }
-    }
-
-    /// References a BLOB of data with a static lifetime.
-    ///
-    /// Use for testing especially with `include_bytes!`
-    #[derive(Clone)]
-    pub struct StaticBlobClient<L = NoLocation> {
-        blob: &'static [u8],
-        chunk_size: usize,
-        _location: PhantomData<L>,
-    }
-
-    impl<L> StaticBlobClient<L> {
-        pub fn new(blob: &'static [u8]) -> Self {
-            Self::new_with_chunk_size(blob, 4 * 1024)
-        }
-
-        pub fn new_with_chunk_size(blob: &'static [u8], chunk_size: usize) -> Self {
-            if chunk_size == 0 {
-                panic!("'chunk_size' may not be 0");
-            }
-
-            Self {
-                blob,
-                chunk_size,
-                _location: PhantomData,
-            }
-        }
-    }
-
-    impl<L> StaticBlobClient<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
-        pub fn condow(&self, config: Config) -> Result<Condow<Self>, AnyError> {
-            Condow::new(self.clone(), config)
-        }
-    }
-
-    impl<L> CondowClient for StaticBlobClient<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
-        type Location = L;
-
-        fn get_size(
-            &self,
-            _location: Self::Location,
-        ) -> BoxFuture<'static, Result<u64, CondowError>> {
-            futures::future::ready(Ok(self.blob.len() as u64)).boxed()
-        }
-
-        fn download(
-            &self,
-            _location: Self::Location,
-            spec: DownloadSpec,
-        ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-            download(self.blob, self.chunk_size, spec)
+            download(&self.blob.as_slice(), self.chunk_size, spec)
         }
     }
 
@@ -258,6 +216,28 @@ mod in_memory {
         let f = future::ready(Ok((stream, bytes_hint)));
 
         Box::pin(f)
+    }
+
+    #[derive(Clone)]
+    enum Blob {
+        Static(&'static [u8]),
+        Owned(Arc<Vec<u8>>),
+    }
+
+    impl Blob {
+        pub fn len(&self) -> usize {
+            match self {
+                Blob::Static(b) => b.len(),
+                Blob::Owned(b) => b.len(),
+            }
+        }
+
+        pub fn as_slice(&self) -> &[u8] {
+            match self {
+                Blob::Static(b) => b,
+                Blob::Owned(b) => &b,
+            }
+        }
     }
 
     #[cfg(test)]
@@ -375,8 +355,8 @@ pub mod failing_client_simulator {
     }
 
     impl FailingClientSimulatorBuilder {
-         /// Blob from owned bytes
-         pub fn blob(mut self, blob: Vec<u8>) -> Self {
+        /// Blob from owned bytes
+        pub fn blob(mut self, blob: Vec<u8>) -> Self {
             self.blob = Blob::Owned(Arc::new(blob));
             self
         }
@@ -387,13 +367,12 @@ pub mod failing_client_simulator {
             self
         }
 
-
         /// Blob copied from slice
         pub fn blob_from_slice(self, blob: &[u8]) -> Self {
             self.blob(blob.to_vec())
         }
 
-        /// Blob with static byte slice 
+        /// Blob with static byte slice
         pub fn blob_static(mut self, blob: &'static [u8]) -> Self {
             self.blob = Blob::Static(blob);
             self
@@ -544,7 +523,7 @@ pub mod failing_client_simulator {
     #[derive(Clone)]
     enum Blob {
         Static(&'static [u8]),
-        Owned(Arc<Vec<u8>>)
+        Owned(Arc<Vec<u8>>),
     }
 
     impl Blob {
@@ -560,7 +539,6 @@ pub mod failing_client_simulator {
                 Blob::Static(b) => b,
                 Blob::Owned(b) => &b,
             }
-             
         }
     }
 

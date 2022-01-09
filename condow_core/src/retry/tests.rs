@@ -155,8 +155,7 @@ mod loop_retry_complete_stream {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient,
-            NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, NoLocation,
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
