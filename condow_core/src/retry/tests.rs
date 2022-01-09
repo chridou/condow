@@ -142,31 +142,29 @@ mod loop_retry_complete_stream {
     //! Tests for the function `loop_retry_complete_stream`
 
     use std::{
-        fmt, iter,
+        fmt,
         ops::RangeInclusive,
         sync::{
             atomic::{AtomicUsize, Ordering},
-            Arc, Mutex,
+            Arc,
         },
         time::Duration,
     };
 
-    use bytes::Bytes;
-    use futures::{channel::mpsc, stream, FutureExt, StreamExt};
+    use futures::{channel::mpsc, StreamExt};
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, DownloadSpec,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient,
             NoLocation,
         },
         config::RetryConfig,
-        errors::{CondowError, CondowErrorKind, IoError},
+        errors::{CondowError, IoError},
         reporter::Reporter,
         retry::{
             loop_retry_complete_stream,
             tests::{NON_RETRYABLE, RETRYABLE},
         },
-        streams::{BytesHint, BytesStream},
         InclusiveRange,
     };
 
@@ -412,7 +410,7 @@ mod loop_retry_complete_stream {
 
     fn get_builder() -> FailingClientSimulatorBuilder {
         FailingClientSimulatorBuilder::default()
-            .blob_from_slice(BLOB)
+            .blob_static(BLOB)
             .chunk_size(3)
     }
 

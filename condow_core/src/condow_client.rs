@@ -367,31 +367,35 @@ pub mod failing_client_simulator {
     /// A builder for a [FailingClientSimulator]
     pub struct FailingClientSimulatorBuilder {
         /// The BLOB that would be streamed on a successful request without any errors
-        pub blob: Arc<Vec<u8>>,
+        blob: Blob,
         /// Offsets at which an IO-Error occurs while streaming bytes
-        pub stream_errors_at: Vec<usize>,
-        /// The responses
-        pub response_player: ResponsePlayer,
+        response_player: ResponsePlayer,
         /// Size of the streamed chunks
-        pub chunk_size: usize,
+        chunk_size: usize,
     }
 
     impl FailingClientSimulatorBuilder {
-        /// Start with shared bytes
+         /// Blob from owned bytes
+         pub fn blob(mut self, blob: Vec<u8>) -> Self {
+            self.blob = Blob::Owned(Arc::new(blob));
+            self
+        }
+
+        /// Blob from shared bytes
         pub fn blob_arc(mut self, blob: Arc<Vec<u8>>) -> Self {
-            self.blob = blob;
+            self.blob = Blob::Owned(blob);
             self
         }
 
-        /// Start with owned bytes
-        pub fn blob(mut self, blob: Vec<u8>) -> Self {
-            self.blob = Arc::new(blob);
-            self
+
+        /// Blob copied from slice
+        pub fn blob_from_slice(self, blob: &[u8]) -> Self {
+            self.blob(blob.to_vec())
         }
 
-        /// Start with an owned copy of the given bytes
-        pub fn blob_from_slice(mut self, blob: &[u8]) -> Self {
-            self.blob = Arc::new(blob.to_vec());
+        /// Blob with static byte slice 
+        pub fn blob_static(mut self, blob: &'static [u8]) -> Self {
+            self.blob = Blob::Static(blob);
             self
         }
 
@@ -428,8 +432,7 @@ pub mod failing_client_simulator {
     impl Default for FailingClientSimulatorBuilder {
         fn default() -> Self {
             Self {
-                blob: Default::default(),
-                stream_errors_at: Default::default(),
+                blob: Blob::Static(&[]),
                 response_player: Default::default(),
                 chunk_size: 3,
             }
@@ -450,7 +453,7 @@ pub mod failing_client_simulator {
     /// `get_size` will always succeed.
     #[derive(Clone)]
     pub struct FailingClientSimulator<L = NoLocation> {
-        blob: Arc<Vec<u8>>,
+        blob: Blob,
         responses: Arc<Mutex<vec::IntoIter<ResponseBehaviour>>>,
         chunk_size: usize,
         _phantom: PhantomData<L>,
@@ -461,9 +464,7 @@ pub mod failing_client_simulator {
         L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
     {
         /// Create a new instance
-        ///
-        /// There is a [FailingClientSimulatorBuilder] for easier configuration
-        pub fn new(blob: Arc<Vec<u8>>, response_player: ResponsePlayer, chunk_size: usize) -> Self {
+        fn new(blob: Blob, response_player: ResponsePlayer, chunk_size: usize) -> Self {
             Self {
                 blob,
                 responses: Arc::new(Mutex::new(response_player.into_iter())),
@@ -511,7 +512,7 @@ pub mod failing_client_simulator {
                 match next_response {
                     ResponseBehaviour::Success => {
                         let stream = BytesStreamWithError {
-                            blob: Arc::clone(&me.blob),
+                            blob: me.blob,
                             next: range_incl.start() as usize,
                             end_excl: range_incl.end_incl() as usize + 1,
                             error: None,
@@ -522,7 +523,7 @@ pub mod failing_client_simulator {
                     ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
                         let end_excl = error_offset.min(range_incl.end_incl() as usize + 1);
                         let stream = BytesStreamWithError {
-                            blob: Arc::clone(&me.blob),
+                            blob: me.blob,
                             next: range_incl.start() as usize,
                             end_excl,
                             error: Some(IoError(error_offset.to_string())),
@@ -537,6 +538,29 @@ pub mod failing_client_simulator {
                 }
             }
             .boxed()
+        }
+    }
+
+    #[derive(Clone)]
+    enum Blob {
+        Static(&'static [u8]),
+        Owned(Arc<Vec<u8>>)
+    }
+
+    impl Blob {
+        pub fn len(&self) -> usize {
+            match self {
+                Blob::Static(b) => b.len(),
+                Blob::Owned(b) => b.len(),
+            }
+        }
+
+        pub fn as_slice(&self) -> &[u8] {
+            match self {
+                Blob::Static(b) => b,
+                Blob::Owned(b) => &b,
+            }
+             
         }
     }
 
@@ -700,7 +724,7 @@ pub mod failing_client_simulator {
     }
 
     struct BytesStreamWithError {
-        blob: Arc<Vec<u8>>,
+        blob: Blob,
         next: usize,
         end_excl: usize,
         error: Option<IoError>,
@@ -1033,7 +1057,7 @@ pub mod failing_client_simulator {
 
         fn get_builder() -> FailingClientSimulatorBuilder {
             FailingClientSimulatorBuilder::default()
-                .blob_from_slice(BLOB)
+                .blob_static(BLOB)
                 .chunk_size(3)
         }
 
@@ -1203,7 +1227,7 @@ pub mod failing_client_simulator {
             err: bool,
         ) -> Result<Vec<u8>, Vec<u8>> {
             let mut stream = BytesStreamWithError {
-                blob: Arc::new(BLOB.to_vec()),
+                blob: Blob::Static(BLOB),
                 next: range.start,
                 end_excl: range.end,
                 error: if err {
