@@ -131,8 +131,8 @@ impl Default for RetryMaxStreamResumeAttempts {
 ///
 /// # Limitations
 ///
-/// ConDow can only try to continue on byte stream errors if the underlying [CondowClient]
-/// returns an upper bound of the number of bytes returned when a new stream is created.
+/// ConDow can only try to resume on byte stream errors if the underlying [CondowClient]
+/// returns an exact bound on the number of bytes returned when a new stream is created.
 #[derive(Debug, Default, Clone, PartialEq)]
 #[non_exhaustive]
 pub struct RetryConfig {
