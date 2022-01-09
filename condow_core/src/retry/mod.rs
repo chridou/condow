@@ -145,6 +145,9 @@ pub struct RetryConfig {
     /// The maximum delay for a retry.
     pub max_delay_ms: RetryDelayMaxMs,
     /// The maximum number of attempts to resume a byte stream from the same offset.
+    ///
+    /// Setting this to 0 will disable resumes. Enabling them has a small overhead
+    /// since the current progress on a byte stream must be tracked.
     pub max_stream_resume_attempts: RetryMaxStreamResumeAttempts,
     // TODO: Add possibility to jitter
 }
@@ -179,6 +182,9 @@ impl RetryConfig {
     }
 
     /// The maximum number of attempts to resume a byte stream from the same offset.
+    ///
+    /// Setting this to 0 will disable resumes. Enabling them has a small overhead
+    /// since the current progress on a byte stream must be tracked.    
     pub fn max_stream_resume_attempts<T: Into<RetryMaxStreamResumeAttempts>>(
         mut self,
         max_stream_resume_attempts: T,
