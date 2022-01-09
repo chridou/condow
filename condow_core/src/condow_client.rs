@@ -342,7 +342,7 @@ pub mod failing_client_simulator {
         InclusiveRange,
     };
 
-    use super::NoLocation;
+    pub use super::NoLocation;
 
     /// A builder for a [FailingClientSimulator]
     pub struct FailingClientSimulatorBuilder {
@@ -384,7 +384,7 @@ pub mod failing_client_simulator {
             self
         }
 
-        /// Add to the current response player
+        /// Add to the current response player with a [ResponsesBuilder]
         pub fn responses(self) -> ResponsesBuilder {
             ResponsesBuilder(self)
         }
@@ -403,6 +403,7 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Create the [FailingClientSimulator]
         pub fn finish(self) -> FailingClientSimulator {
             FailingClientSimulator::new(self.blob, self.response_player, self.chunk_size)
         }
@@ -420,16 +421,11 @@ pub mod failing_client_simulator {
 
     /// Simulates a failing client.
     ///
-    /// Has limited capabilities to simulate failure scenarios for testing.
-    ///
-    /// On a request level single errors or chains of errors can be defined.
-    /// After failing with a single error or a chain of errors there will always
-    /// be a successful request which means that streaming will be initiated.
-    ///
-    /// Once a stream is obtained the stream will fail at givvn offsets.
-    /// Streaming will fail as many times as there are offsets defined.
+    /// Has limited capabilities to simulate failure scenarios (mostly) for testing.
     ///
     /// `get_size` will always succeed.
+    ///
+    /// Clones will share the responses to be played back
     #[derive(Clone)]
     pub struct FailingClientSimulator<L = NoLocation> {
         blob: Blob,
@@ -542,19 +538,25 @@ pub mod failing_client_simulator {
         }
     }
 
+    /// A builder to add responses to a [FailingClientSimulator]
+    ///
+    /// This is simply a seperated an API for the [FailingClientSimulatorBuilder]
     pub struct ResponsesBuilder(FailingClientSimulatorBuilder);
 
     impl ResponsesBuilder {
+        /// Add a successful response with a successful stream
         pub fn success(mut self) -> Self {
             self.0.response_player = self.0.response_player.success();
             self
         }
 
+        /// Add multiple successful responses with successful streams
         pub fn successes(mut self, count: usize) -> Self {
             self.0.response_player = self.0.response_player.successes(count);
             self
         }
 
+        /// Add a successful response with the stream failing at the given offset
         pub fn success_with_stream_failure(mut self, failure_offset: usize) -> Self {
             self.0.response_player = self
                 .0
@@ -563,6 +565,7 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Add multiple successful responses with the streams each failing at a given offset
         pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
         where
             I: IntoIterator<Item = usize>,
@@ -574,13 +577,13 @@ pub mod failing_client_simulator {
             self
         }
 
-        /// Add a single failing request
+        /// Add a single failing response
         pub fn failure<E: Into<CondowError>>(mut self, error: E) -> Self {
             self.0.response_player = self.0.response_player.failure(error);
             self
         }
 
-        /// Add a chain of failing requests
+        /// Add a chain of failing responses
         pub fn failures<I, E>(mut self, errors: I) -> Self
         where
             I: IntoIterator<Item = E>,
@@ -590,20 +593,26 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Causes a panic once the request is made
         pub fn panic<M: Display + Send + 'static>(mut self, message: M) -> Self {
             self.0.response_player = self.0.response_player.panic(message);
             self
         }
 
+        /// Causes a panic once the request is made
+        ///
+        /// The panic will contain a message containing the request number
         pub fn never(mut self) -> Self {
             self.0.response_player = self.0.response_player.never();
             self
         }
 
+        /// Get back to the [FailingClientSimulatorBuilder]s API.
         pub fn done(self) -> FailingClientSimulatorBuilder {
             self.0
         }
 
+        /// Create the [FailingClientSimulator]
         pub fn finish(self) -> FailingClientSimulator {
             self.0.finish()
         }
@@ -615,6 +624,9 @@ pub mod failing_client_simulator {
         }
     }
 
+    /// Plays back responses for each request made
+    ///
+    /// Responses are delivered in the ordering the requests are made.
     #[derive(Default)]
     pub struct ResponsePlayer {
         responses: Vec<ResponseBehaviour>,
@@ -622,10 +634,12 @@ pub mod failing_client_simulator {
     }
 
     impl ResponsePlayer {
+        /// Add a successful response with a successful stream
         pub fn success(self) -> Self {
             self.successes(1)
         }
 
+        /// Add multiple successful responses with successful streams
         pub fn successes(mut self, count: usize) -> Self {
             (0..count).for_each(|_| {
                 self.counter += 1;
@@ -634,10 +648,12 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Add a successful response with the stream failing at the given offset
         pub fn success_with_stream_failure(self, failure_offset: usize) -> Self {
             self.successes_with_stream_failure([failure_offset])
         }
 
+        /// Add multiple successful responses with the streams each failing at a given offset
         pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
         where
             I: IntoIterator<Item = usize>,
@@ -650,12 +666,12 @@ pub mod failing_client_simulator {
             self
         }
 
-        /// Add a single failing request
+        /// Add a single failing response
         pub fn failure<E: Into<CondowError>>(self, error: E) -> Self {
             self.failures([error])
         }
 
-        /// Add a chain of failing requests
+        /// Add a chain of failing responses
         pub fn failures<I, E>(mut self, errors: I) -> Self
         where
             I: IntoIterator<Item = E>,
@@ -668,6 +684,7 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Causes a panic once the request is made
         pub fn panic<M: Display + Send + 'static>(mut self, message: M) -> Self {
             self.counter += 1;
             self.responses
@@ -675,6 +692,9 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Causes a panic once the request is made
+        ///
+        /// The panic will contain a message containing the request number
         pub fn never(mut self) -> Self {
             self.counter += 1;
             let message = format!("request {} should have never happened", self.counter);
@@ -694,10 +714,15 @@ pub mod failing_client_simulator {
         }
     }
 
+    /// The behaviour to respond to a request
     pub enum ResponseBehaviour {
+        /// Respond with a success and also a non failing stream
         Success,
+        /// Respond with a success but the stream will fail at the given offset
         SuccessWithFailungStream(usize),
+        /// The response will be an error
         Error(CondowError),
+        /// The request will cause a panic
         Panic(Box<dyn Display + Send + 'static>),
     }
 
