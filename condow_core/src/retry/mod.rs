@@ -99,6 +99,19 @@ impl From<Duration> for RetryDelayMaxMs {
     }
 }
 
+new_type! {
+    #[doc="The maximum number of attempts to resume a byte stream from the same offset."]
+    #[doc="Default is 3."]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub copy struct RetryMaxStreamResumeAttempts(usize, env="RETRY_MAX_STREAM_RESUME_ATTEMPTS");
+}
+
+impl Default for RetryMaxStreamResumeAttempts {
+    fn default() -> Self {
+        Self(3)
+    }
+}
+
 /// Configures retries with exponential backoff
 ///
 /// # Overview
@@ -107,6 +120,8 @@ impl From<Duration> for RetryDelayMaxMs {
 /// as well on the byte streams returned from a client. If an error occurs
 /// while streaming bytes ConDow will try to reconnect with retries and
 /// continue streaming where the previous stream failed.
+/// Streaming will always be aborted if no bytes were read 3 times in a row even
+/// though successful requests for a stream were made.
 ///
 /// Retries can also be attempted on size requests.
 ///
@@ -129,6 +144,8 @@ pub struct RetryConfig {
     pub delay_factor: RetryDelayFactor,
     /// The maximum delay for a retry.
     pub max_delay_ms: RetryDelayMaxMs,
+    /// The maximum number of attempts to resume a byte stream from the same offset.
+    pub max_stream_resume_attempts: RetryMaxStreamResumeAttempts,
     // TODO: Add possibility to jitter
 }
 
@@ -158,6 +175,21 @@ impl RetryConfig {
     /// Set the maximum duration in milliseconds for a single delay
     pub fn max_delay_ms<T: Into<RetryDelayMaxMs>>(mut self, max_delay_ms: T) -> Self {
         self.max_delay_ms = max_delay_ms.into();
+        self
+    }
+
+    /// The maximum number of attempts to resume a byte stream from the same offset.
+    pub fn max_stream_resume_attempts<T: Into<RetryMaxStreamResumeAttempts>>(
+        mut self,
+        max_stream_resume_attempts: T,
+    ) -> Self {
+        self.max_stream_resume_attempts = max_stream_resume_attempts.into();
+        self
+    }
+
+    /// Disable attempts to resume a byte stream from the same offset.
+    pub fn no_stream_resume_attempts(mut self) -> Self {
+        self.max_stream_resume_attempts = 0.into();
         self
     }
 
@@ -371,7 +403,7 @@ where
     // Retries if the first attempt failed
     let mut delays = config.iterator();
     while let Some(delay) = delays.next() {
-        reporter.retry(&location, &last_err, delay);
+        reporter.retry_attempt(&location, &last_err, delay);
 
         tokio::time::sleep(delay).await;
 
@@ -404,12 +436,22 @@ where
     let (stream, bytes_hint) =
         retry_download_get_stream(client, location.clone(), spec, config, reporter).await?;
 
-    // Only if we have an upper bound we can try to continue broken streams
+    // Only if we have an length we can try to continue broken streams
     // because we can only download whole BLOBs or ranges. We use a range for
     // the complete BLOB to be able to determine the remainder after a stream broke.
-    let original_range = if let Some(expected_bytes) = bytes_hint.upper_bound() {
-        InclusiveRange(spec.start(), spec.start() + expected_bytes)
+    // If the mximum number to resume is 0 we also do not want to resume on broken streams.
+    let blob_len_for_resume = bytes_hint.exact().and_then(|blob_len| {
+        if config.max_stream_resume_attempts.into_inner() > 0 {
+            Some(blob_len)
+        } else {
+            None
+        }
+    });
+
+    let original_range = if let Some(blob_len_for_resume) = blob_len_for_resume {
+        InclusiveRange(spec.start(), spec.start() + blob_len_for_resume)
     } else {
+        // We are done because we will not do any resume attempts
         return Ok((stream, bytes_hint));
     };
 
@@ -418,7 +460,7 @@ where
 
     // Now we try to complete the stream by requesting new streams wit the remaining
     // bytes if a stream broke
-    let _ = tokio::spawn(loop_retry_complete_stream(
+    tokio::spawn(loop_retry_complete_stream(
         stream,
         location.clone(),
         original_range,
@@ -452,24 +494,32 @@ async fn loop_retry_complete_stream<C, R>(
     let mut remaining_range = original_range;
     let mut n_times_made_no_progress = 0;
     loop {
-        if let Err((stream_io_error, bytes_read)) = consume_stream(stream, &next_elem_tx).await {
-            reporter.stream_broke(&location, &stream_io_error, original_range, remaining_range);
+        if let Err((stream_io_error, bytes_read)) = try_consume_stream(stream, &next_elem_tx).await
+        {
             if bytes_read > 0 {
                 // we start right after where the previous one ended
                 remaining_range.0 += bytes_read;
                 n_times_made_no_progress = 0;
             } else {
                 n_times_made_no_progress += 1;
-                if n_times_made_no_progress == 3 {
-                    let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                        "failed to make progress on the stream {} times \
-                         with the last error being \"{}\"",
-                        n_times_made_no_progress, stream_io_error
-                    ))));
-                    break;
-                }
             }
+
+            if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
+                let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
+                    "failed to make progress on the stream {} times \
+                    with the last error being \"{}\"",
+                    n_times_made_no_progress, stream_io_error
+                ))));
+                break;
+            }
+
             let new_spec = DownloadSpec::Range(remaining_range);
+            reporter.stream_resume_attempt(
+                &location,
+                &stream_io_error,
+                original_range,
+                remaining_range,
+            );
             match retry_download_get_stream(&client, location.clone(), new_spec, &config, &reporter)
                 .await
             {
@@ -497,7 +547,7 @@ async fn loop_retry_complete_stream<C, R>(
 ///
 /// If it finished [Ok] will be returned otherwise an [Err] containing
 /// the bytes read and the [IoError].
-async fn consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
+async fn try_consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
     stream: St,
     next_elem_tx: &mpsc::UnboundedSender<Result<Bytes, IoError>>,
 ) -> Result<(), (IoError, u64)> {
@@ -544,7 +594,7 @@ where
     // Retries if the first attempt failed
     let mut delays = config.iterator();
     while let Some(delay) = delays.next() {
-        reporter.retry(&location, &last_err, delay);
+        reporter.retry_attempt(&location, &last_err, delay);
 
         tokio::time::sleep(delay).await;
 

@@ -23,8 +23,8 @@ fn check_error_kinds() {
     assert!(!NON_RETRYABLE.is_retryable(), "NON_RETRYABLE is retryable!");
 }
 
-mod consume_stream {
-    //! Tests for the `consume_stream` function.
+mod try_consume_stream {
+    //! Tests for the `try_consume_stream` function.
 
     // Tests are performed using a function `check_consume`
     // which returns wheter the stream broke or not by signaling `Ok` or `Err`.
@@ -112,7 +112,7 @@ mod consume_stream {
 
         let (next_elem_tx, chunk_receiver) = mpsc::unbounded();
 
-        let consume_result = super::consume_stream(stream, &next_elem_tx).await;
+        let consume_result = super::try_consume_stream(stream, &next_elem_tx).await;
 
         drop(next_elem_tx); // drop the only sender to prevent from deadlock
 
@@ -162,7 +162,10 @@ mod loop_retry_complete_stream {
         config::RetryConfig,
         errors::{CondowError, CondowErrorKind, IoError},
         reporter::Reporter,
-        retry::{loop_retry_complete_stream, tests::RETRYABLE},
+        retry::{
+            loop_retry_complete_stream,
+            tests::{NON_RETRYABLE, RETRYABLE},
+        },
         streams::{BytesHint, BytesStream},
         InclusiveRange,
     };
@@ -172,113 +175,236 @@ mod loop_retry_complete_stream {
         let n_retries = 0;
         let client_builder = get_builder();
 
-        let (num_retries, num_broken_streams, received) =
+        let (num_retries, stream_resume_attempts, received) =
             download(client_builder, n_retries, FULL_RANGE).await;
 
         assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 0, "num_broken_streams");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
         assert_eq!(received, Ok(BLOB.to_vec()));
     }
 
     #[tokio::test]
-    async fn full_range_1_broken_stream() {
-        let n_retries = 1;
-        let client_builder = get_builder().next_stream_error_at(5);
+    async fn full_range_1_broken_stream_with_resume() {
+        let n_retries = 0;
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .success()
+            .never();
 
-        let (num_retries, num_broken_streams, received) =
+        let (num_retries, stream_resume_attempts, received) =
             download(client_builder, n_retries, FULL_RANGE).await;
 
         assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
         assert_eq!(received, Ok(BLOB.to_vec()));
     }
 
     #[tokio::test]
-    async fn full_range_2_broken_streams() {
-        let n_retries = 1;
-        let client_builder = get_builder().next_stream_errors_at([5, 9]);
+    async fn full_range_1_broken_stream_without_resume() {
+        let config = RetryConfig::default()
+            .max_attempts(0)
+            .no_stream_resume_attempts()
+            .max_delay_ms(0);
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .success()
+            .never();
 
-        let (num_retries, num_broken_streams, received) =
-            download(client_builder, n_retries, FULL_RANGE).await;
-
-        assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 2, "num_broken_streams");
-        assert_eq!(received, Ok(BLOB.to_vec()));
-    }
-
-    #[tokio::test]
-    async fn full_range_3_broken_streams() {
-        let n_retries = 1;
-        let client_builder = get_builder().next_stream_errors_at([5, 9, 15]);
-
-        let (num_retries, num_broken_streams, received) =
-            download(client_builder, n_retries, FULL_RANGE).await;
+        let (num_retries, stream_resume_attempts, received) =
+            download_with_config(client_builder, config, FULL_RANGE).await;
 
         assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 3, "num_broken_streams");
-        assert_eq!(received, Ok(BLOB.to_vec()));
-    }
-
-    #[tokio::test]
-    async fn full_range_4_broken_streams() {
-        let n_retries = 1;
-        let client_builder = get_builder().next_stream_errors_at([0, 5, 9, 15]);
-
-        let (num_retries, num_broken_streams, received) =
-            download(client_builder, n_retries, FULL_RANGE).await;
-
-        assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 4, "num_broken_streams");
-        assert_eq!(received, Ok(BLOB.to_vec()));
-    }
-
-    #[tokio::test]
-    async fn consumption_aborts_after_3_times_no_progress() {
-        let n_retries = 1;
-        let client_builder = get_builder().next_stream_errors_at([5, 5, 5, 5, 5, 5]);
-
-        let (num_retries, num_broken_streams, received) =
-            download(client_builder, n_retries, FULL_RANGE).await;
-
-        assert_eq!(num_retries, 0, "num_retries");
-        // First breaks after having read 5 bytes. Then 3 times no progress.
-        assert_eq!(num_broken_streams, 4, "num_broken_streams");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
         assert_eq!(received, Err(BLOB[0..5].to_vec()));
     }
 
     #[tokio::test]
-    async fn full_range_1_retryable_error_with_1_retry() {
+    async fn full_range_2_broken_streams_with_resume() {
         let n_retries = 1;
         let client_builder = get_builder()
-            .next_stream_error_at(5)
-            .failed_request(RETRYABLE);
+            .responses()
+            .successes_with_stream_failure([5, 9])
+            .success()
+            .never();
 
-        let (num_retries, num_broken_streams, received) =
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_3_broken_streams_with_resume() {
+        let n_retries = 1;
+        let client_builder = get_builder()
+            .responses()
+            .successes_with_stream_failure([5, 9, 15])
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 3, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_4_broken_streams_with_resume() {
+        let n_retries = 1;
+        let client_builder = get_builder()
+            .responses()
+            .successes_with_stream_failure([0, 5, 9, 15])
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 4, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn consumption_aborts_after_n_resume_attempts() {
+        for max_resumes in 0..4 {
+            let config = RetryConfig::default()
+                .max_attempts(0)
+                .max_stream_resume_attempts(max_resumes)
+                .max_delay_ms(0);
+            let client_builder = get_builder()
+                .responses()
+                .successes_with_stream_failure([5, 5, 5, 5, 5])
+                .never();
+
+            let (num_retries, stream_resume_attempts, received) =
+                download_with_config(client_builder, config, FULL_RANGE).await;
+
+            assert_eq!(num_retries, 0, "num_retries");
+            assert_eq!(
+                stream_resume_attempts, max_resumes,
+                "max stream_resume_attempts ({})",
+                max_resumes
+            );
+            assert_eq!(received, Err(BLOB[0..5].to_vec()), "result {}", max_resumes);
+        }
+    }
+
+    #[tokio::test]
+    async fn full_range_1_retryable_error_with_1_retry_with_resume() {
+        let n_retries = 1;
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
             download(client_builder, n_retries, FULL_RANGE).await;
 
         assert_eq!(num_retries, 1, "num_retries");
-        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
         assert_eq!(received, Ok(BLOB.to_vec()));
     }
 
     #[tokio::test]
-    async fn full_range_1_retryable_error_with_0_retries() {
+    async fn full_range_1_retryable_error_with_0_retries_with_resume() {
         let n_retries = 0;
         let client_builder = get_builder()
-            .next_stream_error_at(5)
-            .failed_request(RETRYABLE);
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .never();
 
-        let (num_retries, num_broken_streams, received) =
+        let (num_retries, stream_resume_attempts, received) =
             download(client_builder, n_retries, FULL_RANGE).await;
 
         assert_eq!(num_retries, 0, "num_retries");
-        assert_eq!(num_broken_streams, 1, "num_broken_streams");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
         assert_eq!(received, Err(BLOB[0..5].to_vec()));
     }
 
-    #[test]
-    fn todo() {
-        todo!()
+    #[tokio::test]
+    async fn full_range_fail_on_resume_with_non_retryable() {
+        let config = RetryConfig::default()
+            .max_attempts(3)
+            .max_stream_resume_attempts(1)
+            .max_delay_ms(0);
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(8)
+            .failure(NON_RETRYABLE)
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download_with_config(client_builder, config, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 1, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..8].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_fail_on_resume_with_chain_non_retryable() {
+        let config = RetryConfig::default()
+            .max_attempts(3)
+            .max_stream_resume_attempts(1)
+            .max_delay_ms(0);
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(8)
+            .failures([RETRYABLE, RETRYABLE, NON_RETRYABLE])
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download_with_config(client_builder, config, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 3, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..8].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn full_range_fail_on_resume_no_progress() {
+        let config = RetryConfig::default()
+            .max_attempts(99)
+            .max_stream_resume_attempts(2)
+            .max_delay_ms(0);
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(3)
+            // resume 1
+            .success_with_stream_failure(5) // makes 2 bytes progress
+            // resume 2
+            .success_with_stream_failure(5) // makes 0 bytes progress (first failed resume)
+            // resume 3
+            .success_with_stream_failure(8) // makes 3 bytes progress
+            // resume 4
+            .success_with_stream_failure(8) // makes 0 bytes progress (first failed resume)
+            // resume 5
+            .success_with_stream_failure(8) // makes 0 bytes progress (second failed resume, abort!)
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download_with_config(client_builder, config, FULL_RANGE).await;
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 5, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..8].to_vec()));
     }
 
     const BLOB: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -286,28 +412,38 @@ mod loop_retry_complete_stream {
 
     fn get_builder() -> FailingClientSimulatorBuilder {
         FailingClientSimulatorBuilder::default()
-            .successful_request()
             .blob_from_slice(BLOB)
             .chunk_size(3)
     }
 
-    /// returns (num_retries, num_broken_streams, collected_bytes)
-    async fn download<R: Into<InclusiveRange>>(
-        client_builder: FailingClientSimulatorBuilder,
+    /// returns (num_retries, stream_resume_attempts, collected_bytes)
+    async fn download<R: Into<InclusiveRange>, B: Into<FailingClientSimulatorBuilder>>(
+        client_builder: B,
         n_retries: usize,
         range: R,
     ) -> (usize, usize, Result<Vec<u8>, Vec<u8>>) {
-        let client = client_builder.finish();
-
         let config = RetryConfig::default()
             .max_attempts(n_retries)
             .max_delay_ms(0);
+
+        download_with_config(client_builder, config, range).await
+    }
+
+    async fn download_with_config<
+        R: Into<InclusiveRange>,
+        B: Into<FailingClientSimulatorBuilder>,
+    >(
+        client_builder: B,
+        config: RetryConfig,
+        range: R,
+    ) -> (usize, usize, Result<Vec<u8>, Vec<u8>>) {
+        let client = client_builder.into().finish();
 
         #[derive(Clone, Default)]
         struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
         impl Reporter for Probe {
-            fn retry(
+            fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
                 _error: &CondowError,
@@ -317,12 +453,12 @@ mod loop_retry_complete_stream {
                 self.0.as_ref().fetch_add(1, Ordering::SeqCst);
             }
 
-            fn stream_broke(
+            fn stream_resume_attempt(
                 &self,
                 _location: &dyn fmt::Display,
                 _error: &IoError,
                 _orig_range: InclusiveRange,
-                _current_range: InclusiveRange,
+                _remaining_range: InclusiveRange,
             ) {
                 // Count the number of broken streams
                 self.1.as_ref().fetch_add(1, Ordering::SeqCst);
@@ -592,7 +728,7 @@ mod retry_download_get_stream {
         struct Probe(Arc<AtomicUsize>);
 
         impl Reporter for Probe {
-            fn retry(
+            fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
                 _error: &CondowError,
@@ -836,7 +972,7 @@ mod retry_get_size {
         struct Probe(Arc<AtomicUsize>);
 
         impl Reporter for Probe {
-            fn retry(
+            fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
                 _error: &CondowError,

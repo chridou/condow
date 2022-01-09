@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `RetryConfig` to configure a optional retries
 - Changed the behaviour so that all requests can do retries. Also broken streams will be retried with the remaining data only queried.
-- `Reporter` trait is notified on retries and broken streams
+- `Reporter` trait is notified on retries and resumed streams
 - `CompositeReporter` propagates retry and broken stream to children
 - more documentation
 

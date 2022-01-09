@@ -350,7 +350,7 @@ mod in_memory {
 
 pub mod failing_client_simulator {
     //! Simulate failing requests and streams
-    use std::{marker::PhantomData, sync::Arc};
+    use std::{fmt::Display, marker::PhantomData, sync::Arc, vec};
 
     use bytes::Bytes;
     use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
@@ -370,8 +370,8 @@ pub mod failing_client_simulator {
         pub blob: Arc<Vec<u8>>,
         /// Offsets at which an IO-Error occurs while streaming bytes
         pub stream_errors_at: Vec<usize>,
-        /// Chains of errors on complete requests
-        pub request_error_chains: Vec<Vec<CondowError>>,
+        /// The responses
+        pub response_player: ResponsePlayer,
         /// Size of the streamed chunks
         pub chunk_size: usize,
     }
@@ -395,6 +395,17 @@ pub mod failing_client_simulator {
             self
         }
 
+        /// Set the given [ResponsePlayer]
+        pub fn response_player(mut self, player: ResponsePlayer) -> Self {
+            self.response_player = player;
+            self
+        }
+
+        /// Add to the current response player
+        pub fn responses(self) -> ResponsesBuilder {
+            ResponsesBuilder(self)
+        }
+
         /// Set the chunk size
         ///
         /// # Panics
@@ -409,58 +420,8 @@ pub mod failing_client_simulator {
             self
         }
 
-        /// Add a single successful request
-        ///
-        /// After an error or error chain this will add another successful request
-        /// since there is always a successful request after errors.
-        ///
-        /// Use also to add successful requests before the first errors occur.
-        pub fn successful_request(mut self) -> Self {
-            self.request_error_chains.push(vec![]);
-            self
-        }
-
-        /// Add a single failed request which will be followed by a successful request
-        pub fn failed_request<E: Into<CondowError>>(mut self, error: E) -> Self {
-            self.request_error_chains.push(vec![error.into()]);
-            self
-        }
-
-        /// Add a chain of failing requests which will be followed by a successful request
-        pub fn failed_request_chain<I, E>(mut self, errors: I) -> Self
-        where
-            I: IntoIterator<Item = E>,
-            E: Into<CondowError>,
-        {
-            let chain = errors.into_iter().map(|e| e.into()).collect();
-            self.request_error_chains.push(chain);
-            self
-        }
-
-        /// Add an offset at which streaming will fail
-        pub fn next_stream_error_at(mut self, at_byte_idx: usize) -> Self {
-            self.stream_errors_at.push(at_byte_idx);
-
-            self
-        }
-
-        /// Add multiple offsets at which streaming will fail
-        pub fn next_stream_errors_at<T>(self, at_byte_idxs: T) -> Self
-        where
-            T: IntoIterator<Item = usize>,
-        {
-            let iter = at_byte_idxs.into_iter();
-
-            iter.fold(self, |agg, next| agg.next_stream_error_at(next))
-        }
-
         pub fn finish(self) -> FailingClientSimulator {
-            FailingClientSimulator::new(
-                self.blob,
-                self.stream_errors_at,
-                self.request_error_chains,
-                self.chunk_size,
-            )
+            FailingClientSimulator::new(self.blob, self.response_player, self.chunk_size)
         }
     }
 
@@ -469,7 +430,7 @@ pub mod failing_client_simulator {
             Self {
                 blob: Default::default(),
                 stream_errors_at: Default::default(),
-                request_error_chains: Default::default(),
+                response_player: Default::default(),
                 chunk_size: 3,
             }
         }
@@ -490,8 +451,7 @@ pub mod failing_client_simulator {
     #[derive(Clone)]
     pub struct FailingClientSimulator<L = NoLocation> {
         blob: Arc<Vec<u8>>,
-        stream_error_at_idx_rev: Arc<Mutex<Vec<usize>>>,
-        request_error_chains_rev: Arc<Mutex<Vec<Vec<CondowError>>>>,
+        responses: Arc<Mutex<vec::IntoIter<ResponseBehaviour>>>,
         chunk_size: usize,
         _phantom: PhantomData<L>,
     }
@@ -503,22 +463,10 @@ pub mod failing_client_simulator {
         /// Create a new instance
         ///
         /// There is a [FailingClientSimulatorBuilder] for easier configuration
-        pub fn new(
-            blob: Arc<Vec<u8>>,
-            mut stream_errors_at: Vec<usize>,
-            mut request_error_chains: Vec<Vec<CondowError>>,
-            chunk_size: usize,
-        ) -> Self {
-            stream_errors_at.reverse();
-            request_error_chains.reverse();
-            request_error_chains
-                .iter_mut()
-                .for_each(|chain| chain.reverse());
-
+        pub fn new(blob: Arc<Vec<u8>>, response_player: ResponsePlayer, chunk_size: usize) -> Self {
             Self {
                 blob,
-                stream_error_at_idx_rev: Arc::new(Mutex::new(stream_errors_at)),
-                request_error_chains_rev: Arc::new(Mutex::new(request_error_chains)),
+                responses: Arc::new(Mutex::new(response_player.into_iter())),
                 chunk_size,
                 _phantom: PhantomData,
             }
@@ -545,48 +493,210 @@ pub mod failing_client_simulator {
         ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
         {
             let me = self.clone();
+            let range_incl = match spec {
+                DownloadSpec::Range(r) => r,
+                DownloadSpec::Complete => InclusiveRange(0, (me.blob.len() - 1) as u64),
+            };
+
+            let bytes_hint = BytesHint::new_exact(range_incl.len());
+
             async move {
-                let mut request_failures = me.request_error_chains_rev.lock().await;
-                if let Some(mut next_err_chain) = request_failures.pop() {
-                    if let Some(err) = next_err_chain.pop() {
-                        request_failures.push(next_err_chain);
-                        return Err(err);
+                let next_response = me
+                    .responses
+                    .lock()
+                    .await
+                    .next()
+                    .unwrap_or(ResponseBehaviour::Success);
+
+                match next_response {
+                    ResponseBehaviour::Success => {
+                        let stream = BytesStreamWithError {
+                            blob: Arc::clone(&me.blob),
+                            next: range_incl.start() as usize,
+                            end_excl: range_incl.end_incl() as usize + 1,
+                            error: None,
+                            chunk_size: me.chunk_size,
+                        };
+                        Ok((stream.boxed(), bytes_hint))
+                    }
+                    ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
+                        let end_excl = error_offset.min(range_incl.end_incl() as usize + 1);
+                        let stream = BytesStreamWithError {
+                            blob: Arc::clone(&me.blob),
+                            next: range_incl.start() as usize,
+                            end_excl,
+                            error: Some(IoError(error_offset.to_string())),
+                            chunk_size: me.chunk_size,
+                        };
+                        Ok((stream.boxed(), bytes_hint))
+                    }
+                    ResponseBehaviour::Error(error) => Err(error),
+                    ResponseBehaviour::Panic(msg) => {
+                        panic!("{}", msg)
                     }
                 }
-                drop(request_failures);
-
-                let range_incl = match spec {
-                    DownloadSpec::Range(r) => r,
-                    DownloadSpec::Complete => InclusiveRange(0, (me.blob.len() - 1) as u64),
-                };
-
-                let bytes_hint = BytesHint::new_exact(range_incl.len());
-
-                let stream = if let Some(stream_err_at_idx) =
-                    me.stream_error_at_idx_rev.lock().await.pop()
-                {
-                    let end_excl = stream_err_at_idx.min(range_incl.end_incl() as usize + 1);
-                    BytesStreamWithError {
-                        blob: Arc::clone(&me.blob),
-                        next: range_incl.start() as usize,
-                        end_excl,
-                        error: Some(IoError(stream_err_at_idx.to_string())),
-                        chunk_size: me.chunk_size,
-                    }
-                } else {
-                    BytesStreamWithError {
-                        blob: Arc::clone(&me.blob),
-                        next: range_incl.start() as usize,
-                        end_excl: range_incl.end_incl() as usize + 1,
-                        error: None,
-                        chunk_size: me.chunk_size,
-                    }
-                };
-
-                Ok((stream.boxed(), bytes_hint))
             }
             .boxed()
         }
+    }
+
+    pub struct ResponsesBuilder(FailingClientSimulatorBuilder);
+
+    impl ResponsesBuilder {
+        pub fn success(mut self) -> Self {
+            self.0.response_player = self.0.response_player.success();
+            self
+        }
+
+        pub fn successes(mut self, count: usize) -> Self {
+            self.0.response_player = self.0.response_player.successes(count);
+            self
+        }
+
+        pub fn success_with_stream_failure(mut self, failure_offset: usize) -> Self {
+            self.0.response_player = self
+                .0
+                .response_player
+                .success_with_stream_failure(failure_offset);
+            self
+        }
+
+        pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
+        where
+            I: IntoIterator<Item = usize>,
+        {
+            self.0.response_player = self
+                .0
+                .response_player
+                .successes_with_stream_failure(failure_offsets);
+            self
+        }
+
+        /// Add a single failing request
+        pub fn failure<E: Into<CondowError>>(mut self, error: E) -> Self {
+            self.0.response_player = self.0.response_player.failure(error);
+            self
+        }
+
+        /// Add a chain of failing requests
+        pub fn failures<I, E>(mut self, errors: I) -> Self
+        where
+            I: IntoIterator<Item = E>,
+            E: Into<CondowError>,
+        {
+            self.0.response_player = self.0.response_player.failures(errors);
+            self
+        }
+
+        pub fn panic<M: Display + Send + 'static>(mut self, message: M) -> Self {
+            self.0.response_player = self.0.response_player.panic(message);
+            self
+        }
+
+        pub fn never(mut self) -> Self {
+            self.0.response_player = self.0.response_player.never();
+            self
+        }
+
+        pub fn done(self) -> FailingClientSimulatorBuilder {
+            self.0
+        }
+
+        pub fn finish(self) -> FailingClientSimulator {
+            self.0.finish()
+        }
+    }
+
+    impl From<ResponsesBuilder> for FailingClientSimulatorBuilder {
+        fn from(rb: ResponsesBuilder) -> Self {
+            rb.0
+        }
+    }
+
+    #[derive(Default)]
+    pub struct ResponsePlayer {
+        responses: Vec<ResponseBehaviour>,
+        counter: usize,
+    }
+
+    impl ResponsePlayer {
+        pub fn success(self) -> Self {
+            self.successes(1)
+        }
+
+        pub fn successes(mut self, count: usize) -> Self {
+            (0..count).for_each(|_| {
+                self.counter += 1;
+                self.responses.push(ResponseBehaviour::Success)
+            });
+            self
+        }
+
+        pub fn success_with_stream_failure(self, failure_offset: usize) -> Self {
+            self.successes_with_stream_failure([failure_offset])
+        }
+
+        pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
+        where
+            I: IntoIterator<Item = usize>,
+        {
+            failure_offsets.into_iter().for_each(|offset| {
+                self.counter += 1;
+                self.responses
+                    .push(ResponseBehaviour::SuccessWithFailungStream(offset))
+            });
+            self
+        }
+
+        /// Add a single failing request
+        pub fn failure<E: Into<CondowError>>(self, error: E) -> Self {
+            self.failures([error])
+        }
+
+        /// Add a chain of failing requests
+        pub fn failures<I, E>(mut self, errors: I) -> Self
+        where
+            I: IntoIterator<Item = E>,
+            E: Into<CondowError>,
+        {
+            errors.into_iter().for_each(|e| {
+                self.counter += 1;
+                self.responses.push(ResponseBehaviour::Error(e.into()))
+            });
+            self
+        }
+
+        pub fn panic<M: Display + Send + 'static>(mut self, message: M) -> Self {
+            self.counter += 1;
+            self.responses
+                .push(ResponseBehaviour::Panic(Box::new(message)));
+            self
+        }
+
+        pub fn never(mut self) -> Self {
+            self.counter += 1;
+            let message = format!("request {} should have never happened", self.counter);
+            self.responses
+                .push(ResponseBehaviour::Panic(Box::new(message)));
+            self
+        }
+    }
+
+    impl IntoIterator for ResponsePlayer {
+        type Item = ResponseBehaviour;
+
+        type IntoIter = vec::IntoIter<ResponseBehaviour>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.responses.into_iter()
+        }
+    }
+
+    pub enum ResponseBehaviour {
+        Success,
+        SuccessWithFailungStream(usize),
+        Error(CondowError),
+        Panic(Box<dyn Display + Send + 'static>),
     }
 
     struct BytesStreamWithError {
@@ -641,9 +751,29 @@ pub mod failing_client_simulator {
         }
 
         #[tokio::test]
+        #[should_panic(expected = "request 1 should have never happened")]
+        async fn never_1() {
+            let client = get_builder().responses().never().finish();
+            let range = DownloadSpec::Complete;
+
+            let _result = download(&client, range).await;
+        }
+
+        #[tokio::test]
+        #[should_panic(expected = "request 2 should have never happened")]
+        async fn never_2() {
+            let client = get_builder().responses().success().never().finish();
+            let range = DownloadSpec::Complete;
+
+            let _result = download(&client, range).await.unwrap().unwrap();
+            let _result = download(&client, range).await;
+        }
+
+        #[tokio::test]
         async fn failed_request_1() {
             let client = get_builder()
-                .failed_request(CondowErrorKind::NotFound)
+                .responses()
+                .failure(CondowErrorKind::NotFound)
                 .finish();
 
             let range = DownloadSpec::Complete;
@@ -656,16 +786,15 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn failed_request_2() {
             let client = get_builder()
-                .failed_request(CondowErrorKind::InvalidRange)
-                .failed_request(CondowErrorKind::NotFound)
+                .responses()
+                .failure(CondowErrorKind::InvalidRange)
+                .failure(CondowErrorKind::NotFound)
                 .finish();
 
             let range = DownloadSpec::Complete;
 
             let result = download(&client, range).await.unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::InvalidRange);
-            let result = download(&client, range).await.unwrap().unwrap();
-            assert_eq!(result, BLOB);
             let result = download(&client, range).await.unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::NotFound);
         }
@@ -673,8 +802,10 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn failed_request_3() {
             let client = get_builder()
-                .failed_request_chain([CondowErrorKind::InvalidRange, CondowErrorKind::Io])
-                .failed_request(CondowErrorKind::NotFound)
+                .responses()
+                .failures([CondowErrorKind::InvalidRange, CondowErrorKind::Io])
+                .success()
+                .failure(CondowErrorKind::NotFound)
                 .finish();
 
             let range = DownloadSpec::Complete;
@@ -692,11 +823,16 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn fail_and_success() {
             let client = get_builder()
-                .successful_request()
-                .failed_request(CondowErrorKind::NotFound)
-                .failed_request_chain([CondowErrorKind::InvalidRange, CondowErrorKind::Io])
-                .successful_request()
-                .failed_request(CondowErrorKind::Remote)
+                .responses()
+                .success()
+                .failure(CondowErrorKind::NotFound)
+                .success()
+                .failures([CondowErrorKind::InvalidRange, CondowErrorKind::Io])
+                .success()
+                .success()
+                .failure(CondowErrorKind::Remote)
+                .success()
+                .never()
                 .finish();
 
             let range = DownloadSpec::Complete;
@@ -723,7 +859,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_start_1() {
-            let client = get_builder().next_stream_error_at(0).finish();
+            let client = get_builder()
+                .responses()
+                .success_with_stream_failure(0)
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -735,7 +874,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_start_2() {
-            let client = get_builder().next_stream_errors_at([0, 0]).finish();
+            let client = get_builder()
+                .responses()
+                .successes_with_stream_failure([0, 0])
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -749,7 +891,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_1() {
-            let client = get_builder().next_stream_errors_at([5]).finish();
+            let client = get_builder()
+                .responses()
+                .successes_with_stream_failure([5])
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -761,7 +906,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_2() {
-            let client = get_builder().next_stream_errors_at([5, 10]).finish();
+            let client = get_builder()
+                .responses()
+                .successes_with_stream_failure([5, 10])
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -775,7 +923,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_3() {
-            let client = get_builder().next_stream_errors_at([5, 5, 5]).finish();
+            let client = get_builder()
+                .responses()
+                .successes_with_stream_failure([5, 5, 5])
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -791,7 +942,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_end_1() {
-            let client = get_builder().next_stream_error_at(BLOB.len() - 1).finish();
+            let client = get_builder()
+                .responses()
+                .success_with_stream_failure(BLOB.len() - 1)
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -803,7 +957,10 @@ pub mod failing_client_simulator {
 
         #[tokio::test]
         async fn failed_stream_end_2() {
-            let client = get_builder().next_stream_error_at(BLOB.len()).finish();
+            let client = get_builder()
+                .responses()
+                .success_with_stream_failure(BLOB.len())
+                .finish();
 
             let range = DownloadSpec::Complete;
 
@@ -816,9 +973,13 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn combined_errors() {
             let client = get_builder()
-                .next_stream_errors_at([0, 5, 9])
-                .failed_request(CondowErrorKind::Io)
-                .failed_request_chain([CondowErrorKind::Remote, CondowErrorKind::InvalidRange])
+                .responses()
+                .failure(CondowErrorKind::Io)
+                .success_with_stream_failure(0)
+                .failures([CondowErrorKind::Remote, CondowErrorKind::InvalidRange])
+                .successes_with_stream_failure([5, 9])
+                .success()
+                .never()
                 .finish();
             let range = DownloadSpec::Complete;
 
@@ -834,7 +995,6 @@ pub mod failing_client_simulator {
             assert_eq!(result, &BLOB[0..5], "5");
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[0..9], "6");
-
             let result = download(&client, range).await.unwrap().unwrap();
             assert_eq!(result, BLOB, "ok");
         }
@@ -842,9 +1002,13 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn combined_errors_with_range() {
             let client = get_builder()
-                .next_stream_errors_at([0, 5, 9])
-                .failed_request(CondowErrorKind::Io)
-                .failed_request_chain([CondowErrorKind::Remote, CondowErrorKind::InvalidRange])
+                .responses()
+                .failure(CondowErrorKind::Io)
+                .success_with_stream_failure(0)
+                .failures([CondowErrorKind::Remote, CondowErrorKind::InvalidRange])
+                .successes_with_stream_failure([5, 9])
+                .success()
+                .never()
                 .finish();
 
             let result = download(&client, DownloadSpec::Complete).await.unwrap_err();

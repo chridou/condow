@@ -43,18 +43,17 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// **This always is the last method called on a [Reporter] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
     /// An error occurd but a retry will be attempted
-    fn retry(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
-    /// A stream for fetching a part broke and a reconnect might happen
+    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+    /// A stream for fetching a part broke and an attempt to resume will be made
     ///
     /// `orig_range` is the original range for the download attempted.
-    /// `curret_range` is the range which was queried from the client which might change
-    /// since on a stream error a new range with the missing bytes will be created.
-    fn stream_broke(
+    /// `remaining_range` the tail of the part which is still missing.
+    fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
         error: &IoError,
         orig_range: InclusiveRange,
-        current_range: InclusiveRange,
+        remaining_range: InclusiveRange,
     ) {
     }
     /// All queues are full so no new request could be scheduled
@@ -113,22 +112,22 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
         self.1.download_failed(time);
     }
 
-    fn retry(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
-        self.0.retry(location, error, next_in);
-        self.1.retry(location, error, next_in);
+    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
+        self.0.retry_attempt(location, error, next_in);
+        self.1.retry_attempt(location, error, next_in);
     }
 
-    fn stream_broke(
+    fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
         error: &IoError,
         orig_range: InclusiveRange,
-        current_range: InclusiveRange,
+        remaining_range: InclusiveRange,
     ) {
         self.0
-            .stream_broke(location, error, orig_range, current_range);
+            .stream_resume_attempt(location, error, orig_range, remaining_range);
         self.1
-            .stream_broke(location, error, orig_range, current_range);
+            .stream_resume_attempt(location, error, orig_range, remaining_range);
     }
 
     fn queue_full(&self) {
