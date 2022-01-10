@@ -24,7 +24,7 @@
 //! ConDow supports retries. These can be done on the downloads themselves
 //! as well on the byte streams returned from a client. If an error occurs
 //! while streaming bytes ConDow will try to reconnect with retries and
-//! continue streaming where the previous stream failed.
+//! resume streaming where the previous stream failed.
 //!
 //! Retries can also be attempted on size requests.
 //!
