@@ -507,6 +507,8 @@ async fn loop_retry_complete_stream<C, R>(
                 remaining_range.0 += bytes_read;
                 n_times_made_no_progress = 0;
             } else {
+                // Hint: Failing on the first byte also counts as
+                // not having made any progress.
                 n_times_made_no_progress += 1;
             }
 

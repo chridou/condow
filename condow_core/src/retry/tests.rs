@@ -67,6 +67,177 @@ mod retry_download {
     }
 
     #[tokio::test]
+    async fn success_first_byte() {
+        let n_retries = 0;
+        let n_resumes = 0;
+
+        let client_builder = get_builder().responses().success().never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 0..=0)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB[0..=0].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn err_first_byte() {
+        let n_retries = 0;
+        let n_resumes = 0;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(0) // bang!
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 0..=0)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
+        assert_eq!(received, Err(Vec::new()));
+    }
+
+    #[tokio::test]
+    async fn success_last_one_byte() {
+        let n_retries = 0;
+        let n_resumes = 0;
+
+        let client_builder = get_builder().responses().success().never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 15..=15)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB[15..=15].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn err_first_byte_1_resume() {
+        let n_retries = 0;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(0) // Read 0 bytes counts as a resume
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 0..=0)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts"); // 0 is correct
+        assert_eq!(received, Err(Vec::new()));
+    }
+
+    #[tokio::test]
+    async fn ok_first_byte_2_resumes() {
+        let n_retries = 0;
+        let n_resumes = 2;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(0) // Read 0 bytes counts as a resume
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 0..=0)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB[0..=0].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn err_last_one_byte() {
+        let n_retries = 0;
+        let n_resumes = 0;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(15) // bang!
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, 15..=15)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
+        assert_eq!(received, Err(Vec::new()));
+    }
+
+    #[tokio::test]
+    async fn err_last_one_byte_1_resume() {
+        let n_retries = 0;
+        let n_resumes = 1;
+
+        const LAST_BYTE_IDX: u64 = BLOB.len() as u64 - 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(LAST_BYTE_IDX as usize) // Read 0 bytes counts as a resume
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            LAST_BYTE_IDX..=LAST_BYTE_IDX,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts"); // 0 is correct
+        assert_eq!(received, Err(Vec::new()));
+    }
+
+    #[tokio::test]
+    async fn ok_last_one_byte_2_resumes() {
+        let n_retries = 0;
+        let n_resumes = 2;
+
+        const LAST_BYTE_IDX: u64 = BLOB.len() as u64 - 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(LAST_BYTE_IDX as usize) // Read 0 bytes counts as a resume
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            LAST_BYTE_IDX..=LAST_BYTE_IDX,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
+        assert_eq!(
+            received,
+            Ok(BLOB[LAST_BYTE_IDX as usize..=LAST_BYTE_IDX as usize].to_vec())
+        );
+    }
+
+    #[tokio::test]
     async fn range_no_error() {
         let n_retries = 0;
         let n_resumes = 0;
@@ -157,7 +328,7 @@ mod retry_download {
     }
 
     #[tokio::test]
-    async fn complete_success_broken_stream_1_resumes_0_retries() {
+    async fn complete_success_1_broken_stream_1_resumes_0_retries() {
         let n_retries = 0;
         let n_resumes = 1;
 
@@ -177,9 +348,240 @@ mod retry_download {
         assert_eq!(received, Ok(BLOB.to_vec()));
     }
 
-    #[test]
-    fn todo() {
-        todo!()
+    #[tokio::test]
+    async fn complete_success_2_broken_stream_1_resumes_0_retries() {
+        let n_retries = 0;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .success_with_stream_failure(7)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_success_2_broken_stream_1_resumes_1_retryable_1_retries() {
+        let n_retries = 1;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(7)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 1, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_success_2_broken_stream_1_resumes() {
+        let n_retries = 0;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .success_with_stream_failure(7)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_error_2_broken_stream_1_resumes() {
+        let n_retries = 0;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(7) // orig
+            .success_with_stream_failure(7) // resume 1
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..7].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_success_2_broken_stream_2_resumes() {
+        let n_retries = 0;
+        let n_resumes = 2;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(7) // orig
+            .success_with_stream_failure(7) // resume 1
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_success_2_broken_stream_2_resumes_1_retryable() {
+        let n_retries = 1;
+        let n_resumes = 2;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(7) // orig
+            .success_with_stream_failure(7) // resume 1
+            .failure(RETRYABLE)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 1, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_error_2_broken_stream_1_resumes_1_non_retryable_1_retries() {
+        let n_retries = 1;
+        let n_resumes = 1;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(5)
+            .failure(NON_RETRYABLE)
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 0, "num_retries");
+        assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..5].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_success_retryable_flips() {
+        let n_retries = 1;
+        let n_resumes = 3;
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(7)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(7)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(7)
+            .failure(RETRYABLE)
+            .success()
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 3, "num_retries");
+        assert_eq!(stream_resume_attempts, 3, "stream_resume_attempts");
+        assert_eq!(received, Ok(BLOB.to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complete_error_retryable_flips() {
+        let n_retries = 1;
+        let n_resumes = 2; // not enough
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(7)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(7)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(7) // bang!
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 2, "num_retries");
+        assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..7].to_vec()));
+    }
+
+    #[tokio::test]
+    async fn complex() {
+        let n_retries = 3;
+        let n_resumes = 2; // not enough
+
+        let client_builder = get_builder()
+            .responses()
+            .success_with_stream_failure(3)
+            .failures([RETRYABLE, RETRYABLE, RETRYABLE])
+            .success_with_stream_failure(5)
+            .success_with_stream_failure(5)
+            .failure(RETRYABLE)
+            .success_with_stream_failure(6)
+            .success_with_stream_failure(6)
+            .success_with_stream_failure(7)
+            .failures([RETRYABLE, RETRYABLE, RETRYABLE])
+            .success_with_stream_failure(7)
+            .success_with_stream_failure(8)
+            .failures([RETRYABLE, RETRYABLE, NON_RETRYABLE])
+            .never();
+
+        let (num_retries, stream_resume_attempts, received) =
+            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
+                .await
+                .unwrap();
+
+        assert_eq!(num_retries, 9, "num_retries");
+        assert_eq!(stream_resume_attempts, 8, "stream_resume_attempts");
+        assert_eq!(received, Err(BLOB[0..8].to_vec()));
     }
 
     const BLOB: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
