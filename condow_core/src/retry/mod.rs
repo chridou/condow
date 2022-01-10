@@ -455,7 +455,7 @@ where
     });
 
     let original_range = if let Some(blob_len_for_resume) = blob_len_for_resume {
-        InclusiveRange(spec.start(), spec.start() + blob_len_for_resume)
+        InclusiveRange(spec.start(), spec.start() + blob_len_for_resume - 1) // original range has at least len 1
     } else {
         // We are done because we will not do any resume attempts
         return Ok((stream, bytes_hint));

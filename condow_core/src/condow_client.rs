@@ -474,6 +474,19 @@ pub mod failing_client_simulator {
                 DownloadSpec::Complete => InclusiveRange(0, (me.blob.len() - 1) as u64),
             };
 
+            if range_incl.end_incl() >= me.blob.len() as u64 {
+                let msg = format!(
+                    "end of range incl. {} is behind slice end (len = {})",
+                    range_incl,
+                    me.blob.len()
+                );
+                return futures::future::ready(Err(CondowError::new(
+                    &msg,
+                    crate::errors::CondowErrorKind::InvalidRange,
+                )))
+                .boxed();
+            }
+
             let bytes_hint = BytesHint::new_exact(range_incl.len());
 
             async move {
@@ -741,7 +754,7 @@ pub mod failing_client_simulator {
             mut self: std::pin::Pin<&mut Self>,
             _cx: &mut std::task::Context<'_>,
         ) -> task::Poll<Option<Self::Item>> {
-            if self.next == self.end_excl {
+            if self.next == self.end_excl || self.chunk_size == 0 {
                 if let Some(err) = self.error.take() {
                     return task::Poll::Ready(Some(Err(err)));
                 } else {
@@ -749,9 +762,9 @@ pub mod failing_client_simulator {
                 }
             }
 
-            let chunk_size = self.chunk_size.min(self.end_excl - self.next);
+            let effective_chunk_size = self.chunk_size.min(self.end_excl - self.next);
             let start = self.next;
-            self.next += chunk_size;
+            self.next += effective_chunk_size;
             let slice: &[u8] = &self.blob.as_slice()[start..self.next];
             let bytes = Bytes::copy_from_slice(slice);
 
@@ -1051,7 +1064,10 @@ pub mod failing_client_simulator {
             assert_eq!(result.kind(), CondowErrorKind::InvalidRange, "4");
             let result = download(&client, 2..=9).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[2..5], "5");
-            let result = download(&client, 5..=50).await.unwrap().unwrap_err();
+            let result = download(&client, 5..=BLOB.len() as u64 - 1)
+                .await
+                .unwrap()
+                .unwrap_err();
             assert_eq!(result, &BLOB[5..9], "6");
 
             let result = download(&client, 3..=8).await.unwrap().unwrap();
@@ -1105,6 +1121,12 @@ pub mod failing_client_simulator {
                     )
                 }
             }
+        }
+
+        #[tokio::test]
+        async fn range_ok() {
+            let result = consume(5..BLOB.len(), 3, false).await.unwrap();
+            assert_eq!(result, &BLOB[5..BLOB.len()])
         }
 
         #[tokio::test]
