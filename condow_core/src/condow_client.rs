@@ -74,9 +74,6 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
 }
 
 /// A location usable for testing.
-///
-/// The clients in this module do not support downloading BLOBs from
-/// different locations.
 #[derive(Debug, Clone, Copy)]
 pub struct NoLocation;
 
