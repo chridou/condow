@@ -2,6 +2,7 @@ mod blob {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use crate::condow_client::NoLocation;
     use crate::reporter::SimpleReporterFactory;
     use crate::{config::Config, test_utils::*, Condow};
 
@@ -83,6 +84,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
+        use crate::condow_client::NoLocation;
         use crate::machinery;
         use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
@@ -183,6 +185,7 @@ mod range {
     mod closed {
         use std::sync::Arc;
 
+        use crate::condow_client::NoLocation;
         use crate::machinery;
         use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
@@ -283,6 +286,7 @@ mod range {
             mod start_at_0 {
                 use std::sync::Arc;
 
+                use crate::condow_client::NoLocation;
                 use crate::machinery;
                 use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
@@ -386,6 +390,7 @@ mod range {
             mod start_after_0 {
                 use std::sync::Arc;
 
+                use crate::condow_client::NoLocation;
                 use crate::machinery;
                 use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};

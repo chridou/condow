@@ -371,27 +371,34 @@ macro_rules! new_type {
 
 macro_rules! env_ctors {
     (no_fill) => {
-        #[doc="Initializes all fields from environment variables prefixed with \"CONDOW_\""]
-        pub fn from_env() -> Result<Self, anyhow::Error> {
-            let mut me = Self::default();
-            me.fill_from_env_prefixed_internal($crate::helpers::CONDOW_PREFIX)?;
-            Ok(me)
+        #[doc="Tries to initialize all fields from environment variables prefixed with \"CONDOW_\""]
+        #[doc="If no env variables were found `None` is returned."]
+        #[doc="Otherwise thise found will be set and the rest will be initialized with their defaults."]
+        pub fn from_env() -> Result<Option<Self>, anyhow::Error> {
+            Self::from_env_prefixed($crate::helpers::CONDOW_PREFIX)
         }
 
-        #[doc="Initializes all fields from environment variables prefixed with \"[prefix]_\"\n\n"]
+        #[doc="Tries to initialize all fields from environment variables without any prefix"]
+        #[doc="If no env variables were found `None` is returned."]
+        #[doc="Otherwise thise found will be set and the rest will be initialized with their defaults."]
+        pub fn from_env_type_names() -> Result<Option<Self>, anyhow::Error> {
+            Self::from_env_prefixed("")
+        }
+
+        #[doc="Tries to initialize all fields from environment variables prefixed with \"[prefix]_\"\n\n"]
         #[doc="The underscore is omitted if `prefix` is empty"]
-        pub fn from_env_prefixed<T: AsRef<str>>(prefix: T) -> Result<Self, anyhow::Error> {
+        #[doc="If no env variables were found `None` is returned."]
+        #[doc="Otherwise thise found will be set and the rest will be initialized with their defaults."]
+        pub fn from_env_prefixed<T: AsRef<str>>(prefix: T) -> Result<Option<Self>, anyhow::Error> {
             let mut me = Self::default();
-            me.fill_from_env_prefixed_internal(prefix)?;
-            Ok(me)
+            let any_value_found = me.fill_from_env_prefixed_internal(prefix)?;
+            if any_value_found {
+                Ok(Some(me))
+            } else {
+                Ok(None)
+            }
         }
 
-        #[doc="Initializes all fields from environment variables without any prefix"]
-        pub fn from_env_type_names() -> Result<Self, anyhow::Error> {
-            let mut me = Self::default();
-            me.fill_from_env_prefixed_internal("")?;
-            Ok(me)
-        }
     };
 
     () => {

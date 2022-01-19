@@ -58,6 +58,10 @@ impl CondowError {
     pub fn kind(&self) -> CondowErrorKind {
         self.kind
     }
+
+    pub fn is_retryable(&self) -> bool {
+        self.kind.is_retryable()
+    }
 }
 
 impl fmt::Display for CondowError {
@@ -69,12 +73,54 @@ impl fmt::Display for CondowError {
 /// Specifies the kind of a [CondowError]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CondowErrorKind {
+    /// An inavlid range was encountered.
+    ///
+    /// Errors with this kind are **not retryable**
     InvalidRange,
+    /// The BLOB could not be found at a given location.
+    ///
+    /// Errors with this kind are **not retryable**
     NotFound,
+    /// Access was denied to the BLOB at a given location.
+    ///
+    /// Could be "unauthenticated", "unauthorized" or anything else
+    /// regarding credentials
+    ///
+    /// Errors with this kind are **not retryable**
     AccessDenied,
+    /// The resource providing the BLOB encountered an error
+    ///
+    /// Errors with this kind are **retryable**
     Remote,
+    /// Something went wrong with our data "on the wire"
+    ///
+    /// Errors with this kind are **retryable**
     Io,
+    /// Anything else which does not fall under one of the other categories
+    ///
+    /// Errors with this kind are **not retryable**
     Other,
+}
+
+impl CondowErrorKind {
+    pub fn is_retryable(self) -> bool {
+        use CondowErrorKind::*;
+
+        match self {
+            InvalidRange => false,
+            NotFound => false,
+            AccessDenied => false,
+            Remote => true,
+            Io => true,
+            Other => false,
+        }
+    }
+}
+
+impl From<CondowErrorKind> for CondowError {
+    fn from(error_kind: CondowErrorKind) -> Self {
+        CondowError::new(format!("An error occured: {:?}", error_kind), error_kind)
+    }
 }
 
 impl From<std::io::Error> for CondowError {

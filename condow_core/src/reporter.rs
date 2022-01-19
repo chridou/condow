@@ -5,7 +5,10 @@
 //! implementation.
 use std::{fmt, time::Duration};
 
-use crate::InclusiveRange;
+use crate::{
+    errors::{CondowError, IoError},
+    InclusiveRange,
+};
 
 pub use simple_reporter::*;
 
@@ -39,6 +42,20 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     ///
     /// **This always is the last method called on a [Reporter] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
+    /// An error occurd but a retry will be attempted
+    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+    /// A stream for fetching a part broke and an attempt to resume will be made
+    ///
+    /// `orig_range` is the original range for the download attempted.
+    /// `remaining_range` the tail of the part which is still missing.
+    fn stream_resume_attempt(
+        &self,
+        location: &dyn fmt::Display,
+        error: &IoError,
+        orig_range: InclusiveRange,
+        remaining_range: InclusiveRange,
+    ) {
+    }
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
     /// A part was completed
@@ -93,6 +110,24 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
     fn download_failed(&self, time: Option<Duration>) {
         self.0.download_failed(time);
         self.1.download_failed(time);
+    }
+
+    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
+        self.0.retry_attempt(location, error, next_in);
+        self.1.retry_attempt(location, error, next_in);
+    }
+
+    fn stream_resume_attempt(
+        &self,
+        location: &dyn fmt::Display,
+        error: &IoError,
+        orig_range: InclusiveRange,
+        remaining_range: InclusiveRange,
+    ) {
+        self.0
+            .stream_resume_attempt(location, error, orig_range, remaining_range);
+        self.1
+            .stream_resume_attempt(location, error, orig_range, remaining_range);
     }
 
     fn queue_full(&self) {

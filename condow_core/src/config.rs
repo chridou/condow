@@ -11,8 +11,11 @@ use std::{
 
 use anyhow::{bail, Error as AnyError};
 
+pub use crate::retry::*;
+
 /// A configuration for [Condow](super::Condow).
-#[derive(Debug, Clone, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Config {
     /// Size in bytes of the parts the download is split into
     ///
@@ -42,6 +45,12 @@ pub struct Config {
     ///
     /// The default is `true`.
     pub always_get_size: AlwaysGetSize,
+    /// Configures retries if there.
+    ///
+    /// Otherwise there won't be any retry attempts made
+    ///
+    /// Retries are turned on by default
+    pub retries: Option<RetryConfig>,
 }
 
 impl Config {
@@ -81,6 +90,40 @@ impl Config {
         self
     }
 
+    /// Enables retries with the given configuration
+    pub fn retries(mut self, config: RetryConfig) -> Self {
+        self.retries = Some(config);
+        self
+    }
+
+    /// Configure retries
+    ///
+    /// Uses the currently configured [RetryConfig] or the default of [RetryConfig]
+    /// if none is configured
+    pub fn configure_retries<F>(mut self, mut f: F) -> Self
+    where
+        F: FnMut(RetryConfig) -> RetryConfig,
+    {
+        let retries = self.retries.take().unwrap_or_default();
+        self.retries(f(retries))
+    }
+
+    /// Configure retries starting with the default
+    pub fn configure_retries_from_default<F>(self, mut f: F) -> Self
+    where
+        F: FnMut(RetryConfig) -> RetryConfig,
+    {
+        self.retries(f(RetryConfig::default()))
+    }
+
+    /// Disables retries
+    ///
+    /// Retries are enabled by default.
+    pub fn disable_retries(mut self) -> Self {
+        self.retries = None;
+        self
+    }
+
     /// Validate this [Config]
     pub fn validated(self) -> Result<Self, AnyError> {
         if self.max_concurrency.0 == 0 {
@@ -91,32 +134,61 @@ impl Config {
             bail!("'part_size_bytes' must not be 0");
         }
 
+        if let Some(retries) = &self.retries {
+            retries.validate()?;
+        }
+
         Ok(self)
     }
 
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
         &mut self,
         prefix: T,
-    ) -> Result<(), AnyError> {
+    ) -> Result<bool, AnyError> {
+        let mut found_any = false;
+
         if let Some(part_size_bytes) = PartSizeBytes::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.part_size_bytes = part_size_bytes;
         }
         if let Some(max_concurrency) = MaxConcurrency::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.max_concurrency = max_concurrency;
         }
         if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.buffer_size = buffer_size;
         }
         if let Some(buffers_full_delay_ms) =
             BuffersFullDelayMs::try_from_env_prefixed(prefix.as_ref())?
         {
+            found_any = true;
             self.buffers_full_delay_ms = buffers_full_delay_ms;
         }
         if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
             self.always_get_size = always_get_size;
         }
 
-        Ok(())
+        if let Some(retries) = RetryConfig::from_env_prefixed(prefix.as_ref())? {
+            found_any = true;
+            self.retries = Some(retries);
+        }
+
+        Ok(found_any)
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            part_size_bytes: Default::default(),
+            max_concurrency: Default::default(),
+            buffer_size: Default::default(),
+            buffers_full_delay_ms: Default::default(),
+            always_get_size: Default::default(),
+            retries: Some(Default::default()),
+        }
     }
 }
 

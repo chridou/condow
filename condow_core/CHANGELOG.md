@@ -4,7 +4,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.11.0] -  - 2021/12/11
+## [0.12.0] - unreleased
+
+### ADDED
+
+- `RetryConfig` to configure a optional retries
+- Changed the behaviour so that all requests can do retries. Also broken streams will be retried with the remaining data only queried.
+- `Reporter` trait is notified on retries and resumed streams
+- `CompositeReporter` propagates retry and broken stream to children
+- more documentation
+
+### CHANGED
+
+- **BREAKING**: Config does no longer implement the `Eq` trait (there is now an f64 in there)
+- **BREAKING**: Added a new field for retry config to the Config struct
+- **BREAKING**: Config is now non-exhaustive
+- **BREAKING**: Configuration from env on `Config` can now return `None` if no values were found in the env. This was necessary to manage nested configurations.
+- **BREAKING**:  `InMemoryClient` can also handle static BLOBs. Ctor funs changed.
+- `NoLocation` type available without test config
+
+### Removed
+
+- `StaticBlobCient`: `InMemoryClient` can also handle static BLOBs
+
+
+
+## [0.11.0] -  2021/12/11
 
 ### Fixed
 

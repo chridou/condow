@@ -1,8 +1,8 @@
-//! # Condow
+//! # ConDow
 //!
 //! ## Overview
 //!
-//! Condow is a CONcurrent DOWnloader which downloads BLOBs
+//! ConDow is a CONcurrent DOWnloader which downloads BLOBs
 //! by splitting the download into parts and downloading them
 //! concurrently.
 //!
@@ -13,16 +13,33 @@
 //! This crate provides the core functionality only. To actually
 //! use it, use one of the implementation crates:
 //!
-//! * `condow_rusoto`: AWS S3
+//! * [condow_rusoto] for downloading AWS S3 via the rusoto
+//! * [condow_fs] for using async file access via [tokio]
 //!
 //! All that is required to add more "services" is to implement
 //! the [CondowClient] trait.
+//!
+//! ## Retries
+//!
+//! ConDow supports retries. These can be done on the downloads themselves
+//! as well on the byte streams returned from a client. If an error occurs
+//! while streaming bytes ConDow will try to reconnect with retries and
+//! resume streaming where the previous stream failed.
+//!
+//! Retries can also be attempted on size requests.
+//!
+//! Be aware that some clients might also do retries themselves based on
+//! their underlying implementation. In this case you should disable retries for either the
+//! client or ConDow itself.
+//!
+//! [condow_rusoto]:https://docs.rs/condow_rusoto
+//! [condow_fs]:https://docs.rs/condow_fs
 use std::sync::Arc;
 
 use futures::{future::BoxFuture, FutureExt, Stream};
 
 use condow_client::CondowClient;
-use config::{AlwaysGetSize, Config};
+use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
 use reader::RandomAccessReader;
 use reporter::{NoReporting, Reporter, ReporterFactory};
@@ -39,6 +56,7 @@ pub mod errors;
 mod machinery;
 pub mod reader;
 pub mod reporter;
+mod retry;
 pub mod streams;
 
 pub use download_range::*;
@@ -116,7 +134,7 @@ where
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
 pub struct Condow<C> {
-    client: C,
+    client: ClientRetryWrapper<C>,
     config: Config,
 }
 
@@ -135,7 +153,10 @@ impl<C: CondowClient> Condow<C> {
     /// Fails if the [Config] is not valid.
     pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
         let config = config.validated()?;
-        Ok(Self { client, config })
+        Ok(Self {
+            client: ClientRetryWrapper::new(client, config.retries.clone()),
+            config,
+        })
     }
 
     /// Create a reusable [Downloader] which has a richer API.
@@ -199,7 +220,7 @@ impl<C: CondowClient> Condow<C> {
 
     /// Get the size of a file at the given location
     pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
-        self.client.get_size(location).await
+        self.client.get_size(location, &NoReporting).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
