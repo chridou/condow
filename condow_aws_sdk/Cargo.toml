@@ -1,13 +1,14 @@
 [package]
-name = "condow_fs"
-version = "0.13.0"
+name = "condow_aws_sdk"
+version = "0.1.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
-description = "Concurrent downloads for local files"
-documentation = "https://docs.rs/condow_fs"
+description = "Concurrent downloads from AWS S3 via the AWS SDK by AWS Labs"
+documentation = "https://docs.rs/condow_aws_sdk"
 homepage = "https://github.com/chridou/condow"
 repository = "https://github.com/chridou/condow"
+keywords = [ "AWS", "S3", "download", "parallel", "aws-sdk"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,6 +18,10 @@ condow_core = { version = "0.12", path = "../condow_core"}
 
 futures = "0.3"
 anyhow = "1.0"
-tokio = { version = "1", features = ["fs", "io-util"] }
-bytes = "1"
+aws-sdk-s3 = "0.6"
+aws-smithy-client = "0.36"
+aws-smithy-http = "0.36"
+aws-smithy-http-tower = "0.36"
+tower = "0.4"
+
 

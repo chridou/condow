@@ -162,7 +162,7 @@ impl fmt::Display for S3Location {
     }
 }
 
-/// Just a wrapper around a clietn
+/// Just a wrapper around a client
 /// to implement the trait [CondowClient](condow_client::CondowClient) on.
 #[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
