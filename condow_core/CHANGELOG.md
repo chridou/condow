@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### FIXED
 
 - return a stream error when panicking while downloading
-- return a strem error when panicking while retrying
+- return a stream error when panicking while retrying
 
 ### ADDED
 
@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - documentation
 - `FailingClientSimulator` can panic while streaming
 - Display for `BytesHint`
+- Logging via the `Reporter` trait
 
 ### CHANGED
 
