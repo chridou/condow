@@ -16,11 +16,11 @@ use crate::{
 /// A downloading API for instrumented downloading.
 ///
 /// This has multiple methods to download data. The main difference to
-/// [Condow] itself is, that per request reporting/instrumentation is be enabled.
+/// [Condow] itself is, that per request reporting/instrumentation can be enabled.
 /// All methods will always create a [Reporter] and collect data. Even those
 /// where an explicit [Reporter] is passed.
 ///
-/// The [ReporterFactory] should act as a "global" metrics collector collecting
+/// The [ReporterFactory] can act as a "global" metrics collector collecting
 /// data from the per request generated [Reporter]s.
 pub struct DownloadSession<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
@@ -81,15 +81,10 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        machinery::download(
-            &self.condow,
-            location,
-            range,
-            self.get_size_mode,
-            self.reporter_factory.make(),
-        )
-        .await
-        .map(|o| o.stream)
+        let reporter = self.reporter_factory.make(&location);
+        machinery::download(&self.condow, location, range, self.get_size_mode, reporter)
+            .await
+            .map(|o| o.stream)
     }
 
     /// Download the BLOB/range and report events.
@@ -103,7 +98,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<StreamWithReport<PartStream<ChunkStream>, RF::ReporterType>, CondowError> {
-        let reporter = self.reporter_factory.make();
+        let reporter = self.reporter_factory.make(&location);
         self.download_wrep(location, range, reporter).await
     }
 
@@ -120,7 +115,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<StreamWithReport<ChunkStream, RF::ReporterType>, CondowError> {
-        let reporter = self.reporter_factory.make();
+        let reporter = self.reporter_factory.make(&location);
         self.download_chunks_wrep(location, range, reporter).await
     }
 
@@ -138,7 +133,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         range: R,
         reporter: RRP,
     ) -> Result<StreamWithReport<PartStream<ChunkStream>, RRP>, CondowError> {
-        let composite = CompositeReporter(self.reporter_factory.make(), reporter);
+        let composite = CompositeReporter(self.reporter_factory.make(&location), reporter);
         self.download_chunks_wrep(location, range, composite)
             .await?
             .part_stream()
@@ -167,7 +162,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         range: R,
         reporter: RPP,
     ) -> Result<StreamWithReport<ChunkStream, RPP>, CondowError> {
-        let composite = CompositeReporter(self.reporter_factory.make(), reporter);
+        let composite = CompositeReporter(self.reporter_factory.make(&location), reporter);
         machinery::download(&self.condow, location, range, self.get_size_mode, composite)
             .await
             .map(|sr| {

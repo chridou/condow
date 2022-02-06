@@ -53,6 +53,7 @@ mod download_range;
 mod download_session;
 mod downloader;
 pub mod errors;
+pub mod logging;
 mod machinery;
 pub mod reader;
 pub mod reporter;

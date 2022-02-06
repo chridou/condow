@@ -18,7 +18,7 @@ pub trait ReporterFactory: Send + Sync + 'static {
     /// Create a new [Reporter].
     ///
     /// This might share state with the factory or not
-    fn make(&self) -> Self::ReporterType;
+    fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType;
 }
 
 /// A Reporter is an interface to track occurences of different kinds
@@ -30,20 +30,23 @@ pub trait ReporterFactory: Send + Sync + 'static {
 /// downloading too much with measuring.
 #[allow(unused_variables)]
 pub trait Reporter: Clone + Send + Sync + 'static {
-    fn location(&self, location: &dyn fmt::Display) {}
     fn effective_range(&self, range: InclusiveRange) {}
     /// The actual IO started
     fn download_started(&self) {}
+
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Reporter] if the download was successful.**
     fn download_completed(&self, time: Duration) {}
+
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Reporter] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
+
     /// An error occurd but a retry will be attempted
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+
     /// A stream for fetching a part broke and an attempt to resume will be made
     ///
     /// `orig_range` is the original range for the download attempted.
@@ -56,13 +59,21 @@ pub trait Reporter: Clone + Send + Sync + 'static {
         remaining_range: InclusiveRange,
     ) {
     }
+
+    /// A panic was detected
+    ///
+    /// Unless from a bug in this library it is most likely caused by the [crate::condow_client::CondowClient] implementation
+    fn panic_detected(&self, msg: &str) {}
+
     /// All queues are full so no new request could be scheduled
     fn queue_full(&self) {}
+
     /// A part was completed
     fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
     }
     /// Download of a part has started
     fn part_started(&self, part_index: u64, range: InclusiveRange) {}
+
     /// Download of a part was completed
     fn part_completed(&self, part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {}
 }
@@ -75,7 +86,7 @@ impl Reporter for NoReporting {}
 impl ReporterFactory for NoReporting {
     type ReporterType = Self;
 
-    fn make(&self) -> Self {
+    fn make(&self, _location: &dyn fmt::Display) -> Self {
         NoReporting
     }
 }
@@ -87,11 +98,6 @@ impl ReporterFactory for NoReporting {
 pub struct CompositeReporter<RA: Reporter, RB: Reporter>(pub RA, pub RB);
 
 impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
-    fn location(&self, location: &dyn fmt::Display) {
-        self.0.location(location);
-        self.1.location(location);
-    }
-
     fn effective_range(&self, range: InclusiveRange) {
         self.0.effective_range(range);
         self.1.effective_range(range);
@@ -130,6 +136,11 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
             .stream_resume_attempt(location, error, orig_range, remaining_range);
     }
 
+    fn panic_detected(&self, msg: &str) {
+        self.0.panic_detected(msg);
+        self.1.panic_detected(msg);
+    }
+
     fn queue_full(&self) {
         self.0.queue_full();
         self.1.queue_full();
@@ -164,9 +175,9 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
         self.1.part_completed(part_index, n_chunks, n_bytes, time);
     }
 }
-
 mod simple_reporter {
     //! Simple reporting with (mostly) counters
+
     use std::{
         fmt,
         sync::{
@@ -176,7 +187,10 @@ mod simple_reporter {
         time::{Duration, Instant},
     };
 
-    use crate::InclusiveRange;
+    use crate::{
+        errors::{CondowError, IoError},
+        InclusiveRange,
+    };
 
     use super::{Reporter, ReporterFactory};
 
@@ -203,8 +217,8 @@ mod simple_reporter {
     impl ReporterFactory for SimpleReporterFactory {
         type ReporterType = SimpleReporter;
 
-        fn make(&self) -> Self::ReporterType {
-            SimpleReporter::new(self.skip_first_chunk_timings)
+        fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType {
+            SimpleReporter::new(location, self.skip_first_chunk_timings)
         }
     }
 
@@ -222,9 +236,9 @@ mod simple_reporter {
     }
 
     impl SimpleReporter {
-        pub fn new(skip_first_chunk_timings: bool) -> Self {
+        pub fn new(location: &dyn fmt::Display, skip_first_chunk_timings: bool) -> Self {
             SimpleReporter {
-                inner: Arc::new(Inner::new()),
+                inner: Arc::new(Inner::new(location.to_string())),
                 skip_first_chunk_timings,
             }
         }
@@ -257,10 +271,13 @@ mod simple_reporter {
             };
 
             SimpleReport {
-                location: inner.location.lock().unwrap().clone(),
+                location: self.inner.location.as_ref().clone(),
                 effective_range: *inner.effective_range.lock().unwrap(),
                 is_finished: self.is_download_finished(),
                 is_failed: inner.is_failed.load(Ordering::SeqCst),
+                n_retries: inner.n_retries.load(Ordering::SeqCst),
+                n_stream_resume_attempts: inner.n_resume_stream_attempts.load(Ordering::SeqCst),
+                n_panics: inner.n_panics_detected.load(Ordering::SeqCst),
                 download_time,
                 bytes_per_second: bytes_per_second_f64 as u64,
                 megabytes_per_second: bytes_per_second_f64 / 1_000_000.0,
@@ -287,7 +304,7 @@ mod simple_reporter {
 
     impl Default for SimpleReporter {
         fn default() -> Self {
-            Self::new(false)
+            Self::new(&"unknown".to_string(), false)
         }
     }
 
@@ -298,6 +315,9 @@ mod simple_reporter {
         /// `true` if the download was finished
         pub is_finished: bool,
         pub is_failed: bool,
+        pub n_retries: usize,
+        pub n_stream_resume_attempts: usize,
+        pub n_panics: usize,
         /// If the download is not yet finished, this is the time
         /// elapsed since the start of the download.
         pub download_time: Duration,
@@ -323,14 +343,6 @@ mod simple_reporter {
     }
 
     impl Reporter for SimpleReporter {
-        fn location(&self, location: &dyn fmt::Display) {
-            self.inner
-                .location
-                .lock()
-                .unwrap()
-                .push_str(&location.to_string());
-        }
-
         fn effective_range(&self, effective_range: InclusiveRange) {
             *self.inner.effective_range.lock().unwrap() = Some(effective_range);
         }
@@ -346,6 +358,31 @@ mod simple_reporter {
         fn download_failed(&self, _time: Option<Duration>) {
             *self.inner.download_finished_at.lock().unwrap() = Some(Instant::now());
             self.inner.is_failed.store(true, Ordering::SeqCst);
+        }
+
+        fn retry_attempt(
+            &self,
+            _location: &dyn fmt::Display,
+            _error: &CondowError,
+            _next_in: Duration,
+        ) {
+            self.inner.n_retries.fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn stream_resume_attempt(
+            &self,
+            _location: &dyn fmt::Display,
+            _error: &IoError,
+            _orig_range: InclusiveRange,
+            _remaining_range: InclusiveRange,
+        ) {
+            self.inner
+                .n_resume_stream_attempts
+                .fetch_add(1, Ordering::SeqCst);
+        }
+
+        fn panic_detected(&self, _msg: &str) {
+            self.inner.n_panics_detected.fetch_add(1, Ordering::SeqCst);
         }
 
         fn queue_full(&self) {
@@ -389,7 +426,7 @@ mod simple_reporter {
     }
 
     struct Inner {
-        location: Mutex<String>,
+        location: Arc<String>,
         effective_range: Mutex<Option<InclusiveRange>>,
         download_started_at: Mutex<Instant>,
         download_finished_at: Mutex<Option<Instant>>,
@@ -398,6 +435,9 @@ mod simple_reporter {
         n_bytes_received: AtomicU64,
         n_chunks_received: AtomicU64,
         n_parts_received: AtomicU64,
+        n_retries: AtomicUsize,
+        n_resume_stream_attempts: AtomicUsize,
+        n_panics_detected: AtomicUsize,
         min_chunk_bytes: AtomicUsize,
         max_chunk_bytes: AtomicUsize,
         min_chunk_us: AtomicU64,
@@ -411,13 +451,16 @@ mod simple_reporter {
     }
 
     impl Inner {
-        fn new() -> Self {
+        fn new(location: String) -> Self {
             Inner {
-                location: Mutex::new(String::new()),
+                location: Arc::new(location),
                 effective_range: Mutex::new(None),
                 download_started_at: Mutex::new(Instant::now()),
                 download_finished_at: Mutex::new(None),
                 is_failed: AtomicBool::new(false),
+                n_retries: AtomicUsize::new(0),
+                n_resume_stream_attempts: AtomicUsize::new(0),
+                n_panics_detected: AtomicUsize::new(0),
                 n_bytes_received: AtomicU64::new(0),
                 n_chunks_received: AtomicU64::new(0),
                 n_parts_received: AtomicU64::new(0),

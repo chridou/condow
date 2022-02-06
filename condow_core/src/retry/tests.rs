@@ -117,7 +117,7 @@ mod retry_download {
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
-        assert_eq!(received, Ok(BLOB[15..=15].to_vec()));
+        assert_eq!(received, Ok(BLOB[15..=15].to_vec()), "BLOB: {:?}", BLOB);
     }
 
     #[tokio::test]
@@ -168,7 +168,7 @@ mod retry_download {
 
         let client_builder = get_builder()
             .responses()
-            .success_with_stream_failure(15) // bang!
+            .success_with_stream_failure(0) // bang!
             .never();
 
         let (num_retries, stream_resume_attempts, received) =
@@ -178,7 +178,7 @@ mod retry_download {
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
-        assert_eq!(received, Err(Vec::new()));
+        assert_eq!(received, Err(Vec::new()), "BLOB: {:?}", BLOB);
     }
 
     #[tokio::test]
@@ -190,7 +190,7 @@ mod retry_download {
 
         let client_builder = get_builder()
             .responses()
-            .success_with_stream_failure(LAST_BYTE_IDX as usize) // Read 0 bytes counts as a resume
+            .success_with_stream_failure(0) // Read 0 bytes counts as a resume
             .never();
 
         let (num_retries, stream_resume_attempts, received) = download(
@@ -216,7 +216,7 @@ mod retry_download {
 
         let client_builder = get_builder()
             .responses()
-            .success_with_stream_failure(LAST_BYTE_IDX as usize) // Read 0 bytes counts as a resume
+            .success_with_stream_failure(0) // Read 0 bytes counts as a resume
             .success()
             .never();
 
@@ -423,7 +423,7 @@ mod retry_download {
         let client_builder = get_builder()
             .responses()
             .success_with_stream_failure(7) // orig
-            .success_with_stream_failure(7) // resume 1
+            .success_with_stream_failure(0) // no progress, resume 1
             .success()
             .never();
 
@@ -445,7 +445,7 @@ mod retry_download {
         let client_builder = get_builder()
             .responses()
             .success_with_stream_failure(7) // orig
-            .success_with_stream_failure(7) // resume 1
+            .success_with_stream_failure(0) // no progress, resume 1
             .success()
             .never();
 
@@ -467,7 +467,7 @@ mod retry_download {
         let client_builder = get_builder()
             .responses()
             .success_with_stream_failure(7) // orig
-            .success_with_stream_failure(7) // resume 1
+            .success_with_stream_failure(0) // no progress, resume 1
             .failure(RETRYABLE)
             .success()
             .never();
@@ -512,9 +512,9 @@ mod retry_download {
             .responses()
             .success_with_stream_failure(7)
             .failure(RETRYABLE)
-            .success_with_stream_failure(7)
+            .success_with_stream_failure(0) // no progress
             .failure(RETRYABLE)
-            .success_with_stream_failure(7)
+            .success_with_stream_failure(0) // no progress
             .failure(RETRYABLE)
             .success()
             .never();
@@ -538,9 +538,9 @@ mod retry_download {
             .responses()
             .success_with_stream_failure(7)
             .failure(RETRYABLE)
-            .success_with_stream_failure(7)
+            .success_with_stream_failure(0) // no progress
             .failure(RETRYABLE)
-            .success_with_stream_failure(7) // bang!
+            .success_with_stream_failure(0) // no progress -> bang!
             .never();
 
         let (num_retries, stream_resume_attempts, received) =
@@ -562,15 +562,15 @@ mod retry_download {
             .responses()
             .success_with_stream_failure(3)
             .failures([RETRYABLE, RETRYABLE, RETRYABLE])
-            .success_with_stream_failure(5)
-            .success_with_stream_failure(5)
+            .success_with_stream_failure(2)
+            .success_with_stream_failure(0) // no progress
             .failure(RETRYABLE)
-            .success_with_stream_failure(6)
-            .success_with_stream_failure(6)
-            .success_with_stream_failure(7)
+            .success_with_stream_failure(1)
+            .success_with_stream_failure(0) // no progress
+            .success_with_stream_failure(1)
             .failures([RETRYABLE, RETRYABLE, RETRYABLE])
-            .success_with_stream_failure(7)
-            .success_with_stream_failure(8)
+            .success_with_stream_failure(0) // no progress
+            .success_with_stream_failure(1)
             .failures([RETRYABLE, RETRYABLE, NON_RETRYABLE])
             .never();
 
@@ -923,7 +923,7 @@ mod loop_retry_complete_stream {
                 .max_delay_ms(0);
             let client_builder = get_builder()
                 .responses()
-                .successes_with_stream_failure([5, 5, 5, 5, 5])
+                .successes_with_stream_failure([5, 0, 0, 0, 0])
                 .never();
 
             let (num_retries, stream_resume_attempts, received) =
@@ -985,7 +985,7 @@ mod loop_retry_complete_stream {
             .responses()
             .success_with_stream_failure(5)
             .failure(RETRYABLE)
-            .success_with_stream_failure(8)
+            .success_with_stream_failure(3)
             .failure(NON_RETRYABLE)
             .never();
 
@@ -1008,7 +1008,7 @@ mod loop_retry_complete_stream {
             .responses()
             .success_with_stream_failure(5)
             .failure(RETRYABLE)
-            .success_with_stream_failure(8)
+            .success_with_stream_failure(3)
             .failures([RETRYABLE, RETRYABLE, NON_RETRYABLE])
             .never();
 
@@ -1031,15 +1031,15 @@ mod loop_retry_complete_stream {
             .responses()
             .success_with_stream_failure(3)
             // resume 1
-            .success_with_stream_failure(5) // makes 2 bytes progress
+            .success_with_stream_failure(2) // makes 2 bytes progress
             // resume 2
-            .success_with_stream_failure(5) // makes 0 bytes progress (first failed resume)
+            .success_with_stream_failure(0) // makes 0 bytes progress (first failed resume)
             // resume 3
-            .success_with_stream_failure(8) // makes 3 bytes progress
+            .success_with_stream_failure(3) // makes 3 bytes progress
             // resume 4
-            .success_with_stream_failure(8) // makes 0 bytes progress (first failed resume)
+            .success_with_stream_failure(0) // makes 0 bytes progress (first failed resume)
             // resume 5
-            .success_with_stream_failure(8) // makes 0 bytes progress (second failed resume, abort!)
+            .success_with_stream_failure(0) // makes 0 bytes progress (second failed resume, abort!)
             .never();
 
         let (num_retries, stream_resume_attempts, received) =
