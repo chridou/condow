@@ -531,7 +531,10 @@ pub mod failing_client_simulator {
                             blob: me.blob,
                             next: start,
                             end_excl,
-                            error: Some(IoError(error_offset.to_string())),
+                            error: Some(ErrorAction::Err(format!(
+                                "stream error at {}",
+                                error_offset
+                            ))),
                             chunk_size: me.chunk_size,
                         };
                         Ok((stream.boxed(), bytes_hint))
@@ -551,7 +554,17 @@ pub mod failing_client_simulator {
                             );
                         }
 
-                        panic!("panic at byte {} of range {}", panic_offset, range_incl);
+                        let stream = BytesStreamWithError {
+                            blob: me.blob,
+                            next: start,
+                            end_excl,
+                            error: Some(ErrorAction::Panic(format!(
+                                "panic at byte {} of range {}",
+                                panic_offset, range_incl
+                            ))),
+                            chunk_size: me.chunk_size,
+                        };
+                        Ok((stream.boxed(), bytes_hint))
                     }
                 }
             }
@@ -830,11 +843,16 @@ pub mod failing_client_simulator {
         SuccessWithStreamPanic(usize),
     }
 
+    pub enum ErrorAction {
+        Err(String),
+        Panic(String),
+    }
+
     struct BytesStreamWithError {
         blob: Blob,
         next: usize,
         end_excl: usize,
-        error: Option<IoError>,
+        error: Option<ErrorAction>,
         chunk_size: usize,
     }
 
@@ -846,8 +864,11 @@ pub mod failing_client_simulator {
             _cx: &mut std::task::Context<'_>,
         ) -> task::Poll<Option<Self::Item>> {
             if self.next == self.end_excl || self.chunk_size == 0 {
-                if let Some(err) = self.error.take() {
-                    return task::Poll::Ready(Some(Err(err)));
+                if let Some(error_action) = self.error.take() {
+                    match error_action {
+                        ErrorAction::Err(msg) => return task::Poll::Ready(Some(Err(IoError(msg)))),
+                        ErrorAction::Panic(msg) => panic!("{}", msg),
+                    }
                 } else {
                     return task::Poll::Ready(None);
                 }
@@ -1354,7 +1375,7 @@ pub mod failing_client_simulator {
                 next: range.start,
                 end_excl: range.end,
                 error: if err {
-                    Some(IoError("bang!".to_string()))
+                    Some(ErrorAction::Err("bang!".to_string()))
                 } else {
                     None
                 },

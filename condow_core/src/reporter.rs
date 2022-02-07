@@ -76,6 +76,9 @@ pub trait Reporter: Clone + Send + Sync + 'static {
 
     /// Download of a part was completed
     fn part_completed(&self, part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {}
+
+    /// Download of a part failed
+    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 
 /// Disables reporting
@@ -173,6 +176,11 @@ impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
     ) {
         self.0.part_completed(part_index, n_chunks, n_bytes, time);
         self.1.part_completed(part_index, n_chunks, n_bytes, time);
+    }
+
+    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
+        self.0.part_failed(error, part_index, range);
+        self.1.part_failed(error, part_index, range);
     }
 }
 mod simple_reporter {

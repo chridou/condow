@@ -283,7 +283,6 @@ impl Stream for ChunkStream {
             }
             None => {
                 *this.is_closed = true;
-                this.receiver.close();
                 Poll::Ready(None)
             }
         }

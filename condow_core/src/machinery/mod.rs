@@ -1,6 +1,4 @@
 //! Streams for handling downloads
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
@@ -11,7 +9,7 @@ use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange, StreamWithReport
 
 use self::range_stream::RangeStream;
 
-mod downloaders;
+mod download;
 mod range_stream;
 
 pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
@@ -108,7 +106,7 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     let n_parts = n_parts as usize;
 
     tokio::spawn(async move {
-        downloaders::download_concurrently(
+        download::download_concurrently(
             ranges_stream,
             config.max_concurrency.into_inner().min(n_parts),
             sender,
@@ -122,27 +120,5 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
 
     Ok(chunk_stream)
 }
-
-#[derive(Clone)]
-struct KillSwitch {
-    is_pushed: Arc<AtomicBool>,
-}
-
-impl KillSwitch {
-    pub fn new() -> Self {
-        Self {
-            is_pushed: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    pub fn is_pushed(&self) -> bool {
-        self.is_pushed.load(Ordering::Relaxed)
-    }
-
-    pub fn push_the_button(&self) {
-        self.is_pushed.store(true, Ordering::Relaxed)
-    }
-}
-
 #[cfg(test)]
 mod tests;

@@ -2,6 +2,8 @@
 
 use std::{fmt, sync::Arc};
 
+use crate::{errors::CondowError, InclusiveRange};
+
 use super::{Reporter, ReporterFactory};
 
 /// A logger logging on events send to a [Reporter]
@@ -163,6 +165,13 @@ impl Reporter for Logger {
         self.debug(format_args!(
             "Download of part {} ({} bytes, {} chunks, time: {:?}) finished",
             part_index, n_bytes, n_chunks, time
+        ));
+    }
+
+    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
+        self.warn(format_args!(
+            "Download of part {} ({}) failed with `{}`",
+            part_index, range, error
         ));
     }
 }
