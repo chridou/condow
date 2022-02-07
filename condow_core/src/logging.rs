@@ -101,7 +101,7 @@ impl Reporter for Logger {
     }
 
     fn download_failed(&self, _time: Option<std::time::Duration>) {
-        self.error(format_args!("Download failed"));
+        self.error(format_args!("Download failed after"));
     }
 
     fn retry_attempt(
@@ -238,7 +238,7 @@ impl LoggerFactoryBuilder {
     where
         F: Fn(&str, fmt::Arguments) + Send + Sync + 'static,
     {
-        self.on_debug_dyn(Arc::new(on_error))
+        self.on_error_dyn(Arc::new(on_error))
     }
 
     /// Returns a [StdOutConfigurator] to configure a default logging format

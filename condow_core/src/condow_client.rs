@@ -752,11 +752,11 @@ pub mod failing_client_simulator {
         /// Add multiple successful responses with the streams each panicking at a given offset
         ///
         /// The panics will occur at the given offsets of the queried ranges
-        pub fn successes_with_stream_panic<I>(mut self, failure_offsets: I) -> Self
+        pub fn successes_with_stream_panic<I>(mut self, panic_offset: I) -> Self
         where
             I: IntoIterator<Item = usize>,
         {
-            failure_offsets.into_iter().for_each(|offset| {
+            panic_offset.into_iter().for_each(|offset| {
                 self.counter += 1;
                 self.responses
                     .push(ResponseBehaviour::SuccessWithStreamPanic(offset))
