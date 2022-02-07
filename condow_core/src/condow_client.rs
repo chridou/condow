@@ -1,4 +1,10 @@
 //! Adapter for [crate::Condow] to access BLOBs to be downloaded
+//!
+//! There are also implementation of a client mostly for testing
+//!
+//! * [InMemoryClient]: A client which keeps data in memory and never fails
+//! * [failing_client_simulator]: A module containing a client with data kept in memory
+//! which can fail and cause panics.
 use std::ops::RangeInclusive;
 
 use futures::future::BoxFuture;
@@ -334,9 +340,10 @@ pub mod failing_client_simulator {
 
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
+        config::Config,
         errors::{CondowError, IoError},
         streams::{BytesHint, BytesStream},
-        InclusiveRange,
+        Condow, InclusiveRange,
     };
 
     pub use super::NoLocation;
@@ -444,6 +451,10 @@ pub mod failing_client_simulator {
                 _phantom: PhantomData,
             }
         }
+
+        pub fn condow(&self, config: Config) -> Result<Condow<Self>, anyhow::Error> {
+            Condow::new(self.clone(), config)
+        }
     }
 
     impl<L> CondowClient for FailingClientSimulator<L>
@@ -506,10 +517,19 @@ pub mod failing_client_simulator {
                         Ok((stream.boxed(), bytes_hint))
                     }
                     ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
-                        let end_excl = error_offset.min(range_incl.end_incl() as usize + 1);
+                        let start = range_incl.start() as usize;
+                        let end_excl =
+                            (start + error_offset).min(range_incl.end_incl() as usize + 1);
+                        if start > end_excl {
+                            panic!(
+                                "start ({}) > end_excl ({}) with range {:?} and error offset {}",
+                                start, end_excl, range_incl, error_offset
+                            );
+                        }
+
                         let stream = BytesStreamWithError {
                             blob: me.blob,
-                            next: range_incl.start() as usize,
+                            next: start,
                             end_excl,
                             error: Some(IoError(error_offset.to_string())),
                             chunk_size: me.chunk_size,
@@ -519,6 +539,19 @@ pub mod failing_client_simulator {
                     ResponseBehaviour::Error(error) => Err(error),
                     ResponseBehaviour::Panic(msg) => {
                         panic!("{}", msg)
+                    }
+                    ResponseBehaviour::SuccessWithStreamPanic(panic_offset) => {
+                        let start = range_incl.start() as usize;
+                        let end_excl =
+                            (start + panic_offset).min(range_incl.end_incl() as usize + 1);
+                        if start > end_excl {
+                            panic!(
+                                "start ({}) > end_excl ({}) with range {:?} and error offset {}",
+                                start, end_excl, range_incl, panic_offset
+                            );
+                        }
+
+                        panic!("panic at byte {} of range {}", panic_offset, range_incl);
                     }
                 }
             }
@@ -567,6 +600,8 @@ pub mod failing_client_simulator {
         }
 
         /// Add a successful response with the stream failing at the given offset
+        ///
+        /// The failure will occur at the given offset of the queried range
         pub fn success_with_stream_failure(mut self, failure_offset: usize) -> Self {
             self.0.response_player = self
                 .0
@@ -576,6 +611,8 @@ pub mod failing_client_simulator {
         }
 
         /// Add multiple successful responses with the streams each failing at a given offset
+        ///
+        /// The failures will occur at the given offsets of the queried ranges
         pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
         where
             I: IntoIterator<Item = usize>,
@@ -584,6 +621,31 @@ pub mod failing_client_simulator {
                 .0
                 .response_player
                 .successes_with_stream_failure(failure_offsets);
+            self
+        }
+
+        /// Add a successful response with the stream panicking at the given offset
+        ///
+        /// The panic will occur at the given offset of the queried range
+        pub fn success_with_stream_panic(mut self, panic_offset: usize) -> Self {
+            self.0.response_player = self
+                .0
+                .response_player
+                .success_with_stream_panic(panic_offset);
+            self
+        }
+
+        /// Add multiple successful responses with the streams each panicking at a given offset
+        ///
+        /// The panics will occur at the given offsets of the queried ranges
+        pub fn successes_with_stream_panic<I>(mut self, panic_offsets: I) -> Self
+        where
+            I: IntoIterator<Item = usize>,
+        {
+            self.0.response_player = self
+                .0
+                .response_player
+                .successes_with_stream_panic(panic_offsets);
             self
         }
 
@@ -659,11 +721,15 @@ pub mod failing_client_simulator {
         }
 
         /// Add a successful response with the stream failing at the given offset
+        ///
+        /// The failure will occur at the given offset of the queried range
         pub fn success_with_stream_failure(self, failure_offset: usize) -> Self {
             self.successes_with_stream_failure([failure_offset])
         }
 
         /// Add multiple successful responses with the streams each failing at a given offset
+        ///
+        /// The failures will occur at the given offsets of the queried ranges
         pub fn successes_with_stream_failure<I>(mut self, failure_offsets: I) -> Self
         where
             I: IntoIterator<Item = usize>,
@@ -672,6 +738,28 @@ pub mod failing_client_simulator {
                 self.counter += 1;
                 self.responses
                     .push(ResponseBehaviour::SuccessWithFailungStream(offset))
+            });
+            self
+        }
+
+        /// Add a successful response with the stream panicking at the given offset
+        ///
+        /// The panics will occur at the given offset of the queried range
+        pub fn success_with_stream_panic(self, panic_offset: usize) -> Self {
+            self.successes_with_stream_panic([panic_offset])
+        }
+
+        /// Add multiple successful responses with the streams each panicking at a given offset
+        ///
+        /// The panics will occur at the given offsets of the queried ranges
+        pub fn successes_with_stream_panic<I>(mut self, failure_offsets: I) -> Self
+        where
+            I: IntoIterator<Item = usize>,
+        {
+            failure_offsets.into_iter().for_each(|offset| {
+                self.counter += 1;
+                self.responses
+                    .push(ResponseBehaviour::SuccessWithStreamPanic(offset))
             });
             self
         }
@@ -729,11 +817,17 @@ pub mod failing_client_simulator {
         /// Respond with a success and also a non failing stream
         Success,
         /// Respond with a success but the stream will fail at the given offset
+        ///
+        /// A stream is defined by the queried range.
         SuccessWithFailungStream(usize),
         /// The response will be an error
         Error(CondowError),
         /// The request will cause a panic
         Panic(Box<dyn Display + Send + 'static>),
+        /// Respond with a success but the stream will panic at the given offset
+        ///
+        /// A stream is defined by the queried range.
+        SuccessWithStreamPanic(usize),
     }
 
     struct BytesStreamWithError {
@@ -757,6 +851,13 @@ pub mod failing_client_simulator {
                 } else {
                     return task::Poll::Ready(None);
                 }
+            }
+
+            if self.end_excl < self.next {
+                panic!(
+                    "invalid state in BytesStreamWithError! end_excl ({}) < next ({})",
+                    self.end_excl, self.next
+                );
             }
 
             let effective_chunk_size = self.chunk_size.min(self.end_excl - self.next);
@@ -1043,7 +1144,7 @@ pub mod failing_client_simulator {
                 .failure(CondowErrorKind::Io)
                 .success_with_stream_failure(0)
                 .failures([CondowErrorKind::Remote, CondowErrorKind::InvalidRange])
-                .successes_with_stream_failure([5, 9])
+                .successes_with_stream_failure([3, 4])
                 .success()
                 .never()
                 .finish();

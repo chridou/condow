@@ -1,4 +1,6 @@
-//! Streams used by Condow
+//! Stream implememtations used by Condow
+use std::fmt;
+
 use crate::errors::IoError;
 use bytes::Bytes;
 use futures::stream::BoxStream;
@@ -9,7 +11,7 @@ mod part_stream;
 pub use chunk_stream::*;
 pub use part_stream::*;
 
-/// A stream of [Bytes]
+/// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
 pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
 
 /// Returns the bounds on the remaining bytes of the stream.
@@ -135,5 +137,16 @@ impl BytesHint {
     /// Turns this into the inner tuple
     pub fn into_inner(self) -> (u64, Option<u64>) {
         (self.lower_bound(), self.upper_bound())
+    }
+}
+
+impl fmt::Display for BytesHint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (lower, upper) = self.into_inner();
+
+        match upper {
+            Some(upper) => write!(f, "[{}..{}]", lower, upper),
+            None => write!(f, "[{}..?[", lower),
+        }
     }
 }

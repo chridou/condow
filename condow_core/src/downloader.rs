@@ -18,6 +18,16 @@ use crate::{
 /// This has mutiple methods to download data. The main difference to
 /// [Condow] itself is, that per request reporting/instrumentation can be enabled.
 /// Only those methods which return a [Reporter] will be instrumented.
+///
+/// The [ReporterFactory] should not manage shared state since it does
+/// not generate a [Reporter] for each download. Only for those methods which
+/// do not take a [Reporter] as an argument but return a [Reporter] a [Reporter]
+/// will be created from the [ReporterFactory].
+///
+/// If the reporter factory should manage global state (e.g. collect metrics)
+/// consider using [DownloadSession].
+///
+/// [DownloadSession]: super::DownloadSession
 pub struct Downloader<C: CondowClient, RF: ReporterFactory = NoReporting> {
     /// Mode for handling upper bounds of a range and open ranges
     ///
@@ -120,7 +130,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<StreamWithReport<PartStream<ChunkStream>, RF::ReporterType>, CondowError> {
-        let reporter = self.reporter_factory.make();
+        let reporter = self.reporter_factory.make(&location);
         self.download_wrep(location, range, reporter).await
     }
 
@@ -137,7 +147,7 @@ impl<C: CondowClient, RF: ReporterFactory> Downloader<C, RF> {
         location: C::Location,
         range: R,
     ) -> Result<StreamWithReport<ChunkStream, RF::ReporterType>, CondowError> {
-        let reporter = self.reporter_factory.make();
+        let reporter = self.reporter_factory.make(&location);
         self.download_chunks_wrep(location, range, reporter).await
     }
 

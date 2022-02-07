@@ -235,6 +235,112 @@ pub fn create_chunk_stream(
     (chunk_stream, values)
 }
 
+pub fn create_chunk_stream_with_err(
+    n_parts: u64,
+    n_chunks: usize,
+    exact_hint: bool,
+    max_variable_chunk_size: Option<usize>,
+    err_at_chunk: usize,
+) -> (ChunkStream, Vec<u8>) {
+    let mut chunks_left_until_err = err_at_chunk;
+
+    let mut values = Vec::new();
+    let value = &mut 1u8;
+    let mut get_next = || {
+        let v = *value;
+        if *value == 255 {
+            *value = 1;
+        } else {
+            *value += 1;
+        }
+        values.push(v);
+        v
+    };
+
+    let mut rng = rand::thread_rng();
+    let blob_offset: u64 = rng.gen_range(0..1_000);
+
+    let mut parts: Vec<Vec<ChunkStreamItem>> = Vec::new();
+
+    let mut range_offset: u64 = 0;
+    for part_index in 0u64..n_parts {
+        let mut chunks = Vec::with_capacity(n_chunks);
+
+        let mut chunks_bytes = Vec::with_capacity(n_chunks);
+
+        for chunk_index in 0usize..n_chunks {
+            let bytes = if let Some(max) = max_variable_chunk_size {
+                let n = rng.gen_range(1..=max);
+                let mut items = Vec::with_capacity(n);
+                (0..n).for_each(|_| items.push(get_next()));
+                Bytes::from(items)
+            } else {
+                Bytes::from(vec![get_next()])
+            };
+            chunks_bytes.push((chunk_index, bytes));
+        }
+
+        let mut bytes_left_in_part: u64 = chunks_bytes
+            .iter()
+            .map(|(_, bytes)| bytes.len() as u64)
+            .sum();
+
+        for (chunk_index, bytes) in chunks_bytes {
+            let n_bytes = bytes.len() as u64;
+            bytes_left_in_part -= n_bytes;
+            let chunk = Chunk {
+                part_index,
+                chunk_index,
+                blob_offset: blob_offset + range_offset,
+                range_offset,
+                bytes,
+                bytes_left: bytes_left_in_part,
+            };
+            chunks.push(Ok(chunk));
+            range_offset += n_bytes;
+        }
+        parts.push(chunks);
+    }
+
+    let bytes_hint = if exact_hint {
+        BytesHint::new_exact(values.len() as u64)
+    } else {
+        BytesHint::new_at_max(values.len() as u64)
+    };
+
+    parts.shuffle(&mut rng);
+
+    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+
+    let mut err_sent = chunks_left_until_err == 0;
+    loop {
+        if chunks_left_until_err == 0 {
+            let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error")));
+            err_sent = true;
+            break;
+        }
+        chunks_left_until_err -= 1;
+        let n = rng.gen_range(0..parts.len());
+
+        let part = &mut parts[n];
+        let chunk = part.remove(0);
+        let _ = tx.unbounded_send(chunk);
+        if part.is_empty() {
+            parts.remove(n);
+        }
+
+        if parts.is_empty() {
+            break;
+        }
+    }
+
+    if !err_sent {
+        let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error after end")));
+    }
+
+    (chunk_stream, values)
+}
+
 pub fn create_part_stream(
     n_parts: u64,
     n_chunks: usize,
