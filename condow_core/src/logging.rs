@@ -100,8 +100,12 @@ impl Reporter for Logger {
         self.info(format_args!("Download completed"));
     }
 
-    fn download_failed(&self, _time: Option<std::time::Duration>) {
-        self.error(format_args!("Download failed after"));
+    fn download_failed(&self, time: Option<std::time::Duration>) {
+        if let Some(time) = time {
+            self.error(format_args!("Download failed after {:?}", time));
+        } else {
+            self.error(format_args!("Download failed"));
+        }
     }
 
     fn retry_attempt(
