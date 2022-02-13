@@ -120,12 +120,14 @@ impl ChunkStream {
     /// not know, whether we can fill the buffer in a contiguous way.
     pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if !self.is_fresh {
+            self.receiver.close();
             return Err(CondowError::new_other(
                 "stream already iterated".to_string(),
             ));
         }
 
         if (buffer.len() as u64) < self.bytes_hint.lower_bound() {
+            self.receiver.close();
             return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
@@ -146,6 +148,7 @@ impl ChunkStream {
             };
 
             if range_offset > usize::MAX as u64 {
+                self.receiver.close();
                 return Err(CondowError::new_other(
                     "usize overflow while casting from u64",
                 ));
@@ -155,6 +158,7 @@ impl ChunkStream {
 
             let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
+                self.receiver.close();
                 return Err(CondowError::new_other(format!(
                     "write attempt beyond buffer end (buffer len = {}). \
                     attempted to write at index {}",
@@ -177,9 +181,10 @@ impl ChunkStream {
     ///
     /// Since the parts and therefore the chunks are not ordered we can
     /// not know, whether we can fill the `Vec` in a contiguous way.
-    pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
+    pub async fn into_vec(mut self) -> Result<Vec<u8>, CondowError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
             if total_bytes > usize::MAX as u64 {
+                self.receiver.close();
                 return Err(CondowError::new_other(
                     "usize overflow while casting from u64",
                 ));
@@ -205,6 +210,7 @@ async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
 ) -> Result<Vec<u8>, CondowError> {
     if !stream.is_fresh {
+        stream.receiver.close();
         return Err(CondowError::new_other(
             "stream already iterated".to_string(),
         ));
@@ -212,6 +218,7 @@ async fn stream_into_vec_with_unknown_size(
 
     let lower_bound = stream.bytes_hint.lower_bound();
     if lower_bound > usize::MAX as u64 {
+        stream.receiver.close();
         return Err(CondowError::new_other(
             "usize overflow while casting from u64",
         ));
@@ -230,6 +237,7 @@ async fn stream_into_vec_with_unknown_size(
         };
 
         if range_offset > usize::MAX as u64 {
+            stream.receiver.close();
             return Err(CondowError::new_other(
                 "usize overflow while casting from u64",
             ));
@@ -275,7 +283,6 @@ impl Stream for ChunkStream {
             }
             None => {
                 *this.is_closed = true;
-                this.receiver.close();
                 Poll::Ready(None)
             }
         }
@@ -291,21 +298,57 @@ mod tests {
     use futures::StreamExt;
 
     use crate::{
+        errors::CondowError,
         streams::{BytesHint, Chunk, ChunkStream},
-        test_utils::create_chunk_stream,
+        test_utils::{create_chunk_stream, create_chunk_stream_with_err},
     };
 
     #[tokio::test]
-    async fn check() {
+    async fn check_ok() {
         for n_parts in 1..20 {
             for n_chunks in 1..20 {
                 let (stream, expected) = create_chunk_stream(n_parts, n_chunks, true, Some(10));
-                check_stream(stream, &expected).await
+                check_stream(stream, &expected).await.unwrap()
             }
         }
     }
 
-    async fn check_stream(mut result_stream: ChunkStream, data: &[u8]) {
+    #[tokio::test]
+    async fn check_err_begin() {
+        for n_parts in 1..20 {
+            for n_chunks in 1..20 {
+                let (stream, expected) =
+                    create_chunk_stream_with_err(n_parts, n_chunks, true, Some(10), 0);
+                assert!(check_stream(stream, &expected).await.is_err())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn check_err_end() {
+        for n_parts in 1..20u64 {
+            for n_chunks in 1..20usize {
+                let err_at_chunk = n_parts as usize * n_chunks - 1;
+                let (stream, expected) =
+                    create_chunk_stream_with_err(n_parts, n_chunks, true, Some(10), err_at_chunk);
+                assert!(check_stream(stream, &expected).await.is_err())
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn check_err_after_end() {
+        for n_parts in 1..20u64 {
+            for n_chunks in 1..20usize {
+                let err_at_chunk = n_parts as usize * n_chunks;
+                let (stream, expected) =
+                    create_chunk_stream_with_err(n_parts, n_chunks, true, Some(10), err_at_chunk);
+                assert!(check_stream(stream, &expected).await.is_err())
+            }
+        }
+    }
+
+    async fn check_stream(mut result_stream: ChunkStream, data: &[u8]) -> Result<(), CondowError> {
         let mut bytes_left = data.len();
         let mut first_blob_offset = 0;
         let mut got_first = false;
@@ -321,7 +364,7 @@ mod tests {
                 bytes,
                 ..
             } = match next {
-                Err(err) => panic!("{}", err),
+                Err(err) => return Err(err),
                 Ok(next) => next,
             };
 
@@ -352,5 +395,7 @@ mod tests {
                 "blob_offset"
             );
         }
+
+        Ok(())
     }
 }

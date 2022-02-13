@@ -268,10 +268,10 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
             CondowError::new_other(format!("validation error: {}", cause))
         }
         RusotoError::Credentials(err) => {
-            CondowError::new_other("credentials error").with_source(err)
+            CondowError::new_other(format!("credentials error: {}", err)).with_source(err)
         }
         RusotoError::HttpDispatch(dispatch_error) => {
-            CondowError::new_other("http dispatch error").with_source(dispatch_error)
+            CondowError::new_other(format!("http dispatch error: {}", dispatch_error)).with_source(dispatch_error)
         }
         RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),

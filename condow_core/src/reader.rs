@@ -74,6 +74,7 @@ mod random_access_reader {
         GetNewReaderFuture(GetNewReaderFuture),
         PollingReader(AsyncReader),
         Finished,
+        Error,
     }
 
     /// Implements [AsyncRead] and [AsyncSeek]
@@ -184,6 +185,10 @@ mod random_access_reader {
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
+            if dest_buf.len() == 0 {
+                return task::Poll::Ready(Ok(0));
+            }
+
             // Get ownership of the state to not deal with mutable references
             let current_state = std::mem::replace(&mut self.state, State::Initial);
 
@@ -202,7 +207,7 @@ mod random_access_reader {
                         task::Poll::Pending
                     }
                     task::Poll::Ready(Err(err)) => {
-                        self.state = State::Finished;
+                        self.state = State::Error;
                         task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
                     }
                     task::Poll::Pending => {
@@ -232,7 +237,7 @@ mod random_access_reader {
                             }
                         }
                         task::Poll::Ready(Err(err)) => {
-                            self.state = State::Finished;
+                            self.state = State::Error;
                             task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
                         }
                         task::Poll::Pending => {
@@ -244,6 +249,13 @@ mod random_access_reader {
                 State::Finished => {
                     self.state = State::Finished;
                     task::Poll::Ready(Ok(0))
+                }
+                State::Error => {
+                    self.state = State::Error;
+                    task::Poll::Ready(Err(IoError::new(
+                        IoErrorKind::Other,
+                        "the reader is broken and will not yield any more values",
+                    )))
                 }
             }
         }
@@ -543,12 +555,8 @@ mod bytes_async_reader {
             cx: &mut task::Context<'_>,
             dest_buf: &mut [u8],
         ) -> task::Poll<IoResult<usize>> {
-            if dest_buf.is_empty() {
-                self.state = State::Finished;
-                return task::Poll::Ready(Err(IoError::new(
-                    IoErrorKind::Other,
-                    CondowError::new_other("'dest_buf' must have a length greater than 0"),
-                )));
+            if dest_buf.len() == 0 {
+                return task::Poll::Ready(Ok(0));
             }
 
             let current_state = std::mem::replace(&mut self.state, State::Finished);
@@ -568,7 +576,7 @@ mod bytes_async_reader {
                         task::Poll::Ready(Ok(bytes_written))
                     }
                     task::Poll::Ready(Some(Err(err))) => {
-                        self.state = State::Finished;
+                        self.state = State::Error;
                         task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)))
                     }
                     task::Poll::Ready(None) => {
@@ -594,6 +602,13 @@ mod bytes_async_reader {
                 State::Finished => {
                     self.state = State::Finished;
                     task::Poll::Ready(Ok(0))
+                }
+                State::Error => {
+                    self.state = State::Error;
+                    task::Poll::Ready(Err(IoError::new(
+                        IoErrorKind::Other,
+                        "the reader is broken and will not yield any mor values",
+                    )))
                 }
             }
         }
@@ -623,6 +638,7 @@ mod bytes_async_reader {
             stream: St,
         },
         Finished,
+        Error,
     }
 
     /// (Next byte to read, Bytes[])

@@ -155,7 +155,7 @@ pub struct RetryConfig {
 impl RetryConfig {
     env_ctors!(no_fill);
 
-    /// Set the maximum number of attempt for retries
+    /// Set the maximum number of attempts for retries
     pub fn max_attempts<T: Into<RetryMaxAttempts>>(mut self, max_attempts: T) -> Self {
         self.max_attempts = max_attempts.into();
         self
@@ -479,6 +479,34 @@ where
     Ok((Box::pin(output_stream_rx), bytes_hint))
 }
 
+/// Used to check whether [loop_retry_complete_stream] exited with a panic
+///
+/// In case of a panic the sender of the stream is closed which indicates
+/// the end of the stream. In fact must must append an error since the
+/// stream was not finished.
+///
+/// `completed_without_panic` must be set to true before exiting
+/// [loop_retry_complete_stream] otherwise a panic is assumed.
+struct RetryLoopPanicGuard<R: Reporter> {
+    completed_without_panic: bool,
+    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
+    reporter: R,
+}
+
+impl<R> Drop for RetryLoopPanicGuard<R>
+where
+    R: Reporter,
+{
+    fn drop(&mut self) {
+        if !self.completed_without_panic {
+            self.reporter.panic_detected("panicked while retrying");
+            let _ = self
+                .next_elem_tx
+                .unbounded_send(Err(IoError("panicked while retrying".to_string())));
+        }
+    }
+}
+
 /// Tries to complete the given stream.
 ///
 /// If a stream breaks it tries to complete the `original_range` by
@@ -495,6 +523,12 @@ async fn loop_retry_complete_stream<C, R>(
     C: CondowClient,
     R: Reporter,
 {
+    let mut panic_guard = RetryLoopPanicGuard {
+        completed_without_panic: false,
+        next_elem_tx: next_elem_tx.clone(),
+        reporter: reporter.clone(),
+    };
+
     // We move the start of the range forward to determine the range
     // we need to complete the original download defined by `original_range`
     let mut remaining_range = original_range;
@@ -549,6 +583,9 @@ async fn loop_retry_complete_stream<C, R>(
             break;
         }
     }
+
+    // Every other exit is a panic
+    panic_guard.completed_without_panic = true;
 }
 
 /// Consume a stream until it is finished or broken.

@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.4] - 2022-02-08
+
+### ADDED
+
+- `Reporter` can track failed parts
+- `Logger` logs failed parts
+
+## [0.12.3] - 2022-02-07
+
+### ADDED
+
+- log time of failed download
+
+## [0.12.2] - 2022-02-07
+
+### FIXED
+
+- logging levels
+## [0.12.1] - 2022-02-07
+
+### FIXED
+
+- return a stream error when panicking while downloading
+- return a stream error when panicking while retrying
+
+### ADDED
+
+- add a function to `Reporter` trait to track panics
+- documentation
+- `FailingClientSimulator` can panic while streaming
+- Display for `BytesHint`
+- Logging via the `Reporter` trait
+
+### CHANGED
+
+- `FailingClientSimulator` does stream errors based on the requested range
+
+### REMOVED
+
+- location method from `Reporter` trait. Use constructor to set a location.
+
 ## [0.12.0] - 2022-01-19
 
 ### ADDED

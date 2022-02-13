@@ -2,10 +2,14 @@ use futures::Stream;
 
 use crate::InclusiveRange;
 
+/// A request to downlaod a range.
+///
+/// This is usually a part of a download.
 #[derive(Debug)]
 pub struct RangeRequest {
     /// Index of the part
     pub part_index: u64,
+    /// The range to be downloaded from the BLOB.
     pub blob_range: InclusiveRange,
     /// Offset of the part within the downloaded range
     pub range_offset: u64,
