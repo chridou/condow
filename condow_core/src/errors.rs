@@ -73,7 +73,7 @@ impl fmt::Display for CondowError {
 /// Specifies the kind of a [CondowError]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CondowErrorKind {
-    /// An inavlid range was encountered.
+    /// An invalid range was encountered.
     ///
     /// Errors with this kind are **not retryable**
     InvalidRange,
@@ -119,7 +119,7 @@ impl CondowErrorKind {
 
 impl From<CondowErrorKind> for CondowError {
     fn from(error_kind: CondowErrorKind) -> Self {
-        CondowError::new(format!("An error occured: {:?}", error_kind), error_kind)
+        CondowError::new(format!("An error occurred: {:?}", error_kind), error_kind)
     }
 }
 
@@ -142,5 +142,28 @@ pub struct IoError(pub String);
 impl From<std::io::Error> for IoError {
     fn from(io: std::io::Error) -> Self {
         IoError(io.to_string())
+    }
+}
+
+/// Utility function to convert an error HTTP response to a CondowError.
+pub fn http_status_to_error(status_code: u16, status_str: &str, is_server_error: bool, body: &[u8]) -> CondowError {
+    // Ideally this fn should take the StatusCode from http crate,
+    // but that would make multiple crates depend on the same http crate, possibly with different versions.
+    let message = if let Ok(body_str) = std::str::from_utf8(body) {
+        body_str
+    } else {
+        "<<< response body received from AWS not UTF-8 >>>"
+    };
+    let message = format!("{} - {}", status_str, message);
+    match status_code {
+        404 => CondowError::new_not_found(message),
+        401 | 403 => CondowError::new_access_denied(message),
+        _ => {
+            if is_server_error {
+                CondowError::new_remote(message)
+            } else {
+                CondowError::new_other(message)
+            }
+        }
     }
 }

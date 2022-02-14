@@ -2,6 +2,7 @@
 
 members = [
     "condow_core",
+    "condow_fs",
+    "condow_http",
     "condow_rusoto",
-    "condow_fs"
 ]
