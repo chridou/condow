@@ -152,7 +152,7 @@ pub fn http_status_to_error(status_code: u16, status_str: &str, is_server_error:
     let message = if let Ok(body_str) = std::str::from_utf8(body) {
         body_str
     } else {
-        "<<< response body received from AWS not UTF-8 >>>"
+        "<<< response body is not valid UTF-8 >>>"
     };
     let message = format!("{} - {}", status_str, message);
     match status_code {
