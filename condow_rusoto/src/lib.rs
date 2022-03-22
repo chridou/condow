@@ -261,19 +261,24 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
         RusotoError::Service(err) => match err {
             GetObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
             GetObjectError::InvalidObjectState(s) => {
-                CondowError::new_other(format!("invalid object state: {}", s))
+                CondowError::new_other(format!("invalid object state (get object request): {}", s))
             }
         },
         RusotoError::Validation(cause) => {
-            CondowError::new_other(format!("validation error: {}", cause))
+            CondowError::new_other(format!("validation error (get object request): {}", cause))
         }
         RusotoError::Credentials(err) => {
-            CondowError::new_other(format!("credentials error: {}", err)).with_source(err)
+            CondowError::new_other(format!("credentials error (get object request): {}", err))
+                .with_source(err)
         }
-        RusotoError::HttpDispatch(dispatch_error) => {
-            CondowError::new_other(format!("http dispatch error: {}", dispatch_error)).with_source(dispatch_error)
+        RusotoError::HttpDispatch(dispatch_error) => CondowError::new_other(format!(
+            "http dispatch error (get object request): {}",
+            dispatch_error
+        ))
+        .with_source(dispatch_error),
+        RusotoError::ParseError(cause) => {
+            CondowError::new_other(format!("parse error (get object request): {}", cause))
         }
-        RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => {
             CondowError::new_other("failed to run blocking future within rusoto")
@@ -287,15 +292,20 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
             HeadObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
         },
         RusotoError::Validation(cause) => {
-            CondowError::new_other(format!("validation error: {}", cause))
+            CondowError::new_other(format!("validation error (head object request): {}", cause))
         }
         RusotoError::Credentials(err) => {
-            CondowError::new_other("credentials error").with_source(err)
+            CondowError::new_other(format!("credentials error (head object request): {}", err))
+                .with_source(err)
         }
-        RusotoError::HttpDispatch(dispatch_error) => {
-            CondowError::new_other("http dispatch error").with_source(dispatch_error)
+        RusotoError::HttpDispatch(dispatch_error) => CondowError::new_other(format!(
+            "http dispatch error (head object request): {}",
+            dispatch_error
+        ))
+        .with_source(dispatch_error),
+        RusotoError::ParseError(cause) => {
+            CondowError::new_other(format!("parse error (head object request): {}", cause))
         }
-        RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => {
             CondowError::new_other("failed to run blocking future within rusoto")
