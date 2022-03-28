@@ -68,16 +68,13 @@ pub use downloader::*;
 pub mod test_utils;
 
 /// A common interface for downloading
-pub trait Downloads<L>
-where
-    L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-{
+pub trait Downloads {
     /// Download a BLOB range concurrently
     ///
     /// Returns a stream of [Chunk](streams::Chunk)s.
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: L,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>>;
 
@@ -86,12 +83,12 @@ where
     /// Returns a stream of [Parts](streams::Part)s.
     fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: L,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>>;
 
     /// Get the size of a file at the BLOB location
-    fn get_size<'a>(&'a self, location: L) -> BoxFuture<'a, Result<u64, CondowError>>;
+    fn get_size<'a>(&'a self, location: url::Url) -> BoxFuture<'a, Result<u64, CondowError>>;
 
     /// Creates a [RandomAccessReader] for the given location
     ///
@@ -99,8 +96,8 @@ where
     /// call [Downloads::reader_with_length]
     fn reader<'a>(
         &'a self,
-        location: L,
-    ) -> BoxFuture<'a, Result<RandomAccessReader<Self, L>, CondowError>>
+        location: url::Url,
+    ) -> BoxFuture<'a, Result<RandomAccessReader<Self>, CondowError>>
     where
         Self: Sized + Sync,
     {
@@ -115,7 +112,7 @@ where
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// This function will create a new reader immediately
-    fn reader_with_length(&self, location: L, length: u64) -> RandomAccessReader<Self, L>
+    fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self>
     where
         Self: Sized;
 }
@@ -196,7 +193,7 @@ impl<C: CondowClient> Condow<C> {
     /// Returns a stream of [Chunk](streams::Chunk)s.
     pub async fn download_chunks<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
         machinery::download(self, location, range, GetSizeMode::Default, NoReporting)
@@ -209,7 +206,7 @@ impl<C: CondowClient> Condow<C> {
     /// Returns a stream of [Parts](streams::Part)s.
     pub async fn download<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
         let chunk_stream =
@@ -220,35 +217,31 @@ impl<C: CondowClient> Condow<C> {
     }
 
     /// Get the size of a file at the given location
-    pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
+    pub async fn get_size(&self, location: url::Url) -> Result<u64, CondowError> {
         self.client.get_size(location, &NoReporting).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
     pub async fn reader(
         &self,
-        location: C::Location,
-    ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
+        location: url::Url,
+    ) -> Result<RandomAccessReader<Self>, CondowError> {
         RandomAccessReader::new(self.clone(), location).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length(
-        &self,
-        location: C::Location,
-        length: u64,
-    ) -> RandomAccessReader<Self, C::Location> {
+    pub fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self> {
         RandomAccessReader::new_with_length(self.clone(), location, length)
     }
 }
 
-impl<C> Downloads<C::Location> for Condow<C>
+impl<C> Downloads for Condow<C>
 where
     C: CondowClient,
 {
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
         Box::pin(self.download(location, range))
@@ -256,21 +249,17 @@ where
 
     fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         Box::pin(self.download_chunks(location, range))
     }
 
-    fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, location: url::Url) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
     }
 
-    fn reader_with_length(
-        &self,
-        location: C::Location,
-        length: u64,
-    ) -> RandomAccessReader<Self, C::Location> {
+    fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self> {
         Condow::reader_with_length(self, location, length)
     }
 }

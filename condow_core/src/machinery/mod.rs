@@ -14,7 +14,7 @@ mod range_stream;
 
 pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
     condow: &Condow<C>,
-    location: C::Location,
+    location: url::Url,
     range: DR,
     get_size_mode: GetSizeMode,
     reporter: R,
@@ -29,7 +29,7 @@ pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
 
 pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
     condow: &Condow<C>,
-    location: C::Location,
+    location: url::Url,
     range: DR,
     get_size_mode: GetSizeMode,
     reporter: R,
@@ -82,7 +82,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
 
 async fn download_chunks<C: CondowClient, R: Reporter>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    location: url::Url,
     range: InclusiveRange,
     bytes_hint: BytesHint,
     config: Config,

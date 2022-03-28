@@ -643,8 +643,14 @@ mod retry_download {
 
         let probe = Probe::default();
 
-        let (mut stream, _bytes_hint) =
-            retry_download(&client, NoLocation, download_spec.into(), &config, &probe).await?;
+        let (mut stream, _bytes_hint) = retry_download(
+            &client,
+            url::Url::parse("noscheme://").expect("a valid URL"),
+            download_spec.into(),
+            &config,
+            &probe,
+        )
+        .await?;
 
         let mut received = Vec::new();
 
@@ -1115,13 +1121,16 @@ mod loop_retry_complete_stream {
 
         let original_range: InclusiveRange = range.into();
         let (initial_stream, _) = client
-            .download(NoLocation, original_range.into())
+            .download(
+                url::Url::parse("noscheme://").expect("a valid URL"),
+                original_range.into(),
+            )
             .await
             .unwrap();
 
         tokio::spawn(loop_retry_complete_stream(
             initial_stream,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             original_range,
             client,
             next_elem_tx,
@@ -1329,18 +1338,16 @@ mod retry_download_get_stream {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
-
             fn get_size(
                 &self,
-                _location: Self::Location,
+                _location: url::Url,
             ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
                 unimplemented!()
             }
 
             fn download(
                 &self,
-                _location: Self::Location,
+                _location: url::Url,
                 _spec: DownloadSpec,
             ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
             {
@@ -1383,7 +1390,7 @@ mod retry_download_get_stream {
         let probe = Probe(Default::default());
         match retry_download_get_stream(
             &client,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             DownloadSpec::Complete,
             &config,
             &probe,
@@ -1574,11 +1581,9 @@ mod retry_get_size {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
-
             fn get_size(
                 &self,
-                _location: Self::Location,
+                _location: url::Url,
             ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
                 let mut fails = self.fails_reversed.lock().unwrap();
 
@@ -1592,7 +1597,7 @@ mod retry_get_size {
 
             fn download(
                 &self,
-                _location: Self::Location,
+                _location: url::Url,
                 _spec: DownloadSpec,
             ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
             {
@@ -1625,7 +1630,14 @@ mod retry_get_size {
             .max_delay_ms(0);
 
         let probe = Probe(Default::default());
-        match retry_get_size(&client, NoLocation, &config, &probe).await {
+        match retry_get_size(
+            &client,
+            url::Url::parse("noscheme://").expect("a valid URL"),
+            &config,
+            &probe,
+        )
+        .await
+        {
             Ok(_) => Ok(probe.0.load(Ordering::SeqCst)),
             Err(err) => Err((probe.0.load(Ordering::SeqCst), err.kind())),
         }

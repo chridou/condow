@@ -13,7 +13,7 @@
 //! # async {
 //! let condow = FsClient::condow(Config::default()).unwrap();
 //!
-//! let location = String::from("my_file");
+//! let location = url::Url::from_file_path("my_file").expect("a valid path");
 //!
 //! let stream = condow.download(location, 23..46).await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
@@ -22,6 +22,7 @@
 //! ```
 
 use std::io::SeekFrom;
+use std::path::Path;
 
 use anyhow::Error as AnyError;
 use bytes::Bytes;
@@ -50,11 +51,10 @@ impl FsClient {
 }
 
 impl CondowClient for FsClient {
-    type Location = String;
-
-    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<u64, CondowError>> {
+    fn get_size(&self, location: url::Url) -> BoxFuture<'static, Result<u64, CondowError>> {
+        // TODO: use location.to_file_path
         let f = async move {
-            let file = fs::File::open(location.as_str()).await?;
+            let file = fs::File::open(Path::new(location.path()).to_path_buf()).await?;
             let len = file.metadata().await?.len();
 
             Ok(len)
@@ -65,14 +65,15 @@ impl CondowClient for FsClient {
 
     fn download(
         &self,
-        location: Self::Location,
+        location: url::Url,
         spec: DownloadSpec,
     ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+        let path = Path::new(location.path()).to_path_buf();
         let f = async move {
             let bytes = match spec {
-                DownloadSpec::Complete => fs::read(location.as_str()).await?,
+                DownloadSpec::Complete => fs::read(path).await?,
                 DownloadSpec::Range(range) => {
-                    let mut file = fs::File::open(location.as_str()).await?;
+                    let mut file = fs::File::open(path).await?;
                     file.seek(SeekFrom::Start(range.start())).await?;
 
                     let n_bytes_to_read = range.len();

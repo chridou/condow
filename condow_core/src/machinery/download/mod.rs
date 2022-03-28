@@ -28,7 +28,7 @@ pub(crate) async fn download_concurrently<C: CondowClient, R: Reporter>(
     results_sender: UnboundedSender<ChunkStreamItem>,
     client: ClientRetryWrapper<C>,
     config: Config,
-    location: C::Location,
+    location: url::Url,
     reporter: R,
 ) -> Result<(), ()> {
     let mut downloader = ConcurrentDownloader::new(

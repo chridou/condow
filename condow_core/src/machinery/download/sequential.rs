@@ -40,7 +40,7 @@ pub(crate) struct SequentialDownloader {
 impl SequentialDownloader {
     pub fn new<C: CondowClient, R: Reporter>(
         client: ClientRetryWrapper<C>,
-        location: C::Location,
+        location: url::Url,
         buffer_size: usize,
         mut context: DownloaderContext<R>,
     ) -> Self {
@@ -350,7 +350,7 @@ mod tests {
         assert!(check(InclusiveRange(0, 99), client, 100).await.is_err());
     }
 
-    async fn check<C: CondowClient<Location = NoLocation>>(
+    async fn check<C: CondowClient>(
         range: InclusiveRange,
         client: C,
         part_size_bytes: u64,
@@ -370,7 +370,7 @@ mod tests {
 
         let mut downloader = SequentialDownloader::new(
             client.into(),
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid url"),
             config.buffer_size.into(),
             DownloaderContext::new(
                 results_sender,

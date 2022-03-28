@@ -62,10 +62,8 @@ impl From<RangeInclusive<u64>> for DownloadSpec {
 ///
 /// This is an adapter trait
 pub trait CondowClient: Clone + Send + Sync + 'static {
-    type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
-
     /// Returns the size of the BLOB at the given location
-    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<u64, CondowError>>;
+    fn get_size(&self, location: url::Url) -> BoxFuture<'static, Result<u64, CondowError>>;
 
     /// Download a BLOB or part of a BLOB from the given location as specified by the [DownloadSpec]
     ///
@@ -74,7 +72,7 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
     /// the number of bytes requested by a [DownloadSpec::Range].
     fn download(
         &self,
-        location: Self::Location,
+        location: url::Url,
         spec: DownloadSpec,
     ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>;
 }
@@ -90,7 +88,7 @@ impl std::fmt::Display for NoLocation {
 }
 
 mod in_memory {
-    use std::{marker::PhantomData, sync::Arc};
+    use std::sync::Arc;
 
     use crate::{
         config::{Config, Mebi},
@@ -111,13 +109,12 @@ mod in_memory {
     ///
     /// Use for testing.
     #[derive(Clone)]
-    pub struct InMemoryClient<L = NoLocation> {
+    pub struct InMemoryClient {
         blob: Blob,
         chunk_size: usize,
-        _location: PhantomData<L>,
     }
 
-    impl<L> InMemoryClient<L> {
+    impl InMemoryClient {
         /// Blob from owned bytes
         pub fn new(blob: Vec<u8>) -> Self {
             Self::new_shared(Arc::new(blob))
@@ -128,7 +125,6 @@ mod in_memory {
             Self {
                 blob: Blob::Owned(blob),
                 chunk_size: Mebi(4).value() as usize,
-                _location: PhantomData,
             }
         }
 
@@ -142,7 +138,6 @@ mod in_memory {
             Self {
                 blob: Blob::Static(blob),
                 chunk_size: Mebi(4).value() as usize,
-                _location: PhantomData,
             }
         }
 
@@ -152,31 +147,20 @@ mod in_memory {
         }
     }
 
-    impl<L> InMemoryClient<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
+    impl InMemoryClient {
         pub fn condow(&self, config: Config) -> Result<Condow<Self>, AnyError> {
             Condow::new(self.clone(), config)
         }
     }
 
-    impl<L> CondowClient for InMemoryClient<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
-        type Location = L;
-
-        fn get_size(
-            &self,
-            _location: Self::Location,
-        ) -> BoxFuture<'static, Result<u64, CondowError>> {
+    impl CondowClient for InMemoryClient {
+        fn get_size(&self, _location: url::Url) -> BoxFuture<'static, Result<u64, CondowError>> {
             futures::future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
         fn download(
             &self,
-            _location: Self::Location,
+            _location: url::Url,
             spec: DownloadSpec,
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
             download(&self.blob.as_slice(), self.chunk_size, spec)
@@ -431,24 +415,19 @@ pub mod failing_client_simulator {
     ///
     /// Clones will share the responses to be played back
     #[derive(Clone)]
-    pub struct FailingClientSimulator<L = NoLocation> {
+    pub struct FailingClientSimulator {
         blob: Blob,
         responses: Arc<Mutex<vec::IntoIter<ResponseBehaviour>>>,
         chunk_size: usize,
-        _phantom: PhantomData<L>,
     }
 
-    impl<L> FailingClientSimulator<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
+    impl FailingClientSimulator {
         /// Create a new instance
         fn new(blob: Blob, response_player: ResponsePlayer, chunk_size: usize) -> Self {
             Self {
                 blob,
                 responses: Arc::new(Mutex::new(response_player.into_iter())),
                 chunk_size,
-                _phantom: PhantomData,
             }
         }
 
@@ -457,22 +436,17 @@ pub mod failing_client_simulator {
         }
     }
 
-    impl<L> CondowClient for FailingClientSimulator<L>
-    where
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
-    {
-        type Location = L;
-
+    impl CondowClient for FailingClientSimulator {
         fn get_size(
             &self,
-            _location: Self::Location,
+            _location: url::Url,
         ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
             future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
         fn download(
             &self,
-            _location: Self::Location,
+            _location: url::Url,
             spec: DownloadSpec,
         ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
         {
@@ -1203,7 +1177,12 @@ pub mod failing_client_simulator {
             client: &FailingClientSimulator,
             range: R,
         ) -> Result<Result<Vec<u8>, Vec<u8>>, CondowError> {
-            let (mut stream, _bytes_hint) = client.download(NoLocation, range.into()).await?;
+            let (mut stream, _bytes_hint) = client
+                .download(
+                    url::Url::parse("noscheme://").expect("a valid URL"),
+                    range.into(),
+                )
+                .await?;
 
             let mut received = Vec::new();
 
