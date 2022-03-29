@@ -64,11 +64,9 @@ impl Default for TestCondowClient {
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = NoLocation;
-
     fn get_size(
         &self,
-        _location: Self::Location,
+        _location: url::Url,
     ) -> BoxFuture<'static, Result<u64, crate::errors::CondowError>> {
         let f = future::ready(Ok(self.data.len() as u64));
         Box::pin(f)
@@ -76,7 +74,7 @@ impl CondowClient for TestCondowClient {
 
     fn download(
         &self,
-        _location: Self::Location,
+        _location: url::Url,
         spec: DownloadSpec,
     ) -> BoxFuture<
         'static,
@@ -408,10 +406,10 @@ impl TestDownloader {
     }
 }
 
-impl Downloads<NoLocation> for TestDownloader {
+impl Downloads for TestDownloader {
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: NoLocation,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>>
     {
@@ -422,7 +420,7 @@ impl Downloads<NoLocation> for TestDownloader {
 
     fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        _location: NoLocation,
+        _location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
         Box::pin(make_a_stream(
@@ -432,16 +430,12 @@ impl Downloads<NoLocation> for TestDownloader {
         ))
     }
 
-    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, _location: url::Url) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 
-    fn reader_with_length(
-        &self,
-        location: NoLocation,
-        length: u64,
-    ) -> RandomAccessReader<Self, NoLocation>
+    fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self>
     where
         Self: Sized,
     {
@@ -519,7 +513,10 @@ async fn check_test_downloader() {
 
         let downloader = TestDownloader::new(n as usize);
 
-        let parts = downloader.download(NoLocation, ..).await.unwrap();
+        let parts = downloader
+            .download(url::Url::parse("noscheme://").expect("a valid URL"), ..)
+            .await
+            .unwrap();
 
         let result = parts.into_vec().await.unwrap();
 

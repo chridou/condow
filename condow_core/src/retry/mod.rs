@@ -349,7 +349,7 @@ where
 
     pub async fn get_size<R: Reporter>(
         &self,
-        location: C::Location,
+        location: url::Url,
         reporter: &R,
     ) -> Result<u64, CondowError>
     where
@@ -365,7 +365,7 @@ where
 
     pub async fn download<R: Reporter>(
         &self,
-        location: C::Location,
+        location: url::Url,
         spec: DownloadSpec,
         reporter: &R,
     ) -> Result<(BytesStream, BytesHint), CondowError> {
@@ -391,7 +391,7 @@ where
 /// Retries on the `get_size` request according to the [RetryConfig]
 async fn retry_get_size<C, R>(
     client: &C,
-    location: C::Location,
+    location: url::Url,
     config: &RetryConfig,
     reporter: &R,
 ) -> Result<u64, CondowError>
@@ -429,7 +429,7 @@ where
 /// a new stream starting where the broken one ended will be made.
 async fn retry_download<C, R>(
     client: &C,
-    location: C::Location,
+    location: url::Url,
     spec: DownloadSpec,
     config: &RetryConfig,
     reporter: &R,
@@ -513,7 +513,7 @@ where
 /// requesting new stream for the remainder of `original_range`
 async fn loop_retry_complete_stream<C, R>(
     mut stream: BytesStream,
-    location: C::Location,
+    location: url::Url,
     original_range: InclusiveRange,
     client: C,
     next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
@@ -620,7 +620,7 @@ async fn try_consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
 /// Retries to get a new stream for the given download spec.
 async fn retry_download_get_stream<C, R>(
     client: &C,
-    location: C::Location,
+    location: url::Url,
     spec: DownloadSpec,
     config: &RetryConfig,
     reporter: &R,

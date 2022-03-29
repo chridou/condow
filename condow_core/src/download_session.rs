@@ -60,7 +60,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// within the BLOB/range downloaded.
     pub async fn download<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
         self.download_chunks(location, range)
@@ -78,7 +78,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// downloaded sequentially.
     pub async fn download_chunks<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
         let reporter = self.reporter_factory.make(&location);
@@ -95,7 +95,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// within the BLOB/range downloaded.
     pub async fn download_rep<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<StreamWithReport<PartStream<ChunkStream>, RF::ReporterType>, CondowError> {
         let reporter = self.reporter_factory.make(&location);
@@ -112,7 +112,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// downloaded sequentially.
     pub async fn download_chunks_rep<R: Into<DownloadRange>>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> Result<StreamWithReport<ChunkStream, RF::ReporterType>, CondowError> {
         let reporter = self.reporter_factory.make(&location);
@@ -129,7 +129,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// within the BLOB/range downloaded.
     pub async fn download_wrep<R: Into<DownloadRange>, RRP: Reporter>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
         reporter: RRP,
     ) -> Result<StreamWithReport<PartStream<ChunkStream>, RRP>, CondowError> {
@@ -158,7 +158,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// downloaded sequentially.
     pub async fn download_chunks_wrep<R: Into<DownloadRange>, RPP: Reporter>(
         &self,
-        location: C::Location,
+        location: url::Url,
         range: R,
         reporter: RPP,
     ) -> Result<StreamWithReport<ChunkStream, RPP>, CondowError> {
@@ -175,7 +175,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     }
 
     /// Get the size of a file at the BLOB at location
-    pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
+    pub async fn get_size(&self, location: url::Url) -> Result<u64, CondowError> {
         self.condow.get_size(location).await
     }
 
@@ -184,8 +184,8 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// The reader will use the configured [ReporterFactory].
     pub async fn reader(
         &self,
-        location: C::Location,
-    ) -> Result<RandomAccessReader<Self, C::Location>, CondowError> {
+        location: url::Url,
+    ) -> Result<RandomAccessReader<Self>, CondowError> {
         let length = self.get_size(location.clone()).await?;
         Ok(RandomAccessReader::new_with_length(
             self.clone(),
@@ -197,11 +197,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// The reader will use the configured [ReporterFactory].
-    pub fn reader_with_length(
-        &self,
-        location: C::Location,
-        length: u64,
-    ) -> RandomAccessReader<Self, C::Location> {
+    pub fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self> {
         let mut me = self.clone();
         me.get_size_mode = GetSizeMode::Required;
         RandomAccessReader::new_with_length(me, location, length)
@@ -218,14 +214,14 @@ impl<C: CondowClient, RF: ReporterFactory> Clone for DownloadSession<C, RF> {
     }
 }
 
-impl<C, RF> Downloads<C::Location> for DownloadSession<C, RF>
+impl<C, RF> Downloads for DownloadSession<C, RF>
 where
     C: CondowClient,
     RF: ReporterFactory,
 {
     fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
         Box::pin(self.download(location, range))
@@ -233,21 +229,17 @@ where
 
     fn download_chunks<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
         &'a self,
-        location: C::Location,
+        location: url::Url,
         range: R,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         Box::pin(self.download_chunks(location, range))
     }
 
-    fn get_size<'a>(&'a self, location: C::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, location: url::Url) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
     }
 
-    fn reader_with_length(
-        &self,
-        location: C::Location,
-        length: u64,
-    ) -> RandomAccessReader<Self, C::Location> {
+    fn reader_with_length(&self, location: url::Url, length: u64) -> RandomAccessReader<Self> {
         DownloadSession::reader_with_length(self, location, length)
     }
 }

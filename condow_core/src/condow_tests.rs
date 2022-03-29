@@ -34,7 +34,10 @@ mod blob {
                     let downloader =
                         condow.downloader_with_reporting(SimpleReporterFactory::default());
 
-                    let result_stream = downloader.download_rep(NoLocation, ..).await.unwrap();
+                    let result_stream = downloader
+                        .download_rep(url::Url::parse("noscheme://").expect("a valid URL"), ..)
+                        .await
+                        .unwrap();
 
                     let result = result_stream.into_stream().into_vec().await.unwrap();
 
@@ -70,7 +73,10 @@ mod blob {
                     let downloader =
                         condow.downloader_with_reporting(SimpleReporterFactory::default());
 
-                    let result_stream = downloader.download_rep(NoLocation, ..).await.unwrap();
+                    let result_stream = downloader
+                        .download_rep(url::Url::parse("noscheme://").expect("a valid URL"), ..)
+                        .await
+                        .unwrap();
 
                     let report = result_stream.reporter.report();
                     assert!(report.download_time > Duration::ZERO);
@@ -117,7 +123,7 @@ mod range {
 
                             let result_stream = machinery::download(
                                 &condow,
-                                NoLocation,
+                                url::Url::parse("noscheme://").expect("a valid URL"),
                                 range.clone(),
                                 crate::GetSizeMode::Always,
                                 SimpleReporter::default(),
@@ -163,7 +169,7 @@ mod range {
 
                             let result_stream = machinery::download(
                                 &condow,
-                                NoLocation,
+                                url::Url::parse("noscheme://").expect("a valid URL"),
                                 range.clone(),
                                 crate::GetSizeMode::Required,
                                 SimpleReporter::default(),
@@ -219,7 +225,7 @@ mod range {
 
                             let result_stream = machinery::download(
                                 &condow,
-                                NoLocation,
+                                url::Url::parse("noscheme://").expect("a valid URL"),
                                 range.clone(),
                                 crate::GetSizeMode::Default,
                                 SimpleReporter::default(),
@@ -265,7 +271,7 @@ mod range {
 
                             let result_stream = machinery::download(
                                 &condow,
-                                NoLocation,
+                                url::Url::parse("noscheme://").expect("a valid URL"),
                                 range.clone(),
                                 crate::GetSizeMode::Default,
                                 SimpleReporter::default(),
@@ -321,7 +327,7 @@ mod range {
 
                                     let result_stream = machinery::download(
                                         &condow,
-                                        NoLocation,
+                                        url::Url::parse("noscheme://").expect("a valid URL"),
                                         range,
                                         crate::GetSizeMode::Default,
                                         SimpleReporter::default(),
@@ -368,7 +374,7 @@ mod range {
 
                                     let result_stream = machinery::download(
                                         &condow,
-                                        NoLocation,
+                                        url::Url::parse("noscheme://").expect("a valid URL"),
                                         range,
                                         crate::GetSizeMode::Default,
                                         SimpleReporter::default(),
@@ -427,7 +433,7 @@ mod range {
 
                                         let result_stream = machinery::download(
                                             &condow,
-                                            NoLocation,
+                                            url::Url::parse("noscheme://").expect("a valid URL"),
                                             range,
                                             crate::GetSizeMode::Default,
                                             SimpleReporter::default(),
@@ -481,7 +487,7 @@ mod range {
 
                                         let result_stream = machinery::download(
                                             &condow,
-                                            NoLocation,
+                                            url::Url::parse("noscheme://").expect("a valid URL"),
                                             range,
                                             crate::GetSizeMode::Default,
                                             SimpleReporter::default(),

@@ -17,8 +17,10 @@ pin-project-lite = "0.2"
 bytes = "1"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "time"] }
+tracing = "0.1.32"
 thiserror = "1.0"
 anyhow = "1.0"
+url = "2.2.2"
 
 [dev-dependencies]
 rand = "0.8.0"

@@ -16,7 +16,7 @@
 //! let client = S3ClientWrapper::new(Region::default());
 //! let condow = client.condow(Config::default()).unwrap();
 //!
-//! let location = Bucket::new("my_bucket").object("my_object");
+//! let location = url::Url::parse("s3://my_bucket/my_object").expect("a valid s3 URL");
 //!
 //! let stream = condow.download(location, 23..46).await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
@@ -189,15 +189,14 @@ impl<C: S3 + Clone + Send + Sync + 'static> S3ClientWrapper<C> {
 }
 
 impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> {
-    type Location = S3Location;
-
-    fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<u64, CondowError>> {
+    fn get_size(&self, location: url::Url) -> BoxFuture<'static, Result<u64, CondowError>> {
         let client = self.0.clone();
+        let bucket = location.host_str().expect("a valid S3 URL").to_string();
+        let object_key = location.path().to_string();
         let f = async move {
-            let (bucket, object_key) = location.into_inner();
             let head_object_request = HeadObjectRequest {
-                bucket: bucket.into_inner(),
-                key: object_key.into_inner(),
+                bucket: bucket,
+                key: object_key,
                 ..Default::default()
             };
 
@@ -218,15 +217,16 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
 
     fn download(
         &self,
-        location: Self::Location,
+        location: url::Url,
         spec: DownloadSpec,
     ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
         let client = self.0.clone();
+        let bucket = location.host_str().expect("a valid S3 URL").to_string();
+        let object_key = location.path().to_string();
         let f = async move {
-            let (bucket, object_key) = location.into_inner();
             let get_object_request = GetObjectRequest {
-                bucket: bucket.into_inner(),
-                key: object_key.into_inner(),
+                bucket: bucket,
+                key: object_key,
                 range: spec.http_range_value(),
                 ..Default::default()
             };

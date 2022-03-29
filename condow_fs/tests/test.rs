@@ -4,11 +4,11 @@ fn create_condow_condow() -> Condow<FsClient> {
     FsClient::condow(Default::default()).unwrap()
 }
 
-fn get_test_file_path() -> String {
-    format!(
-        "{}/tests/test_data",
-        std::env::current_dir().unwrap().display()
-    )
+fn get_test_file_path() -> url::Url {
+    let mut path = std::env::current_dir().unwrap();
+    path.push("tests");
+    path.push("test_data");
+    url::Url::from_file_path(path).expect("path should be absolute")
 }
 
 #[tokio::test]

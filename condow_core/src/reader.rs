@@ -93,29 +93,28 @@ mod random_access_reader {
     /// [FetchAheadMode::ToEnd]. The In these cases the number of bytes
     /// to be downloaded must be greater than the configured part size
     /// for concurrent downloading.
-    pub struct RandomAccessReader<D, L> {
+    pub struct RandomAccessReader<D> {
         /// Reading position of the next byte
         pos: u64,
         /// Download logic
         downloader: D,
         /// Location of the BLOB
-        location: L,
+        location: url::Url,
         /// Total length of the BLOB
         length: u64,
         state: State,
         fetch_ahead_mode: FetchAheadMode,
     }
 
-    impl<D, L> RandomAccessReader<D, L>
+    impl<D> RandomAccessReader<D>
     where
-        D: Downloads<L> + Clone + Send + Sync + 'static,
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
+        D: Downloads + Clone + Send + Sync + 'static,
     {
         /// Creates a new instance without a given BLOB length
         ///
         /// This function will query the size of the BLOB. If the size is already known
         /// call [RandomAccessReader::new_with_length]
-        pub async fn new(downloader: D, location: L) -> Result<Self, CondowError> {
+        pub async fn new(downloader: D, location: url::Url) -> Result<Self, CondowError> {
             let length = downloader.get_size(location.clone()).await?;
             Ok(Self::new_with_length(downloader, location, length))
         }
@@ -123,7 +122,7 @@ mod random_access_reader {
         /// Will create a reader with the given known size of the BLOB.
         ///
         /// This function will create a new reader immediately
-        pub fn new_with_length(downloader: D, location: L, length: u64) -> Self {
+        pub fn new_with_length(downloader: D, location: url::Url, length: u64) -> Self {
             Self {
                 downloader,
                 location,
@@ -163,9 +162,7 @@ mod random_access_reader {
             }
             .boxed()
         }
-    }
 
-    impl<D, L> RandomAccessReader<D, L> {
         pub fn set_fetch_ahead_mode<T: Into<FetchAheadMode>>(&mut self, mode: T) {
             self.fetch_ahead_mode = mode.into();
         }
@@ -175,10 +172,9 @@ mod random_access_reader {
         }
     }
 
-    impl<D, L> AsyncRead for RandomAccessReader<D, L>
+    impl<D> AsyncRead for RandomAccessReader<D>
     where
-        D: Downloads<L> + Clone + Send + Sync + 'static + Unpin,
-        L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static + Unpin,
+        D: Downloads + Clone + Send + Sync + 'static + Unpin,
     {
         fn poll_read(
             mut self: Pin<&mut Self>,
@@ -261,10 +257,9 @@ mod random_access_reader {
         }
     }
 
-    impl<D, L> AsyncSeek for RandomAccessReader<D, L>
+    impl<D> AsyncSeek for RandomAccessReader<D>
     where
         D: Unpin,
-        L: Unpin,
     {
         fn poll_seek(
             self: Pin<&mut Self>,
@@ -317,7 +312,10 @@ mod random_access_reader {
 
                 let downloader = TestDownloader::new(n as usize);
 
-                let mut reader = downloader.reader(NoLocation).await.unwrap();
+                let mut reader = downloader
+                    .reader(url::Url::parse("noscheme://").expect("a valid URL"))
+                    .await
+                    .unwrap();
 
                 let mut buf = Vec::new();
                 let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
@@ -330,7 +328,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn offsets_and_seek_from_start() {
             let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-                .reader(NoLocation)
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
                 .await
                 .unwrap();
 
@@ -349,7 +347,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn offsets_and_seek_from_end() {
             let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-                .reader(NoLocation)
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
                 .await
                 .unwrap();
 
@@ -366,7 +364,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn offsets_and_seek_from_current() {
             let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-                .reader(NoLocation)
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
                 .await
                 .unwrap();
 
@@ -389,7 +387,10 @@ mod random_access_reader {
         async fn seek_from_start() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(NoLocation).await.unwrap();
+            let mut reader = downloader
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
+                .await
+                .unwrap();
 
             reader.seek(SeekFrom::Start(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -411,7 +412,10 @@ mod random_access_reader {
         async fn seek_from_end() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(NoLocation).await.unwrap();
+            let mut reader = downloader
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
+                .await
+                .unwrap();
 
             reader.seek(SeekFrom::End(-10)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -432,7 +436,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn seek_from_end_before_byte_zero_must_err() {
             let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-                .reader(NoLocation)
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
                 .await
                 .unwrap();
             // Hit 0 is ok
@@ -447,7 +451,10 @@ mod random_access_reader {
         async fn seek_from_current() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
             let downloader = TestDownloader::new_with_blob(expected.clone());
-            let mut reader = downloader.reader(NoLocation).await.unwrap();
+            let mut reader = downloader
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
+                .await
+                .unwrap();
 
             reader.seek(SeekFrom::Current(1)).await.unwrap();
             let mut buf = vec![0, 0, 0];
@@ -468,7 +475,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn seek_from_current_before_byte_zero_must_err() {
             let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-                .reader(NoLocation)
+                .reader(url::Url::parse("noscheme://").expect("a valid URL"))
                 .await
                 .unwrap();
 
@@ -499,7 +506,10 @@ mod random_access_reader {
 
                     let downloader = TestDownloader::new_with_blob(expected.clone());
 
-                    let mut reader = downloader.reader(NoLocation).await.unwrap();
+                    let mut reader = downloader
+                        .reader(url::Url::parse("noscheme://").expect("a valid URL"))
+                        .await
+                        .unwrap();
                     reader.set_fetch_ahead_mode(mode);
 
                     let mut buf = Vec::new();

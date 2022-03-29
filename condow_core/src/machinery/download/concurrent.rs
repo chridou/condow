@@ -34,7 +34,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
         results_sender: UnboundedSender<ChunkStreamItem>,
         client: ClientRetryWrapper<C>,
         config: Config,
-        location: C::Location,
+        location: url::Url,
         reporter: R,
     ) -> Self {
         let started_at = Instant::now();

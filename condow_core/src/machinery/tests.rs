@@ -25,7 +25,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -59,7 +59,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -94,7 +94,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -129,7 +129,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -167,7 +167,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -203,7 +203,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -241,7 +241,7 @@ mod download {
 
         let result = download(
             &condow,
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             0..100,
             crate::GetSizeMode::Required,
             NoReporting,
@@ -281,7 +281,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             range,
             bytes_hint,
             config,
@@ -312,7 +312,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             range,
             bytes_hint,
             config,
@@ -343,7 +343,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            url::Url::parse("noscheme://").expect("a valid URL"),
             range,
             bytes_hint,
             config,
