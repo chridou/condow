@@ -19,6 +19,9 @@ futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "time"] }
 thiserror = "1.0"
 anyhow = "1.0"
+tracing = "0.1"
 
 [dev-dependencies]
 rand = "0.8.0"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+tracing-subscriber = "0.3"

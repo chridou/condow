@@ -3,7 +3,7 @@ mod download {
         condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, NoLocation},
         config::Config,
         errors::CondowErrorKind,
-        machinery::download,
+        machinery::download_range,
         reporter::NoReporting,
     };
 
@@ -23,7 +23,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -57,7 +57,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -92,7 +92,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -127,7 +127,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -165,7 +165,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -201,7 +201,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,
@@ -239,7 +239,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download(
+        let result = download_range(
             &condow,
             NoLocation,
             0..100,

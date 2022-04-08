@@ -12,6 +12,7 @@ use futures::{
     channel::mpsc::{self, Sender, UnboundedSender},
     StreamExt,
 };
+use tracing::{info_span, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -49,6 +50,10 @@ impl SequentialDownloader {
         tokio::spawn(async move {
             let mut request_receiver = Box::pin(request_receiver);
             while let Some(range_request) = request_receiver.next().await {
+                let parent = Span::current();
+                let span = info_span!(parent: &parent, "download_part", part_index = %range_request.part_index, part_range = %range_request.blob_range, part_offset = %range_request.range_offset);
+                let _guard = span.enter();
+
                 if context.kill_switch.is_pushed() {
                     // That failed task should have already sent an error...
                     // ...but we do not want to prove that...

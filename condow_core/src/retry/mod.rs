@@ -3,6 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Stream, StreamExt};
+use tracing::{debug, debug_span, info_span, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -355,6 +356,11 @@ where
     where
         R: Reporter,
     {
+        let parent = Span::current();
+        let span = debug_span!(parent: &parent, "client_get_size");
+        let _guard = span.enter();
+        debug!(parent: &span, "getting size");
+
         let (client, config) = self.inner.as_ref();
         if let Some(config) = config {
             retry_get_size(client, location, config, reporter).await
@@ -369,6 +375,11 @@ where
         spec: DownloadSpec,
         reporter: &R,
     ) -> Result<(BytesStream, BytesHint), CondowError> {
+        let parent = Span::current();
+        let span = debug_span!(parent: &parent, "client_download_part", %spec);
+        let _guard = span.enter();
+        debug!(parent: &span, "downloading part");
+
         let (client, config) = self.inner.as_ref();
         if let Some(config) = config {
             retry_download(client, location, spec, config, reporter).await

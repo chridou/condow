@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::ops::RangeInclusive;
+use std::{fmt, ops::RangeInclusive};
 
 use futures::future::BoxFuture;
 
@@ -41,6 +41,15 @@ impl DownloadSpec {
         match self {
             DownloadSpec::Complete => 0,
             DownloadSpec::Range(r) => r.start(),
+        }
+    }
+}
+
+impl fmt::Display for DownloadSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DownloadSpec::Complete => write!(f, "[..]"),
+            DownloadSpec::Range(r) => r.fmt(f),
         }
     }
 }

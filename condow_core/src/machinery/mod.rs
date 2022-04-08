@@ -1,4 +1,8 @@
 //! Streams for handling downloads
+use std::fmt::Display;
+
+use tracing::span::{Entered, EnteredSpan};
+use tracing::{debug, error, info, info_span, span, Level, Span, Instrument};
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
@@ -12,20 +16,27 @@ use self::range_stream::RangeStream;
 mod download;
 mod range_stream;
 
-pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
-    condow: &Condow<C>,
-    location: C::Location,
-    range: DR,
-    get_size_mode: GetSizeMode,
-    reporter: R,
-) -> Result<StreamWithReport<ChunkStream, R>, CondowError> {
-    download_range(condow, location, range, get_size_mode, reporter.clone())
-        .await
-        .map_err(|err| {
-            reporter.download_failed(None);
-            err
-        })
-}
+// pub async fn download<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
+//     condow: &Condow<C>,
+//     location: C::Location,
+//     range: DR,
+//     get_size_mode: GetSizeMode,
+//     reporter: R,
+// ) -> Result<StreamWithReport<ChunkStream, R>, CondowError> {
+
+//     let range = range.into();
+//     let parent = Span::current();
+//     let download_span = info_span!(parent: &parent, "download", %location, %range).entered();
+
+//     info!(parent: &download_span, "starting");
+
+//     download_range(condow, location, range, get_size_mode, reporter.clone())
+//         .await
+//         .map_err(|err| {
+//             reporter.download_failed(None);
+//             err
+//         })
+// }
 
 pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
     condow: &Condow<C>,
@@ -34,8 +45,15 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     get_size_mode: GetSizeMode,
     reporter: R,
 ) -> Result<StreamWithReport<ChunkStream, R>, CondowError> {
-    let range: DownloadRange = range.into();
+    let range = range.into();
+    let parent = Span::current();
+    let download_span = info_span!(parent: &parent, "download", %location, %range);
+    let guard = download_span.enter();
+
+    info!(parent: &download_span, "starting");
+
     range.validate()?;
+
     let range = if let Some(range) = range.sanitized() {
         range
     } else {
@@ -44,6 +62,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
 
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
+            debug!(parent: &download_span, "open range");
             let size = condow.client.get_size(location.clone(), &reporter).await?;
             if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
@@ -52,6 +71,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
             }
         }
         DownloadRange::Closed(cl) => {
+            debug!(parent: &download_span, "closed range");
             if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
                 let size = condow.client.get_size(location.clone(), &reporter).await?;
                 if let Some(range) = cl.incl_range_from_size(size) {
@@ -77,6 +97,8 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     )
     .await?;
 
+    drop(guard);
+
     Ok(StreamWithReport { reporter, stream })
 }
 
@@ -88,9 +110,13 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     config: Config,
     reporter: R,
 ) -> Result<ChunkStream, CondowError> {
+    let span = Span::current();
+    let _guard = span.enter();
+
     reporter.effective_range(range);
 
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
+    debug!(parent: &span, "downloading {n_parts} parts");
 
     if n_parts == 0 {
         panic!("n_parts must not be 0. This is a bug");
@@ -105,8 +131,11 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     }
     let n_parts = n_parts as usize;
 
+    let download_parts_span = info_span!(parent: &span, "download_parts", n_parts = %n_parts);
+
     tokio::spawn(async move {
-        download::download_concurrently(
+         let guard = download_parts_span.enter();
+         let result = download::download_concurrently(
             ranges_stream,
             config.max_concurrency.into_inner().min(n_parts),
             sender,
@@ -115,10 +144,13 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
             location,
             reporter,
         )
-        .await
+        .await;
+        drop(guard);
+        result
     });
 
     Ok(chunk_stream)
 }
+
 #[cfg(test)]
 mod tests;

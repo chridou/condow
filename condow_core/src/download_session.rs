@@ -82,7 +82,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         range: R,
     ) -> Result<ChunkStream, CondowError> {
         let reporter = self.reporter_factory.make(&location);
-        machinery::download(&self.condow, location, range, self.get_size_mode, reporter)
+        machinery::download_range(&self.condow, location, range, self.get_size_mode, reporter)
             .await
             .map(|o| o.stream)
     }
@@ -163,7 +163,7 @@ impl<C: CondowClient, RF: ReporterFactory> DownloadSession<C, RF> {
         reporter: RPP,
     ) -> Result<StreamWithReport<ChunkStream, RPP>, CondowError> {
         let composite = CompositeReporter(self.reporter_factory.make(&location), reporter);
-        machinery::download(&self.condow, location, range, self.get_size_mode, composite)
+        machinery::download_range(&self.condow, location, range, self.get_size_mode, composite)
             .await
             .map(|sr| {
                 let StreamWithReport { stream, reporter } = sr;
