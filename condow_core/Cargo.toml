@@ -25,3 +25,4 @@ tracing = "0.1"
 rand = "0.8.0"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 tracing-subscriber = "0.3"
+tracing-flame = "0.2.0"

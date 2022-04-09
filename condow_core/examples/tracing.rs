@@ -8,17 +8,25 @@ use condow_core::{
     config::Config,
 };
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::{info_span, Instrument, Level};
-use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
+use tracing::{info_span, Instrument};
+use tracing_flame::FlameLayer;
+use tracing_subscriber::{
+    fmt::{format::FmtSpan, Layer},
+    prelude::*,
+    registry::Registry,
+};
 
 fn main() -> Result<(), Error> {
-    let fmt_subscriber = FmtSubscriber::builder()
+    let fmt_layer = Layer::default()
         .with_level(true)
-        .with_max_level(Level::TRACE)
         .with_span_events(FmtSpan::FULL) // Logs (spams) lifecycle events of spans
-        .with_line_number(true)
-        .finish();
-    tracing::subscriber::set_global_default(fmt_subscriber)?;
+        .with_line_number(true);
+
+    let (flame_layer, _flame_guard) = FlameLayer::with_file("./tracing_flame.folded").unwrap();
+
+    let subscriber = Registry::default().with(fmt_layer).with(flame_layer);
+
+    tracing::subscriber::set_global_default(subscriber)?;
 
     let runtime = RuntimeBuilder::new_multi_thread()
         .enable_time()
