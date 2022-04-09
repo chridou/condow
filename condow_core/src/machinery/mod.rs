@@ -25,13 +25,15 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     let range = range.into();
 
     let parent = Span::current();
+    // This span will track the lifetime of the whole download for all parts...
     let download_span = info_span!(parent: &parent, "download", %location, %range);
     let download_span_enter_guard = download_span.enter();
     let download_guard = DownloadSpanGuard::new(download_span.clone());
 
     info!("starting");
 
-    let get_stream_span = info_span!(parent: &download_span, "get_stream");
+    // This span will track how long it takes to create the stream of chunks
+    let get_stream_span = info_span!(parent: &download_span, "create_stream");
     let get_stream_guard = get_stream_span.enter();
 
     range.validate()?;
@@ -81,6 +83,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     )
     .await?;
 
+    // Explicit drops for scope visualization
     drop(get_stream_guard);
     drop(download_span_enter_guard);
 
@@ -99,6 +102,7 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     reporter.effective_range(range);
 
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
+
     debug!(parent: download_span_guard.span(), "downloading {n_parts} parts");
 
     if n_parts == 0 {
@@ -132,22 +136,18 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
     Ok(chunk_stream)
 }
 
-/// Thus struct contains a span which must be kept alive until whole download is completed
-/// which means that all parts have been downloaded.
+/// This struct contains a span which must be kept alive until whole download is completed
+/// which means that all parts have been downloaded (and pushed on the result stream).
 #[derive(Clone)]
-pub(crate) struct DownloadSpanGuard {
-    span: Arc<Span>,
-}
+pub(crate) struct DownloadSpanGuard(Arc<Span>);
 
 impl DownloadSpanGuard {
     pub fn new(span: Span) -> Self {
-        Self {
-            span: Arc::new(span),
-        }
+        Self(Arc::new(span))
     }
 
     pub fn span(&self) -> &Span {
-        &self.span
+        &self.0
     }
 }
 

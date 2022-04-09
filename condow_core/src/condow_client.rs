@@ -113,10 +113,11 @@ mod in_memory {
         future::{self, BoxFuture, FutureExt},
         stream,
     };
+    use tracing::trace;
 
     use super::{CondowClient, DownloadSpec, NoLocation};
 
-    /// Holds the BLOB in memory as owned data.
+    /// Holds the BLOB in memory as owned or static data.
     ///
     /// Use for testing.
     #[derive(Clone)]
@@ -180,6 +181,8 @@ mod in_memory {
             &self,
             _location: Self::Location,
         ) -> BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("in-memory-client: get_size");
+
             futures::future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -188,6 +191,8 @@ mod in_memory {
             _location: Self::Location,
             spec: DownloadSpec,
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+            trace!("in-memory-client: download");
+
             download(&self.blob.as_slice(), self.chunk_size, spec)
         }
     }

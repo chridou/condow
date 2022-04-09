@@ -8,14 +8,14 @@ use condow_core::{
     config::Config,
 };
 use tokio::runtime::Builder as RuntimeBuilder;
-use tracing::{info_span, Level, Span};
+use tracing::{info_span, Instrument, Level};
 use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
 
 fn main() -> Result<(), Error> {
     let fmt_subscriber = FmtSubscriber::builder()
         .with_level(true)
-        .with_max_level(Level::DEBUG)
-        .with_span_events(FmtSpan::FULL)
+        .with_max_level(Level::TRACE)
+        .with_span_events(FmtSpan::FULL) // Logs (spams) lifecycle events of spans
         .with_line_number(true)
         .finish();
     tracing::subscriber::set_global_default(fmt_subscriber)?;
@@ -25,13 +25,10 @@ fn main() -> Result<(), Error> {
         .build()
         .unwrap();
 
-    let current_span = Span::current();
-    let outer_span = info_span!(parent: &current_span, "outer");
-    let guard = outer_span.enter();
+    // Create an outer span which might be something created application side...
+    let outer_span = info_span!("outer");
 
-    runtime.block_on(run())?;
-
-    drop(guard);
+    runtime.block_on(run().instrument(outer_span))?;
 
     runtime.shutdown_timeout(Duration::from_secs(10));
 
@@ -44,7 +41,7 @@ async fn run() -> Result<(), Error> {
     let config = Config::default()
         .buffers_full_delay_ms(0)
         .part_size_bytes(10)
-        .max_concurrency(1);
+        .max_concurrency(2);
 
     let condow = InMemoryClient::<NoLocation>::new(blob)
         .condow(config)
@@ -53,7 +50,7 @@ async fn run() -> Result<(), Error> {
     let stream = condow.download(NoLocation, ..).await?;
     let _downloaded = stream.into_vec().await?;
 
-    println!("Download finished");
+    println!("Download finished (not from tracing...)");
 
     Ok(())
 }

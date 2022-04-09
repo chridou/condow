@@ -358,15 +358,19 @@ where
     {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_get_size");
-        let _guard = span.enter();
         debug!(parent: &span, "getting size");
 
         let (client, config) = self.inner.as_ref();
-        if let Some(config) = config {
-            retry_get_size(client, location, config, reporter).await
-        } else {
-            Ok(client.get_size(location).await?)
+        let f = async {
+            if let Some(config) = config {
+                retry_get_size(client, location, config, reporter).await
+            } else {
+                Ok(client.get_size(location).await?)
+            }
         }
+        .instrument(span);
+
+        f.await
     }
 
     pub async fn download<R: Reporter>(

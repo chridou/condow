@@ -12,7 +12,7 @@ use futures::{
     channel::mpsc::{self, Sender, UnboundedSender},
     StreamExt,
 };
-use tracing::{debug, debug_span, Instrument, Span};
+use tracing::{debug, debug_span, trace, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -48,51 +48,60 @@ impl SequentialDownloader {
         let (request_sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
         let download_span = context.span().clone();
-        tokio::spawn(async move {
-            let mut request_receiver = Box::pin(request_receiver);
-            while let Some(range_request) = request_receiver.next().await {
-                let span = debug_span!(parent: context.span(), "download_part", part_index = %range_request.part_index, part_range = %range_request.blob_range, part_offset = %range_request.range_offset);
-                let _guard = span.enter();
 
-                if context.kill_switch.is_pushed() {
-                    // That failed task should have already sent an error...
-                    // ...but we do not want to prove that...
-                    context.send_err(CondowError::new_other(
-                        "another download task already failed",
-                    ));
-                    return;
-                }
+        tokio::spawn(
+            async move {
+                let mut request_receiver = Box::pin(request_receiver);
+                while let Some(range_request) = request_receiver.next().await {
+                    let span = debug_span!(
+                        parent: context.span(), "download_part", 
+                        part_index = %range_request.part_index,
+                        part_range = %range_request.blob_range,
+                        part_offset = %range_request.range_offset);
 
-                match client
-                    .download(
-                        location.clone(),
-                        DownloadSpec::Range(range_request.blob_range),
-                        &context.reporter,
-                    )
-                    .await
-                {
-                    Ok((bytes_stream, _total_bytes)) => {
-                        if consume_and_dispatch_bytes(bytes_stream, &mut context, range_request)
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                    Err(err) => {
-                        context.reporter.part_failed(
-                            &err,
-                            range_request.part_index,
-                            &range_request.blob_range,
-                        );
-                        context.send_err(err);
+                    if context.kill_switch.is_pushed() {
+                        // That failed task should have already sent an error...
+                        // ...but we do not want to prove that...
+                        context.send_err(CondowError::new_other(
+                            "another download task already failed",
+                        ));
                         return;
                     }
-                };
+
+                    match client
+                        .download(
+                            location.clone(),
+                            DownloadSpec::Range(range_request.blob_range),
+                            &context.reporter,
+                        )
+                        .instrument(span.clone())
+                        .await
+                    {
+                        Ok((bytes_stream, _total_bytes)) => {
+                            if consume_and_dispatch_bytes(bytes_stream, &mut context, range_request)
+                                .instrument(span.clone())
+                                .await
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        Err(err) => {
+                            context.reporter.part_failed(
+                                &err,
+                                range_request.part_index,
+                                &range_request.blob_range,
+                            );
+                            context.send_err(err);
+                            return;
+                        }
+                    };
+                }
+                context.mark_successful();
+                drop(context);
             }
-            context.mark_successful();
-            drop(context);
-        }.instrument(download_span));
+            .instrument(download_span),
+        );
 
         SequentialDownloader { request_sender }
     }
@@ -112,6 +121,11 @@ impl SequentialDownloader {
 }
 
 /// A context to control a [SequentialDownloader]
+///
+/// This has some logic on drop to do some cleanup and error tracking
+///
+/// Will abort the download vial the [KillSwitch] if the download of
+/// a part was not marked as completed.
 pub(crate) struct DownloaderContext<R: Reporter> {
     started_at: Instant,
     counter: Arc<AtomicUsize>,
@@ -163,7 +177,7 @@ impl<R: Reporter> DownloaderContext<R> {
 
     /// Mark the download as complete if successful
     ///
-    /// This must be called upon succesful termination of an [InternalDownloader].
+    /// This must be called upon succesful termination of an [SequentialDownloader].
     ///
     /// If the download was not marked complete, an error will be sent when dropped
     /// (a panic is assumed).
@@ -190,14 +204,16 @@ impl<R: Reporter> Drop for DownloaderContext<R> {
             let _ = self.results_sender.unbounded_send(Err(err));
         }
 
-        self.counter.fetch_sub(1, Ordering::SeqCst);
+        let remaining_contexts = self.counter.fetch_sub(1, Ordering::SeqCst);
+        trace!(parent: self.download_span_guard.span(), "dropping context ({remaining_contexts} contexts before drop)");
+
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.kill_switch.is_pushed() {
                 debug!(parent: self.download_span_guard.span(), "download failed");
                 self.reporter
                     .download_failed(Some(self.started_at.elapsed()))
             } else {
-                debug!(parent: self.download_span_guard.span(), "download succeded");
+                debug!(parent: self.download_span_guard.span(), "download succeeded");
                 self.reporter.download_completed(self.started_at.elapsed())
             }
         }
@@ -236,6 +252,8 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 chunk_start = Instant::now();
                 let n_bytes = bytes.len();
                 bytes_received += bytes.len() as u64;
+
+                trace!("received chunk of {} bytes (total {bytes_received} received of {bytes_expected})", bytes.len());
 
                 if bytes_received > bytes_expected {
                     let err = CondowError::new_other(format!(
