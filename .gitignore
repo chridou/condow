@@ -10,9 +10,7 @@ Cargo.lock
 **/*.rs.bk
 
 
-# Added by cargo
-#
-# already existing elements were commented out
+tracing_flame.folded
 
 /target
 #Cargo.lock
