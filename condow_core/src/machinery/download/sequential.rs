@@ -12,13 +12,13 @@ use futures::{
     channel::mpsc::{self, Sender, UnboundedSender},
     StreamExt,
 };
-use tracing::{info_span, Span};
+use tracing::{debug, debug_span, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::ClientRetryWrapper,
     errors::{CondowError, IoError},
-    machinery::range_stream::RangeRequest,
+    machinery::{range_stream::RangeRequest, DownloadSpanGuard},
     reporter::Reporter,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
@@ -47,11 +47,11 @@ impl SequentialDownloader {
     ) -> Self {
         let (request_sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
+        let download_span = context.span().clone();
         tokio::spawn(async move {
             let mut request_receiver = Box::pin(request_receiver);
             while let Some(range_request) = request_receiver.next().await {
-                let parent = Span::current();
-                let span = info_span!(parent: &parent, "download_part", part_index = %range_request.part_index, part_range = %range_request.blob_range, part_offset = %range_request.range_offset);
+                let span = debug_span!(parent: context.span(), "download_part", part_index = %range_request.part_index, part_range = %range_request.blob_range, part_offset = %range_request.range_offset);
                 let _guard = span.enter();
 
                 if context.kill_switch.is_pushed() {
@@ -92,7 +92,7 @@ impl SequentialDownloader {
             }
             context.mark_successful();
             drop(context);
-        });
+        }.instrument(download_span));
 
         SequentialDownloader { request_sender }
     }
@@ -119,6 +119,8 @@ pub(crate) struct DownloaderContext<R: Reporter> {
     reporter: R,
     results_sender: UnboundedSender<ChunkStreamItem>,
     completed: bool,
+    /// This must exist for the whole download
+    download_span_guard: DownloadSpanGuard,
 }
 
 impl<R: Reporter> DownloaderContext<R> {
@@ -128,6 +130,7 @@ impl<R: Reporter> DownloaderContext<R> {
         kill_switch: KillSwitch,
         reporter: R,
         started_at: Instant,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
         Self {
@@ -137,6 +140,7 @@ impl<R: Reporter> DownloaderContext<R> {
             started_at,
             results_sender,
             completed: false,
+            download_span_guard,
         }
     }
 
@@ -166,6 +170,10 @@ impl<R: Reporter> DownloaderContext<R> {
     pub fn mark_successful(&mut self) {
         self.completed = true;
     }
+
+    pub fn span(&self) -> &Span {
+        self.download_span_guard.span()
+    }
 }
 
 impl<R: Reporter> Drop for DownloaderContext<R> {
@@ -185,9 +193,11 @@ impl<R: Reporter> Drop for DownloaderContext<R> {
         self.counter.fetch_sub(1, Ordering::SeqCst);
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.kill_switch.is_pushed() {
+                debug!(parent: self.download_span_guard.span(), "download failed");
                 self.reporter
                     .download_failed(Some(self.started_at.elapsed()))
             } else {
+                debug!(parent: self.download_span_guard.span(), "download succeded");
                 self.reporter.download_completed(self.started_at.elapsed())
             }
         }
@@ -309,6 +319,7 @@ mod tests {
     };
 
     use futures::StreamExt;
+    use tracing::Span;
 
     use crate::{
         condow_client::{
@@ -322,6 +333,7 @@ mod tests {
                 KillSwitch,
             },
             range_stream::RangeStream,
+            DownloadSpanGuard,
         },
         reporter::NoReporting,
         streams::{BytesHint, Chunk, ChunkStream},
@@ -383,6 +395,7 @@ mod tests {
                 KillSwitch::new(),
                 NoReporting,
                 Instant::now(),
+                DownloadSpanGuard::new(Span::none()),
             ),
         );
 

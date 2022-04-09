@@ -9,13 +9,14 @@ use condow_core::{
 };
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{info_span, Level, Span};
-use tracing_subscriber::{FmtSubscriber, fmt::format::FmtSpan};
+use tracing_subscriber::{fmt::format::FmtSpan, FmtSubscriber};
 
 fn main() -> Result<(), Error> {
     let fmt_subscriber = FmtSubscriber::builder()
         .with_level(true)
         .with_max_level(Level::DEBUG)
         .with_span_events(FmtSpan::FULL)
+        .with_line_number(true)
         .finish();
     tracing::subscriber::set_global_default(fmt_subscriber)?;
 

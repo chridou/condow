@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Stream, StreamExt};
-use tracing::{debug, debug_span, info_span, Span};
+use tracing::{debug, debug_span, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -377,15 +377,19 @@ where
     ) -> Result<(BytesStream, BytesHint), CondowError> {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_download_part", %spec);
-        let _guard = span.enter();
         debug!(parent: &span, "downloading part");
 
-        let (client, config) = self.inner.as_ref();
-        if let Some(config) = config {
-            retry_download(client, location, spec, config, reporter).await
-        } else {
-            Ok(client.download(location, spec).await?)
+        let f = async {
+            let (client, config) = self.inner.as_ref();
+            if let Some(config) = config {
+                retry_download(client, location, spec, config, reporter).await
+            } else {
+                Ok(client.download(location, spec).await?)
+            }
         }
+        .instrument(span);
+
+        f.await
     }
 }
 

@@ -259,9 +259,16 @@ mod download {
 }
 
 mod download_chunks {
+    use tracing::Span;
+
     use crate::{
-        condow_client::NoLocation, config::Config, machinery::download_chunks,
-        reporter::NoReporting, streams::BytesHint, test_utils::*, InclusiveRange,
+        condow_client::NoLocation,
+        config::Config,
+        machinery::{download_chunks, DownloadSpanGuard},
+        reporter::NoReporting,
+        streams::BytesHint,
+        test_utils::*,
+        InclusiveRange,
     };
 
     #[tokio::test]
@@ -286,6 +293,7 @@ mod download_chunks {
             bytes_hint,
             config,
             NoReporting,
+            DownloadSpanGuard::new(Span::none()),
         )
         .await
         .unwrap();
@@ -317,6 +325,7 @@ mod download_chunks {
             bytes_hint,
             config,
             NoReporting,
+            DownloadSpanGuard::new(Span::none()),
         )
         .await
         .unwrap();
@@ -348,6 +357,7 @@ mod download_chunks {
             bytes_hint,
             config,
             NoReporting,
+            DownloadSpanGuard::new(Span::none()),
         )
         .await
         .unwrap();
