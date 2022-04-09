@@ -1,4 +1,16 @@
-//! Simply produces some console output
+//! Simply produces some console output and a stack for a flamegraph
+//!
+//! Create flamegraph (copied from [tracing-flame](https://crates.io/crates/tracing-flame)):
+//!
+//! ```
+//! cargo install inferno
+//!
+//! # flamegraph
+//! cat tracing_flame.folded | inferno-flamegraph > tracing-flamegraph.svg
+//!
+//! # flamechart
+//! cat tracing_flame.folded | inferno-flamegraph --flamechart > tracing-flamechart.svg
+//! ```
 
 use std::time::Duration;
 
@@ -23,6 +35,10 @@ fn main() -> Result<(), Error> {
         .with_line_number(true);
 
     let (flame_layer, _flame_guard) = FlameLayer::with_file("./tracing_flame.folded").unwrap();
+    let flame_layer = flame_layer
+        .with_threads_collapsed(true)
+        .with_module_path(false)
+        .with_file_and_line(false);
 
     let subscriber = Registry::default().with(fmt_layer).with(flame_layer);
 

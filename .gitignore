@@ -10,7 +10,9 @@ Cargo.lock
 **/*.rs.bk
 
 
-tracing_flame.folded
+**/tracing_flame.folded
+**/tracing-flamegraph.svg
+**/tracing-flamechart.svg
 
 /target
 #Cargo.lock
