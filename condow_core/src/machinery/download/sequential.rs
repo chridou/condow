@@ -177,7 +177,7 @@ impl<R: Reporter> DownloaderContext<R> {
 
     /// Mark the download as complete if successful
     ///
-    /// This must be called upon succesful termination of an [SequentialDownloader].
+    /// This must be called upon successful termination of an [SequentialDownloader].
     ///
     /// If the download was not marked complete, an error will be sent when dropped
     /// (a panic is assumed).
