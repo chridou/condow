@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Stream, StreamExt};
-use tracing::{debug, debug_span, Instrument, Span};
+use tracing::{debug, debug_span, warn, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -428,6 +428,7 @@ where
     // Retries if the first attempt failed
     let mut delays = config.iterator();
     while let Some(delay) = delays.next() {
+        warn!("get size request failed with \"{last_err}\" - retry in {delay:?}");
         reporter.retry_attempt(&location, &last_err, delay);
 
         tokio::time::sleep(delay).await;
@@ -485,15 +486,19 @@ where
 
     // Now we try to complete the stream by requesting new streams with the remaining
     // bytes if a stream broke
-    tokio::spawn(loop_retry_complete_stream(
-        stream,
-        location.clone(),
-        original_range,
-        client.clone(),
-        next_elem_tx,
-        config.clone(),
-        reporter.clone(),
-    ));
+    let span = Span::current();
+    tokio::spawn(
+        loop_retry_complete_stream(
+            stream,
+            location.clone(),
+            original_range,
+            client.clone(),
+            next_elem_tx,
+            config.clone(),
+            reporter.clone(),
+        )
+        .instrument(span),
+    );
 
     Ok((Box::pin(output_stream_rx), bytes_hint))
 }
@@ -575,6 +580,10 @@ async fn loop_retry_complete_stream<C, R>(
             }
 
             let new_spec = DownloadSpec::Range(remaining_range);
+            warn!(
+                "streaming failed with IO error \"{stream_io_error}\" - retrying on remaining \
+                range {remaining_range}"
+            );
             reporter.stream_resume_attempt(
                 &location,
                 &stream_io_error,
@@ -658,6 +667,7 @@ where
     // Retries if the first attempt failed
     let mut delays = config.iterator();
     while let Some(delay) = delays.next() {
+        warn!("get stream request failed with \"{last_err}\" - retry in {delay:?}");
         reporter.retry_attempt(&location, &last_err, delay);
 
         tokio::time::sleep(delay).await;

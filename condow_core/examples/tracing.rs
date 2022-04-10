@@ -16,8 +16,9 @@ use std::time::Duration;
 
 use anyhow::Error;
 use condow_core::{
-    condow_client::{InMemoryClient, NoLocation},
+    condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, NoLocation},
     config::Config,
+    errors::{CondowError, CondowErrorKind},
 };
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::{info_span, Instrument};
@@ -31,7 +32,8 @@ use tracing_subscriber::{
 fn main() -> Result<(), Error> {
     let fmt_layer = Layer::default()
         .with_level(true)
-        .with_span_events(FmtSpan::FULL) // Logs (spams) lifecycle events of spans
+        //.with_span_events(FmtSpan::FULL) // Spams the log with lifecycle events of spans
+        .with_span_events(FmtSpan::CLOSE)
         .with_line_number(true);
 
     let (flame_layer, _flame_guard) = FlameLayer::with_file("./tracing_flame.folded").unwrap();
@@ -60,18 +62,31 @@ fn main() -> Result<(), Error> {
 }
 
 async fn run() -> Result<(), Error> {
-    let blob = (0u8..100).collect::<Vec<_>>();
+    let blob = (0u32..1_000).map(|x| x as u8).collect::<Vec<_>>();
 
     let config = Config::default()
         .buffers_full_delay_ms(0)
-        .part_size_bytes(10)
+        .part_size_bytes(13)
         .max_concurrency(2);
 
-    let condow = InMemoryClient::<NoLocation>::new(blob)
+    let condow = FailingClientSimulatorBuilder::default()
+        .blob(blob)
+        .chunk_size(7)
+        .responses()
+        .success()
+        .failure(CondowErrorKind::Io)
+        .success()
+        .success_with_stream_failure(3)
+        .success()
+        .failures([CondowErrorKind::Io, CondowErrorKind::Remote])
+        .success_with_stream_failure(6)
+        .failure(CondowError::new_remote("this did not work"))
+        .success_with_stream_failure(2)
+        .finish()
         .condow(config)
         .unwrap();
 
-    let stream = condow.download(NoLocation, ..).await?;
+    let stream = condow.download(NoLocation, 200..300).await?;
     let _downloaded = stream.into_vec().await?;
 
     println!("Download finished (not from tracing...)");

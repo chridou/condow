@@ -351,6 +351,7 @@ pub mod failing_client_simulator {
 
     use bytes::Bytes;
     use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
+    use tracing::trace;
 
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
@@ -414,7 +415,7 @@ pub mod failing_client_simulator {
         /// If `chunk_size` is 0.
         pub fn chunk_size(mut self, chunk_size: usize) -> Self {
             if chunk_size == 0 {
-                panic!("chun size must be greater than 0")
+                panic!("chunk size must be greater than 0")
             }
 
             self.chunk_size = chunk_size;
@@ -481,6 +482,7 @@ pub mod failing_client_simulator {
             &self,
             _location: Self::Location,
         ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("failing-client-simulator: get_size");
             future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -490,6 +492,7 @@ pub mod failing_client_simulator {
             spec: DownloadSpec,
         ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
         {
+            trace!("failing-client-simulator: download");
             let me = self.clone();
             let range_incl = match spec {
                 DownloadSpec::Range(r) => r,
