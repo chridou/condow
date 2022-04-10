@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### REMOVED
 
-- **BRRAKING** Old logging mechanism via reporter 
+- **BREAKING** Old logging mechanism via reporter 
 
 ## [0.12.4] - 2022-02-08
 
