@@ -10,7 +10,7 @@ use futures::{channel::mpsc::UnboundedSender, Stream, StreamExt};
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    machinery::range_stream::RangeRequest,
+    machinery::{range_stream::RangeRequest, DownloadSpanGuard},
     reporter::Reporter,
     streams::ChunkStreamItem,
 };
@@ -36,6 +36,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
         config: Config,
         location: C::Location,
         reporter: R,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self {
         let started_at = Instant::now();
         let kill_switch = KillSwitch::new();
@@ -52,6 +53,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
                         kill_switch.clone(),
                         reporter.clone(),
                         started_at,
+                        download_span_guard.clone(),
                     ),
                 )
             })

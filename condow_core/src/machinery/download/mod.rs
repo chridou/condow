@@ -16,7 +16,7 @@ use crate::{
 
 use self::concurrent::ConcurrentDownloader;
 
-use super::range_stream::RangeRequest;
+use super::{range_stream::RangeRequest, DownloadSpanGuard};
 
 mod concurrent;
 mod sequential;
@@ -30,6 +30,7 @@ pub(crate) async fn download_concurrently<C: CondowClient, R: Reporter>(
     config: Config,
     location: C::Location,
     reporter: R,
+    download_span_guard: DownloadSpanGuard,
 ) -> Result<(), ()> {
     let mut downloader = ConcurrentDownloader::new(
         n_concurrent,
@@ -38,6 +39,7 @@ pub(crate) async fn download_concurrently<C: CondowClient, R: Reporter>(
         config.clone(),
         location,
         reporter,
+        download_span_guard,
     );
 
     downloader.download(ranges_stream).await

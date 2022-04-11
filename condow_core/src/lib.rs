@@ -53,7 +53,6 @@ mod download_range;
 mod download_session;
 mod downloader;
 pub mod errors;
-pub mod logging;
 mod machinery;
 pub mod reader;
 pub mod reporter;
@@ -199,7 +198,7 @@ impl<C: CondowClient> Condow<C> {
         location: C::Location,
         range: R,
     ) -> Result<ChunkStream, CondowError> {
-        machinery::download(self, location, range, GetSizeMode::Default, NoReporting)
+        machinery::download_range(self, location, range, GetSizeMode::Default, NoReporting)
             .await
             .map(|o| o.into_stream())
     }
@@ -213,7 +212,7 @@ impl<C: CondowClient> Condow<C> {
         range: R,
     ) -> Result<PartStream<ChunkStream>, CondowError> {
         let chunk_stream =
-            machinery::download(self, location, range, GetSizeMode::Default, NoReporting)
+            machinery::download_range(self, location, range, GetSizeMode::Default, NoReporting)
                 .await
                 .map(|o| o.into_stream())?;
         PartStream::from_chunk_stream(chunk_stream)

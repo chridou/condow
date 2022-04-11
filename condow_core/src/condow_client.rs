@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::ops::RangeInclusive;
+use std::{fmt, ops::RangeInclusive};
 
 use futures::future::BoxFuture;
 
@@ -41,6 +41,15 @@ impl DownloadSpec {
         match self {
             DownloadSpec::Complete => 0,
             DownloadSpec::Range(r) => r.start(),
+        }
+    }
+}
+
+impl fmt::Display for DownloadSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DownloadSpec::Complete => write!(f, "[..]"),
+            DownloadSpec::Range(r) => r.fmt(f),
         }
     }
 }
@@ -104,10 +113,11 @@ mod in_memory {
         future::{self, BoxFuture, FutureExt},
         stream,
     };
+    use tracing::trace;
 
     use super::{CondowClient, DownloadSpec, NoLocation};
 
-    /// Holds the BLOB in memory as owned data.
+    /// Holds the BLOB in memory as owned or static data.
     ///
     /// Use for testing.
     #[derive(Clone)]
@@ -171,6 +181,8 @@ mod in_memory {
             &self,
             _location: Self::Location,
         ) -> BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("in-memory-client: get_size");
+
             futures::future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -179,6 +191,8 @@ mod in_memory {
             _location: Self::Location,
             spec: DownloadSpec,
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+            trace!("in-memory-client: download");
+
             download(&self.blob.as_slice(), self.chunk_size, spec)
         }
     }
@@ -337,6 +351,7 @@ pub mod failing_client_simulator {
 
     use bytes::Bytes;
     use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
+    use tracing::trace;
 
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
@@ -400,7 +415,7 @@ pub mod failing_client_simulator {
         /// If `chunk_size` is 0.
         pub fn chunk_size(mut self, chunk_size: usize) -> Self {
             if chunk_size == 0 {
-                panic!("chun size must be greater than 0")
+                panic!("chunk size must be greater than 0")
             }
 
             self.chunk_size = chunk_size;
@@ -467,6 +482,7 @@ pub mod failing_client_simulator {
             &self,
             _location: Self::Location,
         ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("failing-client-simulator: get_size");
             future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -476,6 +492,7 @@ pub mod failing_client_simulator {
             spec: DownloadSpec,
         ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
         {
+            trace!("failing-client-simulator: download");
             let me = self.clone();
             let range_incl = match spec {
                 DownloadSpec::Range(r) => r,
