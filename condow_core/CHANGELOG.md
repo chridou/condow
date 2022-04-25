@@ -4,11 +4,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [unreleased]
+## 0.13.0 - unreleased
 
 ### CHANGED
 
-- `Reporter` is used dynamic
+- **BREAKING** Downloading is done via a builder style request object
+- `Reporter` is used dynamically and now called `Probe`
 
 ### ADDED
 
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### REMOVED
 
+- **BREAKING** Removed trait `Downloads`
 - **BREAKING** Old logging mechanism via reporter 
 
 ## [0.12.4] - 2022-02-08
