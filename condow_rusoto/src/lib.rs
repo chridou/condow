@@ -16,9 +16,9 @@
 //! let client = S3ClientWrapper::new(Region::default());
 //! let condow = client.condow(Config::default()).unwrap();
 //!
-//! let location = Bucket::new("my_bucket").object("my_object");
+//! let s3_obj = Bucket::new("my_bucket").object("my_object");
 //!
-//! let stream = condow.download(location, 23..46).await.unwrap();
+//! let stream = condow.blob().location(s3_obj).range(23..46).download().await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
 //! # };
 //! # ()

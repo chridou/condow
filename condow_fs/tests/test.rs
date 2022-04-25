@@ -16,7 +16,10 @@ async fn download_full() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), ..)
+        .blob()
+        .location(get_test_file_path())
+        .range(..)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -31,7 +34,10 @@ async fn download_to() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), ..5)
+        .blob()
+        .location(get_test_file_path())
+        .range(..5)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -46,7 +52,10 @@ async fn download_to_end() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), ..=26)
+        .blob()
+        .location(get_test_file_path())
+        .range(..=26)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -61,7 +70,10 @@ async fn download_from() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), 10..)
+        .blob()
+        .location(get_test_file_path())
+        .range(10..)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -76,7 +88,10 @@ async fn download_from_to() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), 1..11)
+        .blob()
+        .location(get_test_file_path())
+        .range(1..11)
+        .download()
         .await
         .unwrap()
         .into_vec()

@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use anyhow::Error;
 use condow_core::{
-    condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, NoLocation},
+    condow_client::failing_client_simulator::FailingClientSimulatorBuilder,
     config::Config,
     errors::{CondowError, CondowErrorKind},
 };
