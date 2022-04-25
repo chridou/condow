@@ -157,8 +157,15 @@ impl DownloadSpanGuard {
 /// all the "matches" all over the place...
 #[derive(Clone)]
 pub(crate) enum ProbeInternal {
+    /// Nothing measured
     Off,
+    /// One Probe.
+    /// 
+    /// Can be either one exclusively for the request
+    /// or one provided by the shared factory
     One(Arc<dyn Probe>),
+    /// Per request measurement enabled and also
+    /// per probe factory
     Two(Arc<dyn Probe>, Arc<dyn Probe>),
 }
 
