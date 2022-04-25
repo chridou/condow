@@ -13,7 +13,7 @@
 //! # async {
 //! let condow = FsClient::condow(Config::default()).unwrap();
 //!
-//! let stream = condow.blob().location(String::from("my_file")).range(23..46).download().await.unwrap();
+//! let stream = condow.blob().at(String::from("my_file")).range(23..46).download().await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
 //! # };
 //! # ()

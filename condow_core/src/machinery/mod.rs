@@ -154,54 +154,79 @@ impl DownloadSpanGuard {
 }
 
 /// This is just a wrapper for not having to do
-/// all the "if let"s all over the place...
-#[derive(Clone, Default)]
-pub(crate) struct ProbeInternal {
-    maybe_probe: Option<Arc<dyn Probe>>,
+/// all the "matches" all over the place...
+#[derive(Clone)]
+pub(crate) enum ProbeInternal {
+    Off,
+    One(Arc<dyn Probe>),
+    Two(Arc<dyn Probe>, Arc<dyn Probe>),
 }
 
 #[cfg(test)]
 impl ProbeInternal {
     pub fn new<T: Probe>(probe: T) -> Self {
-        Self {
-            maybe_probe: Some(Arc::new(probe)),
-        }
+        Self::One(Arc::new(probe))
     }
 }
 
 impl Probe for ProbeInternal {
     #[inline]
     fn effective_range(&self, range: InclusiveRange) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.effective_range(range);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.effective_range(range),
+            ProbeInternal::Two(p1, p2) => {
+                p1.effective_range(range);
+                p2.effective_range(range);
+            }
         }
     }
 
     #[inline]
     fn download_started(&self) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.download_started();
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.download_started(),
+            ProbeInternal::Two(p1, p2) => {
+                p1.download_started();
+                p2.download_started();
+            }
         }
     }
 
     #[inline]
     fn download_completed(&self, time: Duration) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.download_completed(time);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.download_completed(time),
+            ProbeInternal::Two(p1, p2) => {
+                p1.download_completed(time);
+                p2.download_completed(time);
+            }
         }
     }
 
     #[inline]
     fn download_failed(&self, time: Option<Duration>) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.download_failed(time);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.download_failed(time),
+            ProbeInternal::Two(p1, p2) => {
+                p1.download_failed(time);
+                p2.download_failed(time);
+            }
         }
     }
 
     #[inline]
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.retry_attempt(location, error, next_in);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.retry_attempt(location, error, next_in),
+            ProbeInternal::Two(p1, p2) => {
+                p1.retry_attempt(location, error, next_in);
+                p2.retry_attempt(location, error, next_in);
+            }
         }
     }
 
@@ -213,22 +238,39 @@ impl Probe for ProbeInternal {
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.stream_resume_attempt(location, error, orig_range, remaining_range);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => {
+                p.stream_resume_attempt(location, error, orig_range, remaining_range)
+            }
+            ProbeInternal::Two(p1, p2) => {
+                p1.stream_resume_attempt(location, error, orig_range, remaining_range);
+                p2.stream_resume_attempt(location, error, orig_range, remaining_range);
+            }
         }
     }
 
     #[inline]
     fn panic_detected(&self, msg: &str) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.panic_detected(msg);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.panic_detected(msg),
+            ProbeInternal::Two(p1, p2) => {
+                p1.panic_detected(msg);
+                p2.panic_detected(msg);
+            }
         }
     }
 
     #[inline]
     fn queue_full(&self) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.queue_full();
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.queue_full(),
+            ProbeInternal::Two(p1, p2) => {
+                p1.queue_full();
+                p2.queue_full();
+            }
         }
     }
 
@@ -240,15 +282,25 @@ impl Probe for ProbeInternal {
         n_bytes: usize,
         time: std::time::Duration,
     ) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.chunk_completed(part_index, chunk_index, n_bytes, time);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.chunk_completed(part_index, chunk_index, n_bytes, time),
+            ProbeInternal::Two(p1, p2) => {
+                p1.chunk_completed(part_index, chunk_index, n_bytes, time);
+                p2.chunk_completed(part_index, chunk_index, n_bytes, time);
+            }
         }
     }
 
     #[inline]
     fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.part_started(part_index, range);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.part_started(part_index, range),
+            ProbeInternal::Two(p1, p2) => {
+                p1.part_started(part_index, range);
+                p2.part_started(part_index, range);
+            }
         }
     }
 
@@ -260,22 +312,41 @@ impl Probe for ProbeInternal {
         n_bytes: u64,
         time: std::time::Duration,
     ) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.part_completed(part_index, n_chunks, n_bytes, time);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.part_completed(part_index, n_chunks, n_bytes, time),
+            ProbeInternal::Two(p1, p2) => {
+                p1.part_completed(part_index, n_chunks, n_bytes, time);
+                p2.part_completed(part_index, n_chunks, n_bytes, time);
+            }
         }
     }
 
     #[inline]
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
-        if let Some(probe) = &self.maybe_probe {
-            probe.part_failed(error, part_index, range);
+        match self {
+            ProbeInternal::Off => {}
+            ProbeInternal::One(p) => p.part_failed(error, part_index, range),
+            ProbeInternal::Two(p1, p2) => {
+                p1.part_failed(error, part_index, range);
+                p2.part_failed(error, part_index, range);
+            }
         }
     }
 }
 
 impl From<Option<Arc<dyn Probe>>> for ProbeInternal {
     fn from(probe: Option<Arc<dyn Probe>>) -> Self {
-        Self { maybe_probe: probe }
+        match probe {
+            Some(probe) => Self::One(probe),
+            None => Self::Off,
+        }
+    }
+}
+
+impl Default for ProbeInternal {
+    fn default() -> Self {
+        Self::Off
     }
 }
 #[cfg(test)]
