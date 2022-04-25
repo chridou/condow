@@ -1,4 +1,5 @@
 mod blob {
+    /*
     use std::sync::Arc;
     use std::time::Duration;
 
@@ -8,7 +9,7 @@ mod blob {
 
     use crate::test_utils::create_test_data;
 
-    /*   #[tokio::test]
+    #[tokio::test]
     async fn download_complete_blob_with_reporter() {
         let buffer_size = 10;
 
@@ -42,9 +43,9 @@ mod blob {
                 }
             }
         }
-    }*/
+    }
 
-    /* #[tokio::test]
+    #[tokio::test]
     async fn check_simple_reporter() {
         let buffer_size = 10;
 

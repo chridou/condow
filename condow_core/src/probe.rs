@@ -3,7 +3,7 @@
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
-use std::{fmt, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use crate::{
     errors::{CondowError, IoError},
@@ -12,19 +12,16 @@ use crate::{
 
 pub use simple_reporter::*;
 
-pub trait ReporterFactory: Send + Sync + 'static {
-    type ReporterType: Probe;
-
-    /// Create a new [Reporter].
+pub trait ProbeFactory: Send + Sync + 'static {
+    /// Create a new [Probe].
     ///
-    /// This might share state with the factory or not
-    fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType;
+    /// It might share state with the factory or not
+    fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe>;
 }
 
-/// A Reporter is an interface to track occurences of different kinds
+/// A Probe is an interface to track occurences of different kinds
 ///
-/// Implementors can use this to put instrumentation on downloads
-/// or simply to log.
+/// Implementors can use this to put instrumentation on downloads.
 ///
 /// All methods should return quickly to not to influence the
 /// downloading too much with measuring.
@@ -81,26 +78,13 @@ pub trait Probe: Send + Sync + 'static {
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 
-/// Disables reporting
-#[derive(Copy, Clone)]
-pub struct NoReporting;
-
-impl Probe for NoReporting {}
-impl ReporterFactory for NoReporting {
-    type ReporterType = Self;
-
-    fn make(&self, _location: &dyn fmt::Display) -> Self {
-        NoReporting
-    }
-}
-
-/// Plug 2 [Reporter]s into one and have them both notified.
+/// Plug 2 [Probe]s into one and have them both notified.
 ///
 /// `RA` is notified first.
 #[derive(Clone)]
-pub struct CompositeReporter<RA: Probe, RB: Probe>(pub RA, pub RB);
+pub struct CompositeProbe<PA: Probe, PB: Probe>(pub PA, pub PB);
 
-impl<RA: Probe, RB: Probe> Probe for CompositeReporter<RA, RB> {
+impl<PA: Probe, PB: Probe> Probe for CompositeProbe<PA, PB> {
     fn effective_range(&self, range: InclusiveRange) {
         self.0.effective_range(range);
         self.1.effective_range(range);
@@ -200,7 +184,7 @@ mod simple_reporter {
         InclusiveRange,
     };
 
-    use super::{Probe, ReporterFactory};
+    use super::{Probe, ProbeFactory};
 
     /// Creates [SimpleReporter]s
     pub struct SimpleReporterFactory {
@@ -222,11 +206,9 @@ mod simple_reporter {
         }
     }
 
-    impl ReporterFactory for SimpleReporterFactory {
-        type ReporterType = SimpleReporter;
-
-        fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType {
-            SimpleReporter::new(location, self.skip_first_chunk_timings)
+    impl ProbeFactory for SimpleReporterFactory {
+        fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe> {
+            Arc::new(SimpleReporter::new(location, self.skip_first_chunk_timings))
         }
     }
 

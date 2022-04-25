@@ -34,12 +34,12 @@
 //!
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
-use futures::{future::BoxFuture, FutureExt, Stream};
+use futures::Stream;
 
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
-use probe::{Probe, ReporterFactory};
+use probe::Probe;
 use reader::RandomAccessReader;
 use streams::{ChunkStream, ChunkStreamItem, PartStream};
 
