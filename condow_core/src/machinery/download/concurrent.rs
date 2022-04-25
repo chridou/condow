@@ -10,8 +10,8 @@ use futures::{channel::mpsc::UnboundedSender, Stream, StreamExt};
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    machinery::{range_stream::RangeRequest, DownloadSpanGuard},
-    reporter::Reporter,
+    machinery::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal},
+    probe::Probe,
     streams::ChunkStreamItem,
 };
 
@@ -20,22 +20,22 @@ use super::{
     KillSwitch,
 };
 
-pub(crate) struct ConcurrentDownloader<R: Reporter> {
+pub(crate) struct ConcurrentDownloader {
     downloaders: Vec<SequentialDownloader>,
     counter: usize,
     kill_switch: KillSwitch,
     config: Config,
-    reporter: R,
+    probe: ProbeInternal,
 }
 
-impl<R: Reporter> ConcurrentDownloader<R> {
+impl ConcurrentDownloader {
     pub fn new<C: CondowClient>(
         n_concurrent: usize,
         results_sender: UnboundedSender<ChunkStreamItem>,
         client: ClientRetryWrapper<C>,
         config: Config,
         location: C::Location,
-        reporter: R,
+        probe: ProbeInternal,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
         let started_at = Instant::now();
@@ -51,7 +51,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
                         results_sender.clone(),
                         Arc::clone(&counter),
                         kill_switch.clone(),
-                        reporter.clone(),
+                        probe.clone(),
                         started_at,
                         download_span_guard.clone(),
                     ),
@@ -64,7 +64,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
             counter: 0,
             kill_switch,
             config,
-            reporter,
+            probe,
         }
     }
 
@@ -72,7 +72,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
         &mut self,
         ranges_stream: impl Stream<Item = RangeRequest>,
     ) -> Result<(), ()> {
-        self.reporter.download_started();
+        self.probe.download_started();
         let mut ranges_stream = Box::pin(ranges_stream);
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
@@ -82,7 +82,7 @@ impl<R: Reporter> ConcurrentDownloader<R> {
 
             loop {
                 if attempt % self.downloaders.len() == 0 {
-                    self.reporter.queue_full();
+                    self.probe.queue_full();
                     tokio::time::sleep(buffers_full_delay).await;
                 }
                 let idx = self.counter + attempt;

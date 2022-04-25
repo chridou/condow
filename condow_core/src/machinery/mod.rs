@@ -1,27 +1,29 @@
 //! Streams for handling downloads
+use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tracing::{debug, info, info_span, Span};
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
-use crate::errors::CondowError;
+use crate::errors::{CondowError, IoError};
 use crate::streams::{BytesHint, ChunkStream};
-use crate::Reporter;
-use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange, StreamWithReport};
+use crate::Probe;
+use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange};
 
 use self::range_stream::RangeStream;
 
 mod download;
 mod range_stream;
 
-pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporter>(
-    condow: &Condow<C>,
+pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
+    condow: Condow<C>,
     location: C::Location,
     range: DR,
     get_size_mode: GetSizeMode,
-    reporter: R,
-) -> Result<StreamWithReport<ChunkStream, R>, CondowError> {
+    probe: ProbeInternal,
+) -> Result<ChunkStream, CondowError> {
     let range = range.into();
 
     let parent = Span::current();
@@ -41,33 +43,33 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     let range = if let Some(range) = range.sanitized() {
         range
     } else {
-        return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+        return Ok(ChunkStream::empty());
     };
 
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
             debug!(parent: &get_stream_span, "open range");
-            let size = condow.client.get_size(location.clone(), &reporter).await?;
+            let size = condow.client.get_size(location.clone(), &probe).await?;
             if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
-                return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+                return Ok(ChunkStream::empty());
             }
         }
         DownloadRange::Closed(cl) => {
             debug!(parent: &get_stream_span, "closed range");
             if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
                 debug!(parent: &get_stream_span, "get size enforced");
-                let size = condow.client.get_size(location.clone(), &reporter).await?;
+                let size = condow.client.get_size(location.clone(), &probe).await?;
                 if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
-                    return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+                    return Ok(ChunkStream::empty());
                 }
             } else if let Some(range) = cl.incl_range() {
                 (range, BytesHint::new_at_max(range.len()))
             } else {
-                return Ok(StreamWithReport::new(ChunkStream::empty(), reporter));
+                return Ok(ChunkStream::empty());
             }
         }
     };
@@ -78,7 +80,7 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
         inclusive_range,
         bytes_hint,
         condow.config.clone(),
-        reporter.clone(),
+        probe.clone(),
         download_guard,
     )
     .await?;
@@ -87,19 +89,19 @@ pub async fn download_range<C: CondowClient, DR: Into<DownloadRange>, R: Reporte
     drop(get_stream_guard);
     drop(download_span_enter_guard);
 
-    Ok(StreamWithReport { reporter, stream })
+    Ok(stream)
 }
 
-async fn download_chunks<C: CondowClient, R: Reporter>(
+async fn download_chunks<C: CondowClient>(
     client: ClientRetryWrapper<C>,
     location: C::Location,
     range: InclusiveRange,
     bytes_hint: BytesHint,
     config: Config,
-    reporter: R,
+    probe: ProbeInternal,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<ChunkStream, CondowError> {
-    reporter.effective_range(range);
+    probe.effective_range(range);
 
     let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
 
@@ -126,7 +128,7 @@ async fn download_chunks<C: CondowClient, R: Reporter>(
             client,
             config,
             location,
-            reporter,
+            probe,
             download_span_guard,
         )
         .await;
@@ -151,5 +153,130 @@ impl DownloadSpanGuard {
     }
 }
 
+/// This is just a wrapper for not having to do
+/// all the "if let"s all over the place...
+#[derive(Clone, Default)]
+pub(crate) struct ProbeInternal {
+    maybe_probe: Option<Arc<dyn Probe>>,
+}
+
+#[cfg(test)]
+impl ProbeInternal {
+    pub fn new<T: Probe>(probe: T) -> Self {
+        Self {
+            maybe_probe: Some(Arc::new(probe)),
+        }
+    }
+}
+
+impl Probe for ProbeInternal {
+    #[inline]
+    fn effective_range(&self, range: InclusiveRange) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.effective_range(range);
+        }
+    }
+
+    #[inline]
+    fn download_started(&self) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.download_started();
+        }
+    }
+
+    #[inline]
+    fn download_completed(&self, time: Duration) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.download_completed(time);
+        }
+    }
+
+    #[inline]
+    fn download_failed(&self, time: Option<Duration>) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.download_failed(time);
+        }
+    }
+
+    #[inline]
+    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.retry_attempt(location, error, next_in);
+        }
+    }
+
+    #[inline]
+    fn stream_resume_attempt(
+        &self,
+        location: &dyn fmt::Display,
+        error: &IoError,
+        orig_range: InclusiveRange,
+        remaining_range: InclusiveRange,
+    ) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.stream_resume_attempt(location, error, orig_range, remaining_range);
+        }
+    }
+
+    #[inline]
+    fn panic_detected(&self, msg: &str) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.panic_detected(msg);
+        }
+    }
+
+    #[inline]
+    fn queue_full(&self) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.queue_full();
+        }
+    }
+
+    #[inline]
+    fn chunk_completed(
+        &self,
+        part_index: u64,
+        chunk_index: usize,
+        n_bytes: usize,
+        time: std::time::Duration,
+    ) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.chunk_completed(part_index, chunk_index, n_bytes, time);
+        }
+    }
+
+    #[inline]
+    fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.part_started(part_index, range);
+        }
+    }
+
+    #[inline]
+    fn part_completed(
+        &self,
+        part_index: u64,
+        n_chunks: usize,
+        n_bytes: u64,
+        time: std::time::Duration,
+    ) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.part_completed(part_index, n_chunks, n_bytes, time);
+        }
+    }
+
+    #[inline]
+    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
+        if let Some(probe) = &self.maybe_probe {
+            probe.part_failed(error, part_index, range);
+        }
+    }
+}
+
+impl From<Option<Arc<dyn Probe>>> for ProbeInternal {
+    fn from(probe: Option<Arc<dyn Probe>>) -> Self {
+        Self { maybe_probe: probe }
+    }
+}
 #[cfg(test)]
 mod tests;

@@ -13,7 +13,7 @@ use crate::{
 pub use simple_reporter::*;
 
 pub trait ReporterFactory: Send + Sync + 'static {
-    type ReporterType: Reporter;
+    type ReporterType: Probe;
 
     /// Create a new [Reporter].
     ///
@@ -29,7 +29,7 @@ pub trait ReporterFactory: Send + Sync + 'static {
 /// All methods should return quickly to not to influence the
 /// downloading too much with measuring.
 #[allow(unused_variables)]
-pub trait Reporter: Clone + Send + Sync + 'static {
+pub trait Probe: Send + Sync + 'static {
     fn effective_range(&self, range: InclusiveRange) {}
     /// The actual IO started
     fn download_started(&self) {}
@@ -85,7 +85,7 @@ pub trait Reporter: Clone + Send + Sync + 'static {
 #[derive(Copy, Clone)]
 pub struct NoReporting;
 
-impl Reporter for NoReporting {}
+impl Probe for NoReporting {}
 impl ReporterFactory for NoReporting {
     type ReporterType = Self;
 
@@ -98,9 +98,9 @@ impl ReporterFactory for NoReporting {
 ///
 /// `RA` is notified first.
 #[derive(Clone)]
-pub struct CompositeReporter<RA: Reporter, RB: Reporter>(pub RA, pub RB);
+pub struct CompositeReporter<RA: Probe, RB: Probe>(pub RA, pub RB);
 
-impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
+impl<RA: Probe, RB: Probe> Probe for CompositeReporter<RA, RB> {
     fn effective_range(&self, range: InclusiveRange) {
         self.0.effective_range(range);
         self.1.effective_range(range);
@@ -200,7 +200,7 @@ mod simple_reporter {
         InclusiveRange,
     };
 
-    use super::{Reporter, ReporterFactory};
+    use super::{Probe, ReporterFactory};
 
     /// Creates [SimpleReporter]s
     pub struct SimpleReporterFactory {
@@ -350,7 +350,7 @@ mod simple_reporter {
         pub max_part_time: Duration,
     }
 
-    impl Reporter for SimpleReporter {
+    impl Probe for SimpleReporter {
         fn effective_range(&self, effective_range: InclusiveRange) {
             *self.inner.effective_range.lock().unwrap() = Some(effective_range);
         }

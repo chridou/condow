@@ -3,12 +3,12 @@ mod blob {
     use std::time::Duration;
 
     use crate::condow_client::NoLocation;
-    use crate::reporter::SimpleReporterFactory;
+    use crate::probe::SimpleReporterFactory;
     use crate::{config::Config, test_utils::*, Condow};
 
     use crate::test_utils::create_test_data;
 
-    #[tokio::test]
+    /*   #[tokio::test]
     async fn download_complete_blob_with_reporter() {
         let buffer_size = 10;
 
@@ -42,9 +42,9 @@ mod blob {
                 }
             }
         }
-    }
+    }*/
 
-    #[tokio::test]
+    /* #[tokio::test]
     async fn check_simple_reporter() {
         let buffer_size = 10;
 
@@ -68,7 +68,7 @@ mod blob {
                     let condow = Condow::new(client.clone(), config).unwrap();
 
                     let downloader =
-                        condow.downloader_with_reporting(SimpleReporterFactory::default());
+                        condow.blob().probe(SimpleReporterFactory::default());
 
                     let result_stream = downloader.download_rep(NoLocation, ..).await.unwrap();
 
@@ -77,7 +77,7 @@ mod blob {
                 }
             }
         }
-    }
+    }*/
 }
 
 mod range {
@@ -86,7 +86,6 @@ mod range {
 
         use crate::condow_client::NoLocation;
         use crate::machinery;
-        use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
         #[tokio::test]
@@ -116,16 +115,16 @@ mod range {
                             let range = from_idx..;
 
                             let result_stream = machinery::download_range(
-                                &condow,
+                                condow.clone(),
                                 NoLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Always,
-                                SimpleReporter::default(),
+                                Default::default(),
                             )
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_stream().into_vec().await.unwrap();
+                            let result = result_stream.into_vec().await.unwrap();
 
                             let check_range = (from_idx as usize).min(data.len())..;
                             assert_eq!(&result, &data[check_range]);
@@ -161,17 +160,15 @@ mod range {
                         for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = machinery::download_range(
-                                &condow,
-                                NoLocation,
-                                range.clone(),
-                                crate::GetSizeMode::Required,
-                                SimpleReporter::default(),
-                            )
-                            .await
-                            .unwrap();
+                            let result_stream = condow
+                                .blob()
+                                .get_size_mode(crate::GetSizeMode::Required)
+                                .range(range)
+                                .download_chunks()
+                                .await
+                                .unwrap();
 
-                            let result = result_stream.into_stream().into_vec().await.unwrap();
+                            let result = result_stream.into_vec().await.unwrap();
 
                             let check_range = (from_idx as usize).min(data.len())..;
                             assert_eq!(&result, &data[check_range]);
@@ -187,7 +184,6 @@ mod range {
 
         use crate::condow_client::NoLocation;
         use crate::machinery;
-        use crate::reporter::SimpleReporter;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
         #[tokio::test]
@@ -218,16 +214,16 @@ mod range {
                             let expected_range_end = (end_incl as usize + 1).min(data.len());
 
                             let result_stream = machinery::download_range(
-                                &condow,
+                                condow.clone(),
                                 NoLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
-                                SimpleReporter::default(),
+                                Default::default(),
                             )
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_stream().into_vec().await.unwrap();
+                            let result = result_stream.into_vec().await.unwrap();
 
                             assert_eq!(&result, &data[0..expected_range_end]);
                         }
@@ -264,16 +260,16 @@ mod range {
                             let expected_range_end = (end_excl as usize).min(data.len());
 
                             let result_stream = machinery::download_range(
-                                &condow,
+                                condow.clone(),
                                 NoLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
-                                SimpleReporter::default(),
+                                Default::default(),
                             )
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_stream().into_vec().await.unwrap();
+                            let result = result_stream.into_vec().await.unwrap();
 
                             assert_eq!(&result, &data[0..expected_range_end]);
                         }
@@ -288,7 +284,6 @@ mod range {
 
                 use crate::condow_client::NoLocation;
                 use crate::machinery;
-                use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
                 #[tokio::test]
@@ -320,17 +315,16 @@ mod range {
                                         (end_incl as usize + 1).min(data.len());
 
                                     let result_stream = machinery::download_range(
-                                        &condow,
+                                        condow.clone(),
                                         NoLocation,
                                         range,
                                         crate::GetSizeMode::Default,
-                                        SimpleReporter::default(),
+                                        Default::default(),
                                     )
                                     .await
                                     .unwrap();
 
-                                    let result =
-                                        result_stream.into_stream().into_vec().await.unwrap();
+                                    let result = result_stream.into_vec().await.unwrap();
 
                                     assert_eq!(&result, &data[0..expected_range_end]);
                                 }
@@ -367,17 +361,16 @@ mod range {
                                     let expected_range_end = (end_excl as usize).min(data.len());
 
                                     let result_stream = machinery::download_range(
-                                        &condow,
+                                        condow.clone(),
                                         NoLocation,
                                         range,
                                         crate::GetSizeMode::Default,
-                                        SimpleReporter::default(),
+                                        Default::default(),
                                     )
                                     .await
                                     .unwrap();
 
-                                    let result =
-                                        result_stream.into_stream().into_vec().await.unwrap();
+                                    let result = result_stream.into_vec().await.unwrap();
 
                                     assert_eq!(&result, &data[0..expected_range_end]);
                                 }
@@ -392,7 +385,6 @@ mod range {
 
                 use crate::condow_client::NoLocation;
                 use crate::machinery;
-                use crate::reporter::SimpleReporter;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
                 #[tokio::test]
@@ -426,17 +418,16 @@ mod range {
                                             (end_incl as usize + 1).min(data.len());
 
                                         let result_stream = machinery::download_range(
-                                            &condow,
+                                            condow.clone(),
                                             NoLocation,
                                             range,
                                             crate::GetSizeMode::Default,
-                                            SimpleReporter::default(),
+                                            Default::default(),
                                         )
                                         .await
                                         .unwrap();
 
-                                        let result =
-                                            result_stream.into_stream().into_vec().await.unwrap();
+                                        let result = result_stream.into_vec().await.unwrap();
 
                                         assert_eq!(
                                             &result,
@@ -480,17 +471,16 @@ mod range {
                                             (end_excl as usize).min(data.len());
 
                                         let result_stream = machinery::download_range(
-                                            &condow,
+                                            condow.clone(),
                                             NoLocation,
                                             range,
                                             crate::GetSizeMode::Default,
-                                            SimpleReporter::default(),
+                                            Default::default(),
                                         )
                                         .await
                                         .unwrap();
 
-                                        let result =
-                                            result_stream.into_stream().into_vec().await.unwrap();
+                                        let result = result_stream.into_vec().await.unwrap();
 
                                         assert_eq!(
                                             &result,

@@ -1,5 +1,6 @@
-use super::*;
 use crate::errors::CondowErrorKind;
+
+use super::*;
 
 const RETRYABLE: CondowErrorKind = CondowErrorKind::Remote;
 const ANOTHER_RETRYABLE: CondowErrorKind = CondowErrorKind::Io;
@@ -41,7 +42,8 @@ mod retry_download {
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        reporter::Reporter,
+        machinery::ProbeInternal,
+        probe::Probe,
         retry::{
             retry_download,
             tests::{NON_RETRYABLE, RETRYABLE},
@@ -616,9 +618,9 @@ mod retry_download {
         let client = client_builder.into().finish();
 
         #[derive(Clone, Default)]
-        struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -641,10 +643,16 @@ mod retry_download {
             }
         }
 
-        let probe = Probe::default();
+        let probe = TestProbe::default();
 
-        let (mut stream, _bytes_hint) =
-            retry_download(&client, NoLocation, download_spec.into(), &config, &probe).await?;
+        let (mut stream, _bytes_hint) = retry_download(
+            &client,
+            NoLocation,
+            download_spec.into(),
+            &config,
+            ProbeInternal::new(probe.clone()),
+        )
+        .await?;
 
         let mut received = Vec::new();
 
@@ -805,7 +813,8 @@ mod loop_retry_complete_stream {
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        reporter::Reporter,
+        machinery::ProbeInternal,
+        probe::Probe,
         retry::{
             loop_retry_complete_stream,
             tests::{NON_RETRYABLE, RETRYABLE},
@@ -1084,9 +1093,9 @@ mod loop_retry_complete_stream {
         let client = client_builder.into().finish();
 
         #[derive(Clone, Default)]
-        struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1109,7 +1118,7 @@ mod loop_retry_complete_stream {
             }
         }
 
-        let probe = Probe::default();
+        let probe = TestProbe::default();
 
         let (next_elem_tx, mut rx) = mpsc::unbounded();
 
@@ -1126,7 +1135,7 @@ mod loop_retry_complete_stream {
             client,
             next_elem_tx,
             config,
-            probe.clone(),
+            ProbeInternal::new(probe.clone()),
         ));
 
         let mut received = Vec::new();
@@ -1362,9 +1371,9 @@ mod retry_download_get_stream {
         };
 
         #[derive(Clone)]
-        struct Probe(Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1380,13 +1389,13 @@ mod retry_download_get_stream {
             .max_attempts(n_retries)
             .max_delay_ms(0);
 
-        let probe = Probe(Default::default());
+        let probe = TestProbe(Default::default());
         match retry_download_get_stream(
             &client,
             NoLocation,
             DownloadSpec::Complete,
             &config,
-            &probe,
+            &ProbeInternal::new(probe.clone()),
         )
         .await
         {
@@ -1606,9 +1615,9 @@ mod retry_get_size {
         };
 
         #[derive(Clone)]
-        struct Probe(Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1624,8 +1633,15 @@ mod retry_get_size {
             .max_attempts(n_retries)
             .max_delay_ms(0);
 
-        let probe = Probe(Default::default());
-        match retry_get_size(&client, NoLocation, &config, &probe).await {
+        let probe = TestProbe(Default::default());
+        match retry_get_size(
+            &client,
+            NoLocation,
+            &config,
+            &ProbeInternal::new(probe.clone()),
+        )
+        .await
+        {
             Ok(_) => Ok(probe.0.load(Ordering::SeqCst)),
             Err(err) => Err((probe.0.load(Ordering::SeqCst), err.kind())),
         }
