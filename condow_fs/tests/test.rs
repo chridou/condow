@@ -17,7 +17,7 @@ async fn download_full() {
 
     let data = condow
         .blob()
-        .location(get_test_file_path())
+        .at(get_test_file_path())
         .range(..)
         .download()
         .await
@@ -35,7 +35,7 @@ async fn download_to() {
 
     let data = condow
         .blob()
-        .location(get_test_file_path())
+        .at(get_test_file_path())
         .range(..5)
         .download()
         .await
@@ -53,7 +53,7 @@ async fn download_to_end() {
 
     let data = condow
         .blob()
-        .location(get_test_file_path())
+        .at(get_test_file_path())
         .range(..=26)
         .download()
         .await
@@ -71,7 +71,7 @@ async fn download_from() {
 
     let data = condow
         .blob()
-        .location(get_test_file_path())
+        .at(get_test_file_path())
         .range(10..)
         .download()
         .await
@@ -89,7 +89,7 @@ async fn download_from_to() {
 
     let data = condow
         .blob()
-        .location(get_test_file_path())
+        .at(get_test_file_path())
         .range(1..11)
         .download()
         .await

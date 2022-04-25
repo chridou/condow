@@ -160,7 +160,7 @@ mod random_access_reader {
             async move {
                 condow
                     .blob()
-                    .location(location)
+                    .at(location)
                     .range(range)
                     .download()
                     .map_ok(|stream| {

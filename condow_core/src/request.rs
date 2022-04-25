@@ -28,7 +28,7 @@ where
         }
     }
 
-    pub fn location<L: Into<C::Location>>(self, location: L) -> Request<C> {
+    pub fn at<L: Into<C::Location>>(self, location: L) -> Request<C> {
         Request {
             condow: self.condow,
             location: location.into(),
@@ -59,11 +59,11 @@ where
     C: CondowClient<Location = NoLocation>,
 {
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
-        self.location(NoLocation).download_chunks().await
+        self.at(NoLocation).download_chunks().await
     }
 
     pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
-        self.location(NoLocation).download().await
+        self.at(NoLocation).download().await
     }
 }
 
@@ -82,7 +82,7 @@ impl<C> Request<C>
 where
     C: CondowClient,
 {
-    pub fn location<L: Into<C::Location>>(mut self, location: L) -> Self {
+    pub fn at<L: Into<C::Location>>(mut self, location: L) -> Self {
         self.location = location.into();
         self
     }
