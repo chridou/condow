@@ -10,8 +10,6 @@ homepage = "https://github.com/chridou/condow"
 repository = "https://github.com/chridou/condow"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 condow_core = { version = "0.13", path = "../condow_core"}
 

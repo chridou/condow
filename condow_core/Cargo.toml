@@ -11,7 +11,6 @@ repository = "https://github.com/chridou/condow"
 keywords = [ "download", "network", "parallel", "files"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 pin-project-lite = "0.2"
 bytes = "1"
