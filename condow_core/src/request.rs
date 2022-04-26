@@ -5,7 +5,7 @@ use std::sync::Arc;
 use crate::{
     condow_client::{CondowClient, NoLocation},
     errors::CondowError,
-    machinery,
+    machinery::{self, ProbeInternal},
     probe::Probe,
     ChunkStream, Condow, DownloadRange, GetSizeMode, PartStream,
 };
@@ -120,12 +120,25 @@ where
 
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
+        let probe = match (
+            self.probe,
+            self.condow
+                .probe_factory
+                .as_ref()
+                .map(|f| f.make(&self.location)),
+        ) {
+            (None, None) => ProbeInternal::Off,
+            (Some(req), None) => ProbeInternal::One(req),
+            (None, Some(fac)) => ProbeInternal::One(fac),
+            (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
+        };
+
         machinery::download_range(
             self.condow,
             self.location,
             self.range,
             self.get_size_mode,
-            self.probe.into(),
+            probe,
         )
         .await
     }

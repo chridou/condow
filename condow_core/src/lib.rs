@@ -34,12 +34,14 @@
 //!
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
+use std::sync::Arc;
+
 use futures::Stream;
 
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
-use probe::Probe;
+use probe::{Probe, ProbeFactory};
 use reader::RandomAccessReader;
 use streams::{ChunkStream, ChunkStreamItem, PartStream};
 
@@ -79,6 +81,7 @@ pub mod test_utils;
 pub struct Condow<C> {
     client: ClientRetryWrapper<C>,
     config: Config,
+    probe_factory: Option<Arc<dyn ProbeFactory>>,
 }
 
 impl<C: CondowClient> Clone for Condow<C> {
@@ -86,6 +89,7 @@ impl<C: CondowClient> Clone for Condow<C> {
         Self {
             client: self.client.clone(),
             config: self.config.clone(),
+            probe_factory: self.probe_factory.clone(),
         }
     }
 }
@@ -102,7 +106,16 @@ where
         Ok(Self {
             client: ClientRetryWrapper::new(client, config.retries.clone()),
             config,
+            probe_factory: None,
         })
+    }
+
+    /// Set a factory for [Probe]s which will add a [Probe] to each request
+    ///
+    /// The [ProbeFactory] is intended to share state with the [Probe] to
+    /// add instrumentation
+    pub fn set_probe_factory(&mut self, factory: Arc<dyn ProbeFactory>) {
+        self.probe_factory = Some(factory);
     }
 
     /// Download a Blob via the returned request object

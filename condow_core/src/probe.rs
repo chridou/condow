@@ -28,6 +28,7 @@ pub trait ProbeFactory: Send + Sync + 'static {
 #[allow(unused_variables)]
 pub trait Probe: Send + Sync + 'static {
     fn effective_range(&self, range: InclusiveRange) {}
+
     /// The actual IO started
     fn download_started(&self) {}
 
@@ -41,7 +42,7 @@ pub trait Probe: Send + Sync + 'static {
     /// **This always is the last method called on a [Probe] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
 
-    /// An error occurd but a retry will be attempted
+    /// An error occurred but a retry will be attempted
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
