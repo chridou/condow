@@ -9,8 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### CHANGED
 
 - **BREAKING** Downloading is done via a builder style request object
-- `Reporter` is used dynamically and now called `Probe`
+- **BREAKING** `Reporter` is used dynamically and now called `Probe`
 - **BREAKING** Trait `Downloads` uses request API and has location as associated type
+- **BREAKING** `RandomAccessReader` has type parameter removed
 
 ### ADDED
 

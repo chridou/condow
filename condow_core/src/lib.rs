@@ -43,7 +43,7 @@ use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
 use machinery::ProbeInternal;
 use probe::{Probe, ProbeFactory};
-use reader::RandomAccessReader;
+use reader::{CondowAdapter, RandomAccessReader};
 use streams::{ChunkStream, PartStream};
 
 #[macro_use]
@@ -72,7 +72,7 @@ pub trait Downloads {
     /// Download a Blob via the returned request object
     fn blob(&self) -> RequestNoLocation<Self::Location>;
 
-    /// Get the size of a file at the BLOB location
+    /// Get the size of a BLOB at the given location
     fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>>;
 
     /// Creates a [RandomAccessReader] for the given location
@@ -82,7 +82,7 @@ pub trait Downloads {
     fn reader<'a>(
         &'a self,
         location: Self::Location,
-    ) -> BoxFuture<'a, Result<RandomAccessReader<Self>, CondowError>>
+    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
     where
         Self: Sized + Sync,
     {
@@ -97,16 +97,49 @@ pub trait Downloads {
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// This function will create a new reader immediately
-    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader<Self>
+    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader
     where
         Self: Sized;
 }
 
+/// Downloads from a location specified by a &[str].
+///
+/// This trait is object safe
 pub trait DownloadsUntyped {
-    /// Download a Blob via the returned request object
+    /// Download a BLOB via the returned request object
     fn blob(&self) -> RequestNoLocation<&str>;
-    /// Get the size of a file at the BLOB location
+
+    /// Get the size of a BLOB at the given location
     fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
+
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will query the size of the BLOB. If the size is already known
+    /// call [Downloads::reader_with_length]
+    fn reader<'a>(
+        &'a self,
+        location: &'a str,
+    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
+    where
+        Self: Sized + Sync,
+    {
+        async move {
+            let length = self.get_size(location).await?;
+            self.reader_with_length(location, length)
+        }
+        .boxed()
+    }
+
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will create a new reader immediately
+    fn reader_with_length(
+        &self,
+        location: &str,
+        length: u64,
+    ) -> Result<RandomAccessReader, CondowError>
+    where
+        Self: Sized;
 }
 
 /// The CONcurrent DOWnloader
@@ -190,20 +223,13 @@ where
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub async fn reader(
-        &self,
-        location: C::Location,
-    ) -> Result<RandomAccessReader<Self>, CondowError> {
-        RandomAccessReader::new(self.clone(), location).await
+    pub async fn reader(&self, location: C::Location) -> Result<RandomAccessReader, CondowError> {
+        RandomAccessReader::new(CondowAdapter::new(self.clone(), location)).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length(
-        &self,
-        location: C::Location,
-        length: u64,
-    ) -> RandomAccessReader<Self> {
-        RandomAccessReader::new_with_length(self.clone(), location, length)
+    pub fn reader_with_length(&self, location: C::Location, length: u64) -> RandomAccessReader {
+        RandomAccessReader::new_with_length(CondowAdapter::new(self.clone(), location), length)
     }
 }
 
@@ -221,7 +247,7 @@ where
         Box::pin(self.get_size(location))
     }
 
-    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader<Self>
+    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader
     where
         Self: Sized,
     {
@@ -237,6 +263,7 @@ where
 {
     fn blob(&self) -> RequestNoLocation<&str> {
         let condow = self.clone();
+
         let download_fn = move |location: &str, params: Params| {
             let location = match location.parse::<C::Location>() {
                 Ok(loc) => loc,
@@ -279,6 +306,27 @@ where
         };
 
         Box::pin(self.get_size(location))
+    }
+
+    fn reader_with_length(
+        &self,
+        location: &str,
+        length: u64,
+    ) -> Result<RandomAccessReader, CondowError>
+    where
+        Self: Sized,
+    {
+        let location = match location.parse::<C::Location>() {
+            Ok(loc) => loc,
+            Err(parse_err) => {
+                return Err(
+                    CondowError::new_other(format!("invalid location: {location}"))
+                        .with_source(parse_err),
+                )
+            }
+        };
+
+        Ok(self.reader_with_length(location, length))
     }
 }
 

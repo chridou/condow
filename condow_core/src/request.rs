@@ -67,14 +67,28 @@ impl<L> RequestNoLocation<L> {
 }
 
 impl RequestNoLocation<NoLocation> {
+    /// Download as a [PartStream]
+    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
+        self.at(NoLocation).download().await
+    }
+
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
         self.at(NoLocation).download_chunks().await
     }
 
-    /// Download as a [PartStream]
-    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
-        self.at(NoLocation).download().await
+    /// Downloads into a freshly allocated [Vec]
+    pub async fn download_into_vec(self) -> Result<Vec<u8>, CondowError> {
+        let stream = self.download_chunks().await?;
+        stream.into_vec().await
+    }
+
+    /// Writes all received bytes into the provided buffer
+    ///
+    /// Fails if the buffer is too small.
+    pub async fn download_into_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
+        let stream = self.download_chunks().await?;
+        stream.write_buffer(buffer).await
     }
 }
 
@@ -110,14 +124,28 @@ impl<L> Request<L> {
         self
     }
 
+    /// Download as a [PartStream]
+    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
+        PartStream::from_chunk_stream(self.download_chunks().await?)
+    }
+
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
         (self.download_fn)(self.location, self.params).await
     }
 
-    /// Download as a [PartStream]
-    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
-        PartStream::from_chunk_stream(self.download_chunks().await?)
+    /// Downloads into a freshly allocated [Vec]
+    pub async fn download_into_vec(self) -> Result<Vec<u8>, CondowError> {
+        let stream = self.download_chunks().await?;
+        stream.into_vec().await
+    }
+
+    /// Writes all received bytes into the provided buffer
+    ///
+    /// Fails if the buffer is too small.
+    pub async fn download_into_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
+        let stream = self.download_chunks().await?;
+        stream.write_buffer(buffer).await
     }
 }
 

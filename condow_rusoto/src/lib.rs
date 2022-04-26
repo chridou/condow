@@ -26,6 +26,7 @@
 use std::{
     fmt,
     ops::{Deref, DerefMut},
+    str::FromStr,
 };
 
 use anyhow::Error as AnyError;
@@ -162,7 +163,15 @@ impl fmt::Display for S3Location {
     }
 }
 
-/// Just a wrapper around a clietn
+impl FromStr for S3Location {
+    type Err = AnyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
+}
+
+/// Just a wrapper around a client
 /// to implement the trait [CondowClient](condow_client::CondowClient) on.
 #[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
