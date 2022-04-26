@@ -1,8 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use bytes::Bytes;
 use futures::{
-    channel::mpsc,
     future::{self, BoxFuture, FutureExt},
     stream, StreamExt as _,
 };
@@ -11,10 +13,10 @@ use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec, NoLocation},
-    config::Config,
-    errors::{CondowError, IoError},
+    errors::CondowError,
+    reader::RandomAccessReader,
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
-    Condow,
+    DownloadRange, Downloads, Params, RequestNoLocation,
 };
 
 #[derive(Clone)]
@@ -367,14 +369,13 @@ async fn check_chunk_stream_variable_chunk_size() {
 
     assert_eq!(result, expected);
 }
-
 #[derive(Clone)]
-pub struct TestClient {
-    blob: Arc<Vec<u8>>,
-    pattern: Arc<Vec<Option<usize>>>,
+pub struct TestDownloader {
+    blob: Arc<Mutex<Vec<u8>>>,
+    pattern: Arc<Mutex<Vec<Option<usize>>>>,
 }
 
-impl TestClient {
+impl TestDownloader {
     /// Create a new [TestDownloader] with a BLOB of size `len`.
     ///
     /// Cycles the bytes starting with 0.
@@ -384,82 +385,77 @@ impl TestClient {
             blob.push(n as u8)
         }
         Self {
-            blob: Arc::new(blob),
-            pattern: Arc::new(vec![Some(2), Some(5), Some(3), Some(7)]),
+            blob: Arc::new(Mutex::new(blob)),
+            pattern: Arc::new(Mutex::new(vec![Some(2), Some(5), Some(3), Some(7)])),
         }
-    }
-
-    pub fn condow(self) -> Condow<Self> {
-        let config = Config::default()
-            .disable_retries()
-            .max_concurrency(1)
-            .buffers_full_delay_ms(1)
-            .part_size_bytes(2048);
-        Condow::new(self, config).unwrap()
     }
 
     /// Create a new [TestDownloader] using the given BLOB.
     pub fn new_with_blob(blob: Vec<u8>) -> Self {
         Self {
-            blob: Arc::new(blob),
-            pattern: Arc::new(vec![Some(2), Some(5), Some(3), Some(7)]),
+            blob: Arc::new(Mutex::new(blob)),
+            pattern: Arc::new(Mutex::new(vec![Some(5), Some(3), Some(7)])),
         }
     }
 
-    pub fn set_pattern(&mut self, pattern: Vec<Option<usize>>) {
-        self.pattern = Arc::new(pattern);
+    pub fn set_pattern(self, pattern: Vec<Option<usize>>) {
+        *self.pattern.lock().unwrap() = pattern;
     }
 
-    pub fn blob(&self) -> &[u8] {
-        &self.blob
+    pub fn blob_cloned(&self) -> Vec<u8> {
+        self.blob.lock().unwrap().clone()
     }
 }
 
-impl CondowClient for TestClient {
+impl Downloads for TestDownloader {
     type Location = NoLocation;
 
-    fn download(
-        &self,
-        _location: Self::Location,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-        futures::future::ready(make_a_stream(&self.blob, spec, &self.pattern)).boxed()
+    fn blob(&self) -> RequestNoLocation<NoLocation> {
+        let me = self.clone();
+
+        let download_fn = move |_: NoLocation, params: Params| {
+            let result = make_a_stream(&me.blob, params.range, me.pattern.lock().unwrap().clone());
+
+            futures::future::ready(result).boxed()
+        };
+
+        RequestNoLocation::new(download_fn)
     }
 
-    fn get_size(&self, _location: NoLocation) -> BoxFuture<'static, Result<u64, CondowError>> {
-        let len = self.blob.len();
+    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+        let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
+    }
+
+    fn reader_with_length(&self, location: NoLocation, length: u64) -> RandomAccessReader<Self>
+    where
+        Self: Sized,
+    {
+        RandomAccessReader::new_with_length(self.clone(), location, length)
     }
 }
 
 fn make_a_stream(
-    blob: &[u8],
-    range: DownloadSpec,
-    pattern: &[Option<usize>],
-) -> Result<(BytesStream, BytesHint), CondowError> {
-    let range = match range {
-        DownloadSpec::Complete => 0..blob.len(),
-        DownloadSpec::Range(r) => {
-            let r = r.to_std_range_excl();
-            r.start as usize..r.end as usize
-        }
+    blob: &Mutex<Vec<u8>>,
+    range: DownloadRange,
+    pattern: Vec<Option<usize>>,
+) -> Result<ChunkStream, CondowError> {
+    let blob_guard = blob.lock().unwrap();
+    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len() as u64) {
+        range
+    } else {
+        return Err(CondowError::new_invalid_range("invalid range"));
     };
 
-    if range.end > blob.len() {
-        return Err(CondowError::new_invalid_range(format!(
-            "max upper bound is {} but {} was requested",
-            blob.len() - 1,
-            range.end - 1
-        )));
-    }
+    let range = range_incl.start() as usize..(range_incl.end_incl() + 1) as usize;
 
-    let bytes = blob[range].to_vec();
+    let bytes = blob_guard[range].to_vec();
 
-    let mut chunk_patterns = pattern.to_vec().into_iter().cycle();
+    drop(blob_guard);
 
-    let bytes_hint = BytesHint::new_exact(bytes.len() as u64);
+    let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
 
-    let (tx, rx) = mpsc::unbounded();
+    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len() as u64));
 
     tokio::spawn(async move {
         let mut start = 0;
@@ -468,19 +464,30 @@ fn make_a_stream(
                 return;
             }
 
-            let chunk_len = if let Some(pattern) = chunk_patterns.next() {
-                if let Some(pattern) = pattern {
-                    pattern
+            let (chunk_index, chunk_len) =
+                if let Some((chunk_index, pattern)) = chunk_patterns.next() {
+                    if let Some(pattern) = pattern {
+                        (chunk_index, pattern)
+                    } else {
+                        let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
+                        break;
+                    }
                 } else {
-                    let _ = tx.unbounded_send(Err(IoError("test error".to_string())));
                     break;
-                }
-            } else {
-                break;
-            };
+                };
 
             let end_excl = bytes.len().min(start + chunk_len);
             let chunk = Bytes::copy_from_slice(&bytes[start..end_excl]);
+
+            let bytes_left = (bytes.len() - end_excl) as u64;
+            let chunk = Chunk {
+                part_index: 0,
+                chunk_index,
+                blob_offset: start as u64,
+                range_offset: start as u64,
+                bytes: chunk,
+                bytes_left,
+            };
 
             let _ = tx.unbounded_send(Ok(chunk));
 
@@ -488,9 +495,7 @@ fn make_a_stream(
         }
     });
 
-    let bytes_stream = rx.boxed();
-
-    Ok((bytes_stream, bytes_hint))
+    Ok(chunk_stream)
 }
 
 #[tokio::test]
@@ -498,7 +503,7 @@ async fn check_test_downloader() {
     for n in 1..255 {
         let expected: Vec<u8> = (0..n).collect();
 
-        let downloader = TestClient::new(n as usize).condow();
+        let downloader = TestDownloader::new(n as usize);
 
         let parts = downloader.blob().range(..).download().await.unwrap();
 

@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::{fmt, ops::RangeInclusive};
+use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
 
 use futures::future::BoxFuture;
 
@@ -95,6 +95,14 @@ pub struct NoLocation;
 impl std::fmt::Display for NoLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<no location>")
+    }
+}
+
+impl FromStr for NoLocation {
+    type Err = Infallible;
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+        Ok(NoLocation)
     }
 }
 

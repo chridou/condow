@@ -315,7 +315,7 @@ mod random_access_reader {
     mod tests {
         use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-        use crate::{condow_client::NoLocation, test_utils::TestClient};
+        use crate::{condow_client::NoLocation, test_utils::TestDownloader};
 
         use super::*;
 
@@ -324,7 +324,7 @@ mod random_access_reader {
             for n in 1..255 {
                 let expected: Vec<u8> = (0..n).collect();
 
-                let downloader = TestClient::new(n as usize).condow();
+                let downloader = TestDownloader::new(n as usize);
 
                 let mut reader = downloader.reader(NoLocation).await.unwrap();
 
@@ -338,8 +338,7 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn offsets_and_seek_from_start() {
-            let mut reader = TestClient::new_with_blob(vec![0, 1, 2, 3])
-                .condow()
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
                 .reader(NoLocation)
                 .await
                 .unwrap();
@@ -358,8 +357,7 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn offsets_and_seek_from_end() {
-            let mut reader = TestClient::new_with_blob(vec![0, 1, 2, 3])
-                .condow()
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
                 .reader(NoLocation)
                 .await
                 .unwrap();
@@ -376,8 +374,7 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn offsets_and_seek_from_current() {
-            let mut reader = TestClient::new_with_blob(vec![0, 1, 2, 3])
-                .condow()
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
                 .reader(NoLocation)
                 .await
                 .unwrap();
@@ -400,7 +397,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn seek_from_start() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
-            let downloader = TestClient::new_with_blob(expected.clone()).condow();
+            let downloader = TestDownloader::new_with_blob(expected.clone());
             let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Start(1)).await.unwrap();
@@ -422,7 +419,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn seek_from_end() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
-            let downloader = TestClient::new_with_blob(expected.clone()).condow();
+            let downloader = TestDownloader::new_with_blob(expected.clone());
             let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::End(-10)).await.unwrap();
@@ -443,8 +440,7 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn seek_from_end_before_byte_zero_must_err() {
-            let mut reader = TestClient::new_with_blob(vec![0, 1, 2, 3])
-                .condow()
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
                 .reader(NoLocation)
                 .await
                 .unwrap();
@@ -459,7 +455,7 @@ mod random_access_reader {
         #[tokio::test]
         async fn seek_from_current() {
             let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
-            let downloader = TestClient::new_with_blob(expected.clone()).condow();
+            let downloader = TestDownloader::new_with_blob(expected.clone());
             let mut reader = downloader.reader(NoLocation).await.unwrap();
 
             reader.seek(SeekFrom::Current(1)).await.unwrap();
@@ -480,8 +476,7 @@ mod random_access_reader {
 
         #[tokio::test]
         async fn seek_from_current_before_byte_zero_must_err() {
-            let mut reader = TestClient::new_with_blob(vec![0, 1, 2, 3])
-                .condow()
+            let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
                 .reader(NoLocation)
                 .await
                 .unwrap();
@@ -511,7 +506,7 @@ mod random_access_reader {
                 for mode in modes {
                     let expected: Vec<u8> = (0..n).collect();
 
-                    let downloader = TestClient::new_with_blob(expected.clone()).condow();
+                    let downloader = TestDownloader::new_with_blob(expected.clone());
 
                     let mut reader = downloader.reader(NoLocation).await.unwrap();
                     reader.set_fetch_ahead_mode(mode);
