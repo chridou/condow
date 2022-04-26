@@ -15,9 +15,7 @@ use crate::{
 /// This can only download if the type of the location is [NoLocation].
 pub struct RequestNoLocation<C> {
     condow: Condow<C>,
-    probe: Option<Arc<dyn Probe>>,
-    range: DownloadRange,
-    get_size_mode: GetSizeMode,
+    params: Params,
 }
 
 impl<C> RequestNoLocation<C>
@@ -27,9 +25,11 @@ where
     pub fn new(condow: Condow<C>) -> Self {
         Self {
             condow,
-            probe: None,
-            range: (..).into(),
-            get_size_mode: GetSizeMode::Default,
+            params: Params {
+                probe: None,
+                range: (..).into(),
+                get_size_mode: GetSizeMode::Default,
+            },
         }
     }
 
@@ -38,27 +38,25 @@ where
         Request {
             condow: self.condow,
             location: location.into(),
-            probe: self.probe,
-            range: self.range,
-            get_size_mode: self.get_size_mode,
+            params: self.params,
         }
     }
 
     /// Specify the range to download
     pub fn range<DR: Into<DownloadRange>>(mut self, range: DR) -> Self {
-        self.range = range.into();
+        self.params.range = range.into();
         self
     }
 
     /// Attach a [Probe] to the download
     pub fn probe(mut self, probe: Arc<dyn Probe>) -> Self {
-        self.probe = Some(probe);
+        self.params.probe = Some(probe);
         self
     }
 
     /// Explicitly set the condition on when to query for the Blob size
     pub fn get_size_mode(mut self, get_size_mode: GetSizeMode) -> Self {
-        self.get_size_mode = get_size_mode;
+        self.params.get_size_mode = get_size_mode;
         self
     }
 }
@@ -85,9 +83,7 @@ where
 {
     condow: Condow<C>,
     location: C::Location,
-    probe: Option<Arc<dyn Probe>>,
-    range: DownloadRange,
-    get_size_mode: GetSizeMode,
+    params: Params,
 }
 
 impl<C> Request<C>
@@ -102,26 +98,26 @@ where
 
     /// Specify the range to download
     pub fn range<DR: Into<DownloadRange>>(mut self, range: DR) -> Self {
-        self.range = range.into();
+        self.params.range = range.into();
         self
     }
 
     /// Attach a [Probe] to the download
     pub fn probe(mut self, probe: Arc<dyn Probe>) -> Self {
-        self.probe = Some(probe);
+        self.params.probe = Some(probe);
         self
     }
 
     /// Explicitly set the condition on when to query for the Blob size
     pub fn get_size_mode(mut self, get_size_mode: GetSizeMode) -> Self {
-        self.get_size_mode = get_size_mode;
+        self.params.get_size_mode = get_size_mode;
         self
     }
 
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
         let probe = match (
-            self.probe,
+            self.params.probe,
             self.condow
                 .probe_factory
                 .as_ref()
@@ -136,8 +132,8 @@ where
         machinery::download_range(
             self.condow,
             self.location,
-            self.range,
-            self.get_size_mode,
+            self.params.range,
+            self.params.get_size_mode,
             probe,
         )
         .await
@@ -147,4 +143,10 @@ where
     pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
         PartStream::from_chunk_stream(self.download_chunks().await?)
     }
+}
+
+struct Params {
+    probe: Option<Arc<dyn Probe>>,
+    range: DownloadRange,
+    get_size_mode: GetSizeMode,
 }
