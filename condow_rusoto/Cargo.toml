@@ -18,8 +18,8 @@ condow_core = { version = "0.13", path = "../condow_core"}
 
 futures = "0.3"
 anyhow = "1.0"
-rusoto_core = { version = "0.47", default_features = false }
-rusoto_s3 = { version = "0.47", default_features = false }
+rusoto_core = { version = "0.48", default_features = false }
+rusoto_s3 = { version = "0.48", default_features = false }
 
 [features]
 default = ["native-tls"]
