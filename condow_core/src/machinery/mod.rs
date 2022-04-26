@@ -160,7 +160,7 @@ pub(crate) enum ProbeInternal {
     /// Nothing measured
     Off,
     /// One Probe.
-    /// 
+    ///
     /// Can be either one exclusively for the request
     /// or one provided by the shared factory
     One(Arc<dyn Probe>),

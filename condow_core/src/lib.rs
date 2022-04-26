@@ -105,6 +105,7 @@ where
         })
     }
 
+    /// Download a Blob via the returned request object
     pub fn blob(&self) -> RequestNoLocation<C> {
         RequestNoLocation::new(self.clone())
     }

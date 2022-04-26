@@ -1,4 +1,4 @@
-//! Reporting
+//! Probes & Instrumentation
 //!
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
@@ -33,12 +33,12 @@ pub trait Probe: Send + Sync + 'static {
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download was successful.**
+    /// **This always is the last method called on a [Probe] if the download was successful.**
     fn download_completed(&self, time: Duration) {}
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download failed.**
+    /// **This always is the last method called on a [Probe] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
 
     /// An error occurd but a retry will be attempted
