@@ -18,9 +18,7 @@ mod random_access_reader {
         AsyncRead, AsyncSeek,
     };
 
-    use crate::{
-        condow_client::CondowClient, config::Mebi, errors::CondowError, Condow, DownloadRange,
-    };
+    use crate::{config::Mebi, errors::CondowError, DownloadRange, Downloads};
 
     use super::BytesAsyncReader;
 
@@ -95,41 +93,41 @@ mod random_access_reader {
     /// [FetchAheadMode::ToEnd]. The In these cases the number of bytes
     /// to be downloaded must be greater than the configured part size
     /// for concurrent downloading.
-    pub struct RandomAccessReader<C>
+    pub struct RandomAccessReader<D>
     where
-        C: CondowClient,
+        D: Downloads,
     {
         /// Reading position of the next byte
         pos: u64,
         /// Download logic
-        condow: Condow<C>,
+        downloader: D,
         /// Location of the BLOB
-        location: C::Location,
+        location: D::Location,
         /// Total length of the BLOB
         length: u64,
         state: State,
         fetch_ahead_mode: FetchAheadMode,
     }
 
-    impl<C> RandomAccessReader<C>
+    impl<D> RandomAccessReader<D>
     where
-        C: CondowClient,
+        D: Downloads + Clone + Send + Sync + 'static,
     {
         /// Creates a new instance without a given BLOB length
         ///
         /// This function will query the size of the BLOB. If the size is already known
         /// call [RandomAccessReader::new_with_length]
-        pub async fn new(condow: Condow<C>, location: C::Location) -> Result<Self, CondowError> {
-            let length = condow.get_size(location.clone()).await?;
-            Ok(Self::new_with_length(condow, location, length))
+        pub async fn new(downloader: D, location: D::Location) -> Result<Self, CondowError> {
+            let length = downloader.get_size(location.clone()).await?;
+            Ok(Self::new_with_length(downloader, location, length))
         }
 
         /// Will create a reader with the given known size of the BLOB.
         ///
         /// This function will create a new reader immediately
-        pub fn new_with_length(condow: Condow<C>, location: C::Location, length: u64) -> Self {
+        pub fn new_with_length(downloader: D, location: D::Location, length: u64) -> Self {
             Self {
-                condow,
+                downloader,
                 location,
                 pos: 0,
                 length,
@@ -154,11 +152,11 @@ mod random_access_reader {
 
             let end_incl = (self.pos + len - 1).min(self.length - 1);
 
-            let condow = self.condow.clone();
+            let downloader = self.downloader.clone();
             let location = self.location.clone();
             let range = DownloadRange::from(self.pos..=end_incl);
             async move {
-                condow
+                downloader
                     .blob()
                     .at(location)
                     .range(range)
@@ -173,9 +171,9 @@ mod random_access_reader {
         }
     }
 
-    impl<C> RandomAccessReader<C>
+    impl<D> RandomAccessReader<D>
     where
-        C: CondowClient,
+        D: Downloads,
     {
         pub fn set_fetch_ahead_mode<T: Into<FetchAheadMode>>(&mut self, mode: T) {
             self.fetch_ahead_mode = mode.into();
@@ -186,10 +184,10 @@ mod random_access_reader {
         }
     }
 
-    impl<C> AsyncRead for RandomAccessReader<C>
+    impl<D> AsyncRead for RandomAccessReader<D>
     where
-        C: CondowClient,
-        C::Location: Unpin,
+        D: Downloads + Clone + Send + Sync + 'static + Unpin,
+        D::Location: Unpin,
     {
         fn poll_read(
             mut self: Pin<&mut Self>,
@@ -272,10 +270,10 @@ mod random_access_reader {
         }
     }
 
-    impl<C> AsyncSeek for RandomAccessReader<C>
+    impl<D> AsyncSeek for RandomAccessReader<D>
     where
-        C: CondowClient + Unpin,
-        C::Location: Unpin,
+        D: Downloads + Unpin,
+        D::Location: Unpin,
     {
         fn poll_seek(
             self: Pin<&mut Self>,

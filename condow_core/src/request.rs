@@ -2,29 +2,34 @@
 
 use std::sync::Arc;
 
+use futures::future::BoxFuture;
+
 use crate::{
-    condow_client::{CondowClient, NoLocation},
-    errors::CondowError,
-    machinery::{self, ProbeInternal},
-    probe::Probe,
-    ChunkStream, Condow, DownloadRange, GetSizeMode, PartStream,
+    condow_client::NoLocation, errors::CondowError, probe::Probe, ChunkStream, DownloadRange,
+    GetSizeMode, PartStream,
 };
+
+type DownloadFn<L> = Box<
+    dyn FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>> + Send + 'static,
+>;
 
 /// A request for a download where the location is not yet known
 ///
 /// This can only download if the type of the location is [NoLocation].
-pub struct RequestNoLocation<C> {
-    condow: Condow<C>,
+pub struct RequestNoLocation<L> {
+    download_fn: DownloadFn<L>,
     params: Params,
 }
 
-impl<C> RequestNoLocation<C>
-where
-    C: CondowClient,
-{
-    pub fn new(condow: Condow<C>) -> Self {
+impl<L> RequestNoLocation<L> {
+    pub(crate) fn new<F>(download_fn: F) -> Self
+    where
+        F: FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>>
+            + Send
+            + 'static,
+    {
         Self {
-            condow,
+            download_fn: Box::new(download_fn),
             params: Params {
                 probe: None,
                 range: (..).into(),
@@ -34,9 +39,9 @@ where
     }
 
     /// Specify the location to download the Blob from
-    pub fn at<L: Into<C::Location>>(self, location: L) -> Request<C> {
+    pub fn at<LL: Into<L>>(self, location: LL) -> Request<L> {
         Request {
-            condow: self.condow,
+            download_fn: self.download_fn,
             location: location.into(),
             params: self.params,
         }
@@ -61,10 +66,7 @@ where
     }
 }
 
-impl<C> RequestNoLocation<C>
-where
-    C: CondowClient<Location = NoLocation>,
-{
+impl RequestNoLocation<NoLocation> {
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
         self.at(NoLocation).download_chunks().await
@@ -77,21 +79,15 @@ where
 }
 
 /// A request for a download from a specific location
-pub struct Request<C>
-where
-    C: CondowClient,
-{
-    condow: Condow<C>,
-    location: C::Location,
+pub struct Request<L> {
+    download_fn: DownloadFn<L>,
+    location: L,
     params: Params,
 }
 
-impl<C> Request<C>
-where
-    C: CondowClient,
-{
+impl<L> Request<L> {
     /// Specify the location to download the Blob from
-    pub fn at<L: Into<C::Location>>(mut self, location: L) -> Self {
+    pub fn at<LL: Into<L>>(mut self, location: LL) -> Self {
         self.location = location.into();
         self
     }
@@ -116,27 +112,7 @@ where
 
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
-        let probe = match (
-            self.params.probe,
-            self.condow
-                .probe_factory
-                .as_ref()
-                .map(|f| f.make(&self.location)),
-        ) {
-            (None, None) => ProbeInternal::Off,
-            (Some(req), None) => ProbeInternal::One(req),
-            (None, Some(fac)) => ProbeInternal::One(fac),
-            (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
-        };
-
-        machinery::download_range(
-            self.condow,
-            self.location,
-            self.params.range,
-            self.params.get_size_mode,
-            probe,
-        )
-        .await
+        (self.download_fn)(self.location, self.params).await
     }
 
     /// Download as a [PartStream]
@@ -145,8 +121,8 @@ where
     }
 }
 
-struct Params {
-    probe: Option<Arc<dyn Probe>>,
-    range: DownloadRange,
-    get_size_mode: GetSizeMode,
+pub(crate) struct Params {
+    pub probe: Option<Arc<dyn Probe>>,
+    pub range: DownloadRange,
+    pub get_size_mode: GetSizeMode,
 }

@@ -34,16 +34,17 @@
 //!
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
-use futures::Stream;
+use futures::{future::BoxFuture, FutureExt};
 
 use condow_client::CondowClient;
 use config::{AlwaysGetSize, ClientRetryWrapper, Config};
 use errors::CondowError;
+use machinery::ProbeInternal;
 use probe::{Probe, ProbeFactory};
 use reader::RandomAccessReader;
-use streams::{ChunkStream, ChunkStreamItem, PartStream};
+use streams::{ChunkStream, PartStream};
 
 #[macro_use]
 pub(crate) mod helpers;
@@ -63,6 +64,50 @@ pub use request::*;
 
 #[cfg(test)]
 pub mod test_utils;
+
+/// A common interface for downloading
+pub trait Downloads {
+    type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
+
+    /// Download a Blob via the returned request object
+    fn blob(&self) -> RequestNoLocation<Self::Location>;
+
+    /// Get the size of a file at the BLOB location
+    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>>;
+
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will query the size of the BLOB. If the size is already known
+    /// call [Downloads::reader_with_length]
+    fn reader<'a>(
+        &'a self,
+        location: Self::Location,
+    ) -> BoxFuture<'a, Result<RandomAccessReader<Self>, CondowError>>
+    where
+        Self: Sized + Sync,
+    {
+        let me = self;
+        async move {
+            let length = me.get_size(location.clone()).await?;
+            Ok(me.reader_with_length(location, length))
+        }
+        .boxed()
+    }
+
+    /// Creates a [RandomAccessReader] for the given location
+    ///
+    /// This function will create a new reader immediately
+    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader<Self>
+    where
+        Self: Sized;
+}
+
+pub trait DownloadsUntyped {
+    /// Download a Blob via the returned request object
+    fn blob(&self) -> RequestNoLocation<&str>;
+    /// Get the size of a file at the BLOB location
+    fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
+}
 
 /// The CONcurrent DOWnloader
 ///
@@ -119,8 +164,24 @@ where
     }
 
     /// Download a Blob via the returned request object
-    pub fn blob(&self) -> RequestNoLocation<C> {
-        RequestNoLocation::new(self.clone())
+    pub fn blob(&self) -> RequestNoLocation<C::Location> {
+        let condow = self.clone();
+        let download_fn = move |location: <C as CondowClient>::Location, params: Params| {
+            let probe = match (
+                params.probe,
+                condow.probe_factory.as_ref().map(|f| f.make(&location)),
+            ) {
+                (None, None) => ProbeInternal::Off,
+                (Some(req), None) => ProbeInternal::One(req),
+                (None, Some(fac)) => ProbeInternal::One(fac),
+                (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
+            };
+
+            machinery::download_range(condow, location, params.range, params.get_size_mode, probe)
+                .boxed()
+        };
+
+        RequestNoLocation::new(download_fn)
     }
 
     /// Get the size of a file at the given location
@@ -132,72 +193,92 @@ where
     pub async fn reader(
         &self,
         location: C::Location,
-    ) -> Result<RandomAccessReader<C>, CondowError> {
+    ) -> Result<RandomAccessReader<Self>, CondowError> {
         RandomAccessReader::new(self.clone(), location).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length(&self, location: C::Location, length: u64) -> RandomAccessReader<C> {
+    pub fn reader_with_length(
+        &self,
+        location: C::Location,
+        length: u64,
+    ) -> RandomAccessReader<Self> {
         RandomAccessReader::new_with_length(self.clone(), location, length)
     }
 }
 
-/// A composite struct of a stream and a [Reporter]
-///
-/// Returned from functions which have reporting enabled.
-pub struct StreamWithReport<St: Stream, R: Probe> {
-    pub stream: St,
-    pub reporter: R,
-}
-
-impl<St, R> StreamWithReport<St, R>
+impl<C> Downloads for Condow<C>
 where
-    St: Stream,
-    R: Probe,
+    C: CondowClient,
 {
-    pub fn new(stream: St, reporter: R) -> Self {
-        Self { stream, reporter }
+    type Location = C::Location;
+
+    fn blob(&self) -> RequestNoLocation<Self::Location> {
+        self.blob()
     }
 
-    pub fn into_stream(self) -> St {
-        self.stream
+    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+        Box::pin(self.get_size(location))
     }
 
-    pub fn into_parts(self) -> (St, R) {
-        (self.stream, self.reporter)
+    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader<Self>
+    where
+        Self: Sized,
+    {
+        self.reader_with_length(location, length)
     }
 }
 
-impl<R> StreamWithReport<ChunkStream, R>
+impl<C> DownloadsUntyped for Condow<C>
 where
-    R: Probe,
+    C: CondowClient,
+    C::Location: FromStr,
+    <C::Location as FromStr>::Err: std::error::Error + Sync + Send + 'static,
 {
-    pub fn part_stream(self) -> Result<StreamWithReport<PartStream<ChunkStream>, R>, CondowError> {
-        let StreamWithReport { stream, reporter } = self;
-        let part_stream = PartStream::from_chunk_stream(stream)?;
-        Ok(StreamWithReport::new(part_stream, reporter))
+    fn blob(&self) -> RequestNoLocation<&str> {
+        let condow = self.clone();
+        let download_fn = move |location: &str, params: Params| {
+            let location = match location.parse::<C::Location>() {
+                Ok(loc) => loc,
+                Err(parse_err) => {
+                    return futures::future::err(
+                        CondowError::new_other(format!("invalid location: {location}"))
+                            .with_source(parse_err),
+                    )
+                    .boxed();
+                }
+            };
+
+            let probe = match (
+                params.probe,
+                condow.probe_factory.as_ref().map(|f| f.make(&location)),
+            ) {
+                (None, None) => ProbeInternal::Off,
+                (Some(req), None) => ProbeInternal::One(req),
+                (None, Some(fac)) => ProbeInternal::One(fac),
+                (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
+            };
+
+            machinery::download_range(condow, location, params.range, params.get_size_mode, probe)
+                .boxed()
+        };
+
+        RequestNoLocation::new(download_fn)
     }
 
-    pub async fn write_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
-        self.stream.write_buffer(buffer).await
-    }
+    fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+        let location = match location.parse::<C::Location>() {
+            Ok(loc) => loc,
+            Err(parse_err) => {
+                return futures::future::err(
+                    CondowError::new_other(format!("invalid location: {location}"))
+                        .with_source(parse_err),
+                )
+                .boxed();
+            }
+        };
 
-    pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
-        self.stream.into_vec().await
-    }
-}
-
-impl<S, R> StreamWithReport<PartStream<S>, R>
-where
-    S: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
-    R: Probe,
-{
-    pub async fn write_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
-        self.stream.write_buffer(buffer).await
-    }
-
-    pub async fn into_vec(self) -> Result<Vec<u8>, CondowError> {
-        self.stream.into_vec().await
+        Box::pin(self.get_size(location))
     }
 }
 
