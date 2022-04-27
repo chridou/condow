@@ -29,10 +29,10 @@ pub enum DownloadSpec {
 impl DownloadSpec {
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
     /// if the variant is [DownloadSpec::Range]
-    pub fn http_range_value(&self) -> Option<String> {
+    pub fn http_bytes_range_value(&self) -> Option<String> {
         match self {
             DownloadSpec::Complete => None,
-            DownloadSpec::Range(r) => Some(r.http_range_value()),
+            DownloadSpec::Range(r) => Some(r.http_bytes_range_value()),
         }
     }
 

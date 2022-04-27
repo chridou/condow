@@ -247,7 +247,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let get_object_request = GetObjectRequest {
                 bucket: bucket.into_inner(),
                 key: object_key.into_inner(),
-                range: spec.http_range_value(),
+                range: spec.http_bytes_range_value(),
                 ..Default::default()
             };
 

@@ -36,6 +36,7 @@
 //! [condow_fs]:https://docs.rs/condow_fs
 use std::{str::FromStr, sync::Arc};
 
+use anyhow::Error as AnyError;
 use futures::{future::BoxFuture, FutureExt};
 
 use condow_client::CondowClient;
@@ -69,7 +70,7 @@ pub mod test_utils;
 pub trait Downloads {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
-    /// Download a Blob via the returned request object
+    /// Download a BLOB via the returned request object
     fn blob(&self) -> RequestNoLocation<Self::Location>;
 
     /// Get the size of a BLOB at the given location
@@ -110,12 +111,16 @@ pub trait DownloadsUntyped {
     fn blob(&self) -> RequestNoLocation<&str>;
 
     /// Get the size of a BLOB at the given location
+    ///
+    /// A location which can not be parsed causes method to fail.
     fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
 
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// This function will query the size of the BLOB. If the size is already known
     /// call [Downloads::reader_with_length]
+    ///
+    /// A location which can not be parsed causes method to fail.
     fn reader<'a>(
         &'a self,
         location: &'a str,
@@ -133,6 +138,8 @@ pub trait DownloadsUntyped {
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// This function will create a new reader immediately
+    ///
+    /// A location which can not be parsed causes method to fail.
     fn reader_with_length(
         &self,
         location: &str,
@@ -147,15 +154,11 @@ pub trait DownloadsUntyped {
 /// Downloads BLOBs by splitting the download into parts
 /// which are downloaded concurrently.
 ///
-/// The API of `Condow` itself should be sufficient for most use cases.
-///
-/// If reporting/metrics is required, see [Downloader] and [DownloadSession]
-///
 /// ## Wording
 ///
 /// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
-/// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make a part.
+/// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make up a part.
 pub struct Condow<C> {
     client: ClientRetryWrapper<C>,
     config: Config,
@@ -179,7 +182,7 @@ where
     /// Create a new CONcurrent DOWnloader.
     ///
     /// Fails if the [Config] is not valid.
-    pub fn new(client: C, config: Config) -> Result<Self, anyhow::Error> {
+    pub fn new(client: C, config: Config) -> Result<Self, AnyError> {
         let config = config.validated()?;
         Ok(Self {
             client: ClientRetryWrapper::new(client, config.retries.clone()),
@@ -196,7 +199,7 @@ where
         self.probe_factory = Some(factory);
     }
 
-    /// Download a Blob via the returned request object
+    /// Download a BLOB via the returned request object
     pub fn blob(&self) -> RequestNoLocation<C::Location> {
         let condow = self.clone();
         let download_fn = move |location: <C as CondowClient>::Location, params: Params| {
@@ -217,7 +220,7 @@ where
         RequestNoLocation::new(download_fn)
     }
 
-    /// Get the size of a file at the given location
+    /// Get the size of a BLOB at the given location
     pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
         self.client.get_size(location, &Default::default()).await
     }
@@ -341,6 +344,8 @@ pub enum GetSizeMode {
     /// range (e.g. complete BLOB or from x to end)
     Required,
     /// As configured with [Condow] itself.
+    ///
+    /// This is the default value.
     Default,
 }
 
@@ -362,3 +367,31 @@ impl Default for GetSizeMode {
 
 #[cfg(test)]
 mod condow_tests;
+
+#[test]
+fn downloads_untyped_is_object_safe_must_compile() {
+    struct Foo;
+
+    impl DownloadsUntyped for Foo {
+        fn blob(&self) -> RequestNoLocation<&str> {
+            todo!()
+        }
+
+        fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+            todo!()
+        }
+
+        fn reader_with_length(
+            &self,
+            _location: &str,
+            _length: u64,
+        ) -> Result<RandomAccessReader, CondowError>
+        where
+            Self: Sized,
+        {
+            todo!()
+        }
+    }
+
+    let _: Box<dyn DownloadsUntyped> = Box::new(Foo);
+}

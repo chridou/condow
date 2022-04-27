@@ -1,25 +1,29 @@
-//! Download request
+//! Download requests
+//!
+//! Builder style APIs to configure individual downloads.
 
 use std::sync::Arc;
 
-use bytes::Bytes;
-use futures::{future::BoxFuture, AsyncRead, Stream};
+use futures::{future::BoxFuture, AsyncRead};
 
 use crate::{
-    condow_client::NoLocation,
-    errors::CondowError,
-    probe::Probe,
-    reader::{BytesAsyncReader, RandomAccessReader},
+    condow_client::NoLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
     ChunkStream, DownloadRange, GetSizeMode, PartStream,
 };
 
+/// A function which downloads from the givel location and the given [Params].
+///
+/// This is to make the request objects independent from the actual mechanism
+/// used to download.
 type DownloadFn<L> = Box<
     dyn FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>> + Send + 'static,
 >;
 
 /// A request for a download where the location is not yet known
 ///
-/// This can only download if the type of the location is [NoLocation].
+/// The default is to download the complete BLOB.
+///
+/// This can only directly download if the type of the location is [NoLocation].
 pub struct RequestNoLocation<L> {
     download_fn: DownloadFn<L>,
     params: Params,
@@ -103,6 +107,8 @@ impl RequestNoLocation<NoLocation> {
 }
 
 /// A request for a download from a specific location
+///
+/// The default is to download the complete BLOB.
 pub struct Request<L> {
     download_fn: DownloadFn<L>,
     location: L,
@@ -165,6 +171,8 @@ impl<L> Request<L> {
     }
 }
 
+/// Internal struct to keep common parameters independen of
+/// the dispatch mechanism together
 pub(crate) struct Params {
     pub probe: Option<Arc<dyn Probe>>,
     pub range: DownloadRange,

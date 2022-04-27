@@ -13,14 +13,41 @@ use crate::errors::CondowError;
 pub struct InclusiveRange(pub u64, pub u64);
 
 impl InclusiveRange {
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the last item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.end_incl(), 9);
+    /// ```
     pub fn end_incl(&self) -> u64 {
         self.1
     }
 
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         if self.1 < self.0 {
@@ -44,7 +71,15 @@ impl InclusiveRange {
     }
 
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
-    pub fn http_range_value(&self) -> String {
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.http_bytes_range_value(), "bytes=4-9");
+    /// ```
+    pub fn http_bytes_range_value(&self) -> String {
         format!("bytes={}-{}", self.0, self.1)
     }
 }
@@ -82,15 +117,42 @@ impl OffsetRange {
         Self(offset, len)
     }
 
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the first item after the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.end_excl(), 10);
+    /// ```
     pub fn end_excl(&self) -> u64 {
         self.0 + self.1
     }
 
     #[allow(clippy::len_without_is_empty)]
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     pub fn len(&self) -> u64 {
         self.1
     }

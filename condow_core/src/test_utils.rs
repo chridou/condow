@@ -438,9 +438,12 @@ impl ReaderAdapter for TestDownloader {
 
     fn download_range<'a>(
         &'a self,
-        _range: DownloadRange,
+        range: DownloadRange,
     ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
-        <TestDownloader as Downloads>::blob(self).download().boxed()
+        <TestDownloader as Downloads>::blob(self)
+            .range(range)
+            .download()
+            .boxed()
     }
 }
 
@@ -584,6 +587,76 @@ async fn check_test_downloader_2() {
         .blob()
         .range(..40)
         .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..40], "5");
+}
+
+#[tokio::test]
+async fn check_test_downloader_as_reader_adapter() {
+    let sample: Vec<u8> = (0..101).collect();
+
+    let downloader = TestDownloader::new_with_blob(sample.clone());
+
+    let result = downloader
+        .download_range((..).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1A");
+
+    let result = downloader
+        .download_range((0..101).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1B");
+
+    let result = downloader
+        .download_range((0..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1C");
+
+    let result = downloader
+        .download_range((1..100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..100], "2");
+
+    let result = downloader
+        .download_range((1..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..=100], "3");
+
+    let result = downloader
+        .download_range((..=33).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..=33], "4");
+
+    let result = downloader
+        .download_range((..40).into())
+        .await
+        .unwrap()
+        .into_vec()
         .await
         .unwrap();
     assert_eq!(result, sample[..40], "5");
