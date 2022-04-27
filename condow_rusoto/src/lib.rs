@@ -29,7 +29,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Error as AnyError;
+use anyhow::{anyhow, Error as AnyError};
 use futures::{future::BoxFuture, stream::TryStreamExt};
 use rusoto_core::{request::BufferedHttpResponse, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
@@ -166,8 +166,19 @@ impl fmt::Display for S3Location {
 impl FromStr for S3Location {
     type Err = AnyError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+    fn from_str(uri: &str) -> Result<Self, Self::Err> {
+        let prefixes = vec!["s3://", "s3a://", "s3n://"];
+        let res = prefixes
+            .iter()
+            .find(|&&p| uri.starts_with(p))
+            .map(|p| uri.trim_start_matches(p))
+            .ok_or_else(|| anyhow!(format!("Invalid S3 protocol prefix in uri: {}", uri)))?;
+
+        let (bucket, key) = res
+            .split_once('/')
+            .ok_or_else(|| anyhow!(format!("Invalid S3 uri: {}", uri)))?;
+
+        Ok(Bucket::new(bucket).object(key))
     }
 }
 

@@ -52,7 +52,7 @@ impl From<RetryInitialDelayMs> for Duration {
 
 impl From<Duration> for RetryInitialDelayMs {
     fn from(dur: Duration) -> Self {
-        Self(dur.as_micros() as u64)
+        Self(dur.as_millis() as u64)
     }
 }
 
