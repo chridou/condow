@@ -132,274 +132,318 @@ impl Buffer {
     }
 }
 
-#[tokio::test]
-async fn test_read_from_stream_with_stream_chunk_and_destination_buffer_same_size() {
-    use futures::io::AsyncReadExt as _;
-    // create stream
-    let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
-        Ok(vec![0_u8, 1, 2].into()),
-        Ok(vec![3_u8, 4, 5].into()),
-        Ok(vec![6_u8, 7, 8].into()),
-    ];
-    let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
-    let mut reader = BytesAsyncReader::new(bytes_stream);
-    let dest_buf: &mut [u8; 3] = &mut [42; 3];
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use futures::AsyncReadExt;
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 3, "bytes_written");
-    assert_eq!(dest_buf, &[0, 1, 2]);
+    use crate::errors::CondowError;
+    use crate::reader::bytes_async_reader::{fill_destination_buffer, Buffer};
+    use crate::reader::BytesAsyncReader;
+    use crate::test_utils::TestDownloader;
+    use crate::Downloads;
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 3, "bytes_written");
-    assert_eq!(dest_buf, &[3, 4, 5,]);
+    #[tokio::test]
+    async fn test_read_from_stream_with_stream_chunk_and_destination_buffer_same_size() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
+            Ok(vec![0_u8, 1, 2].into()),
+            Ok(vec![3_u8, 4, 5].into()),
+            Ok(vec![6_u8, 7, 8].into()),
+        ];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 3] = &mut [42; 3];
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 3, "bytes_written");
-    assert_eq!(dest_buf, &[6, 7, 8,]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1, 2]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(dest_buf, &[6, 7, 8,]);
-}
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4, 5,]);
 
-#[tokio::test]
-async fn test_read_from_stream_chunk_larger_than_destination_buffer() {
-    use futures::io::AsyncReadExt as _;
-    // create stream
-    let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
-        Ok(vec![0_u8, 1, 2].into()),
-        Ok(vec![3_u8, 4, 5].into()),
-        Ok(vec![6_u8, 7, 8].into()),
-    ];
-    let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
-    let mut reader = BytesAsyncReader::new(bytes_stream);
-    let dest_buf: &mut [u8; 2] = &mut [42; 2];
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7, 8,]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 2, "bytes_written");
-    assert_eq!(dest_buf, &[0, 1]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7, 8,]);
+    }
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(dest_buf, &[2, 1]);
+    #[tokio::test]
+    async fn read_from_downloader() {
+        let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
+        let downloader = TestDownloader::new_with_blob(expected.clone());
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 2, "bytes_written");
-    assert_eq!(dest_buf, &[3, 4]);
+        let mut reader = downloader.blob().range(..).reader().await.unwrap();
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![0, 1, 2]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(dest_buf, &[5, 4]);
+        let mut reader = downloader.blob().range(1..=3).reader().await.unwrap();
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![1, 2, 3]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 2, "bytes_written");
-    assert_eq!(dest_buf, &[6, 7]);
+        let mut reader = downloader.blob().range(1..4).reader().await.unwrap();
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![1, 2, 3]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(dest_buf, &[8, 7]);
+        let mut reader = downloader.blob().range(..).reader().await.unwrap();
+        let mut buf = vec![];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(dest_buf, &[8, 7]);
-}
+        let mut reader = downloader.blob().range(6..=6).reader().await.unwrap();
+        let mut buf = vec![0, 0, 0];
+        let bytes_read = reader.read(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![4, 0, 0]);
+        assert_eq!(bytes_read, 1);
+    }
 
-#[tokio::test]
-async fn test_read_from_stream_destination_buffer_larger_than_stream_chunk() {
-    use futures::io::AsyncReadExt as _;
-    // create stream
-    let bytes_stream: Vec<Result<Bytes, CondowError>> =
-        vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
-    let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
-    let mut reader = BytesAsyncReader::new(bytes_stream);
-    let dest_buf: &mut [u8; 4] = &mut [42; 4];
+    #[tokio::test]
+    async fn test_read_from_stream_chunk_larger_than_destination_buffer() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> = vec![
+            Ok(vec![0_u8, 1, 2].into()),
+            Ok(vec![3_u8, 4, 5].into()),
+            Ok(vec![6_u8, 7, 8].into()),
+        ];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 2] = &mut [42; 2];
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 3, "bytes_written");
-    assert_eq!(dest_buf, &[0, 1, 2, 42,]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1]);
 
-    let bytes_written = reader.read(dest_buf).await.unwrap();
-    assert_eq!(bytes_written, 3, "bytes_written");
-    assert_eq!(dest_buf, &[3, 4, 5, 42]);
-}
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[2, 1]);
 
-#[tokio::test]
-async fn test_read_to_end() {
-    use futures::io::AsyncReadExt as _;
-    // create stream
-    let bytes_stream: Vec<Result<Bytes, CondowError>> =
-        vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
-    let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
-    let mut reader = BytesAsyncReader::new(bytes_stream);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4]);
 
-    let mut buf = Vec::new();
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[5, 4]);
 
-    reader.read_to_end(&mut buf).await.unwrap();
-    assert_eq!(buf, vec![0, 1, 2, 3, 4, 5]);
-}
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(dest_buf, &[6, 7]);
 
-#[test]
-fn test_buffer_is_empty() {
-    let buffer = Buffer(0, Bytes::new());
-    assert!(buffer.is_empty());
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(dest_buf, &[8, 7]);
 
-    let mut buffer = Buffer(0, vec![0_u8].into());
-    assert!(!buffer.is_empty());
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(dest_buf, &[8, 7]);
+    }
 
-    buffer.0 = 1;
-    assert!(buffer.is_empty());
-}
+    #[tokio::test]
+    async fn test_read_from_stream_destination_buffer_larger_than_stream_chunk() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> =
+            vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
+        let dest_buf: &mut [u8; 4] = &mut [42; 4];
 
-#[test]
-fn test_buffer_slice() {
-    let buffer = Buffer(0, Bytes::new());
-    assert_eq!(buffer.as_slice(), &[]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[0, 1, 2, 42,]);
 
-    let mut buffer = Buffer(0, vec![0_u8].into());
-    assert_eq!(buffer.as_slice(), &[0]);
+        let bytes_written = reader.read(dest_buf).await.unwrap();
+        assert_eq!(bytes_written, 3, "bytes_written");
+        assert_eq!(dest_buf, &[3, 4, 5, 42]);
+    }
 
-    buffer.0 = 1;
-    assert_eq!(buffer.as_slice(), &[]);
+    #[tokio::test]
+    async fn test_read_to_end() {
+        use futures::io::AsyncReadExt as _;
+        // create stream
+        let bytes_stream: Vec<Result<Bytes, CondowError>> =
+            vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
+        let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let mut reader = BytesAsyncReader::new(bytes_stream);
 
-    let mut buffer = Buffer(0, vec![0_u8, 1_u8].into());
-    assert_eq!(buffer.as_slice(), &[0, 1]);
+        let mut buf = Vec::new();
 
-    buffer.0 = 1;
-    assert_eq!(buffer.as_slice(), &[1]);
+        reader.read_to_end(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![0, 1, 2, 3, 4, 5]);
+    }
 
-    buffer.0 = 2;
-    assert_eq!(buffer.as_slice(), &[]);
-}
+    #[test]
+    fn test_buffer_is_empty() {
+        let buffer = Buffer(0, Bytes::new());
+        assert!(buffer.is_empty());
 
-#[test]
-fn test_fill_destination_buffer_both_empty() {
-    let mut buffer = Buffer(0, Bytes::new());
-    let dest_buf: &mut [u8] = &mut [];
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        assert!(!buffer.is_empty());
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 0, "buffer.0");
-    assert_eq!(dest_buf, &[], "buffer.as_slice");
-    assert_eq!(buffer.as_slice(), &[]);
-}
+        buffer.0 = 1;
+        assert!(buffer.is_empty());
+    }
 
-#[test]
-fn test_fill_destination_buffer_1() {
-    let mut buffer = Buffer(0, vec![0_u8].into());
-    let dest_buf: &mut [u8] = &mut [10];
+    #[test]
+    fn test_buffer_slice() {
+        let buffer = Buffer(0, Bytes::new());
+        assert_eq!(buffer.as_slice(), &[]);
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0]);
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        assert_eq!(buffer.as_slice(), &[0]);
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0]);
-}
+        buffer.0 = 1;
+        assert_eq!(buffer.as_slice(), &[]);
 
-#[test]
-fn test_fill_destination_buffer_2() {
-    let mut buffer = Buffer(0, vec![0_u8].into());
-    let dest_buf: &mut [u8] = &mut [10, 11];
+        let mut buffer = Buffer(0, vec![0_u8, 1_u8].into());
+        assert_eq!(buffer.as_slice(), &[0, 1]);
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0, 11]);
+        buffer.0 = 1;
+        assert_eq!(buffer.as_slice(), &[1]);
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0, 11]);
-}
+        buffer.0 = 2;
+        assert_eq!(buffer.as_slice(), &[]);
+    }
 
-#[test]
-fn test_fill_destination_buffer_3() {
-    let mut buffer = Buffer(0, vec![0_u8, 1].into());
-    let dest_buf: &mut [u8] = &mut [10];
+    #[test]
+    fn test_fill_destination_buffer_both_empty() {
+        let mut buffer = Buffer(0, Bytes::new());
+        let dest_buf: &mut [u8] = &mut [];
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[1], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0]);
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 0, "buffer.0");
+        assert_eq!(dest_buf, &[], "buffer.as_slice");
+        assert_eq!(buffer.as_slice(), &[]);
+    }
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 1, "buffer.0");
-    assert_eq!(buffer.0, 2);
-    assert_eq!(buffer.as_slice(), &[]);
-    assert_eq!(dest_buf, &[1]);
+    #[test]
+    fn test_fill_destination_buffer_1() {
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        let dest_buf: &mut [u8] = &mut [10];
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "buffer.0");
-    assert_eq!(buffer.0, 2);
-    assert_eq!(buffer.as_slice(), &[]);
-    assert_eq!(dest_buf, &[1]);
-}
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0]);
 
-#[test]
-fn test_fill_destination_buffer_4() {
-    let mut buffer = Buffer(0, vec![0_u8, 1].into());
-    let dest_buf: &mut [u8] = &mut [10, 11];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0]);
+    }
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 2, "bytes_written");
-    assert_eq!(buffer.0, 2, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0, 1]);
+    #[test]
+    fn test_fill_destination_buffer_2() {
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        let dest_buf: &mut [u8] = &mut [10, 11];
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 2, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[]);
-    assert_eq!(dest_buf, &[0, 1]);
-}
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0, 11]);
 
-#[test]
-fn test_fill_destination_buffer_5() {
-    let mut buffer = Buffer(0, vec![0_u8, 1, 2].into());
-    let dest_buf: &mut [u8] = &mut [10, 11];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0, 11]);
+    }
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 2, "bytes_written");
-    assert_eq!(buffer.0, 2, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[2], "buffer.as_slice");
-    assert_eq!(dest_buf, &[0, 1]);
+    #[test]
+    fn test_fill_destination_buffer_3() {
+        let mut buffer = Buffer(0, vec![0_u8, 1].into());
+        let dest_buf: &mut [u8] = &mut [10];
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 1, "bytes_written");
-    assert_eq!(buffer.0, 3, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[]);
-    assert_eq!(dest_buf, &[2, 1]);
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[1], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0]);
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 3, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[]);
-    assert_eq!(dest_buf, &[2, 1]);
-}
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "buffer.0");
+        assert_eq!(buffer.0, 2);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[1]);
 
-#[test]
-fn test_fill_destination_buffer_dest_empty() {
-    let mut buffer = Buffer(0, vec![0_u8].into());
-    let dest_buf: &mut [u8] = &mut [];
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "buffer.0");
+        assert_eq!(buffer.0, 2);
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[1]);
+    }
 
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 0, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[0], "buffer.as_slice");
-    assert_eq!(dest_buf, &[]);
+    #[test]
+    fn test_fill_destination_buffer_4() {
+        let mut buffer = Buffer(0, vec![0_u8, 1].into());
+        let dest_buf: &mut [u8] = &mut [10, 11];
 
-    buffer.0 = 1;
-    let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
-    assert_eq!(bytes_written, 0, "bytes_written");
-    assert_eq!(buffer.0, 1, "buffer.0");
-    assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
-    assert_eq!(dest_buf, &[]);
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(buffer.0, 2, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0, 1]);
+
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 2, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[0, 1]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_5() {
+        let mut buffer = Buffer(0, vec![0_u8, 1, 2].into());
+        let dest_buf: &mut [u8] = &mut [10, 11];
+
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 2, "bytes_written");
+        assert_eq!(buffer.0, 2, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[2], "buffer.as_slice");
+        assert_eq!(dest_buf, &[0, 1]);
+
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 1, "bytes_written");
+        assert_eq!(buffer.0, 3, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[2, 1]);
+
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 3, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[]);
+        assert_eq!(dest_buf, &[2, 1]);
+    }
+
+    #[test]
+    fn test_fill_destination_buffer_dest_empty() {
+        let mut buffer = Buffer(0, vec![0_u8].into());
+        let dest_buf: &mut [u8] = &mut [];
+
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 0, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[0], "buffer.as_slice");
+        assert_eq!(dest_buf, &[]);
+
+        buffer.0 = 1;
+        let bytes_written = fill_destination_buffer(&mut buffer, dest_buf);
+        assert_eq!(bytes_written, 0, "bytes_written");
+        assert_eq!(buffer.0, 1, "buffer.0");
+        assert_eq!(buffer.as_slice(), &[], "buffer.as_slice");
+        assert_eq!(dest_buf, &[]);
+    }
 }

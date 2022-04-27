@@ -2,11 +2,15 @@
 
 use std::sync::Arc;
 
-use futures::future::BoxFuture;
+use bytes::Bytes;
+use futures::{future::BoxFuture, AsyncRead, Stream};
 
 use crate::{
-    condow_client::NoLocation, errors::CondowError, probe::Probe, ChunkStream, DownloadRange,
-    GetSizeMode, PartStream,
+    condow_client::NoLocation,
+    errors::CondowError,
+    probe::Probe,
+    reader::{BytesAsyncReader, RandomAccessReader},
+    ChunkStream, DownloadRange, GetSizeMode, PartStream,
 };
 
 type DownloadFn<L> = Box<
@@ -90,6 +94,12 @@ impl RequestNoLocation<NoLocation> {
         let stream = self.download_chunks().await?;
         stream.write_buffer(buffer).await
     }
+
+    /// Returns an [AsyncRead] which reads over the bytes of the stream
+    pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
+        let stream = self.download().await?.bytes_stream();
+        Ok(BytesAsyncReader::new(stream))
+    }
 }
 
 /// A request for a download from a specific location
@@ -146,6 +156,12 @@ impl<L> Request<L> {
     pub async fn download_into_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         let stream = self.download_chunks().await?;
         stream.write_buffer(buffer).await
+    }
+
+    /// Returns an [AsyncRead] which reads over the bytes of the stream
+    pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
+        let stream = self.download().await?.bytes_stream();
+        Ok(BytesAsyncReader::new(stream))
     }
 }
 
