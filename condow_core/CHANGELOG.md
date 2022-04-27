@@ -4,15 +4,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [unreleased]
+## 0.13.0 - unreleased
+
+### CHANGED
+
+- **BREAKING** Downloading is done via a builder style request object
+- **BREAKING** `Reporter` is used dynamically and now called `Probe`
+- **BREAKING** Trait `Downloads` uses request API and has location as associated type
+- **BREAKING** `RandomAccessReader` has type parameter removed
+- **BREAKING** Renamed `NoLocation` to `IgnoreLocation`
 
 ### ADDED
 
 - support of `tracing crate`
+- trait `DownloadsUntyped` which takes a `&str` as a location
 
 ### REMOVED
 
 - **BREAKING** Old logging mechanism via reporter 
+- **BREAKING** `CompositeReporter`
 
 ## [0.12.4] - 2022-02-08
 
@@ -93,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
-- Breaking: In meory clients are generic over the location. Default tyoe is `NoLocation`
+- Breaking: In meory clients are generic over the location. Default type is `NoLocation`
 - Updated README.md
 
 ## [0.10.2] - 2021/10/22

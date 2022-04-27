@@ -1,9 +1,9 @@
-//! Reporting
+//! Probes & Instrumentation
 //!
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
-use std::{fmt, time::Duration};
+use std::{fmt, sync::Arc, time::Duration};
 
 use crate::{
     errors::{CondowError, IoError},
@@ -12,39 +12,37 @@ use crate::{
 
 pub use simple_reporter::*;
 
-pub trait ReporterFactory: Send + Sync + 'static {
-    type ReporterType: Reporter;
-
-    /// Create a new [Reporter].
+pub trait ProbeFactory: Send + Sync + 'static {
+    /// Create a new [Probe].
     ///
-    /// This might share state with the factory or not
-    fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType;
+    /// It might share state with the factory or not
+    fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe>;
 }
 
-/// A Reporter is an interface to track occurences of different kinds
+/// A Probe is an interface to track occurences of different kinds
 ///
-/// Implementors can use this to put instrumentation on downloads
-/// or simply to log.
+/// Implementors can use this to put instrumentation on downloads.
 ///
 /// All methods should return quickly to not to influence the
 /// downloading too much with measuring.
 #[allow(unused_variables)]
-pub trait Reporter: Clone + Send + Sync + 'static {
+pub trait Probe: Send + Sync + 'static {
     fn effective_range(&self, range: InclusiveRange) {}
+
     /// The actual IO started
     fn download_started(&self) {}
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download was successful.**
+    /// **This always is the last method called on a [Probe] if the download was successful.**
     fn download_completed(&self, time: Duration) {}
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download failed.**
+    /// **This always is the last method called on a [Probe] if the download failed.**
     fn download_failed(&self, time: Option<Duration>) {}
 
-    /// An error occurd but a retry will be attempted
+    /// An error occurred but a retry will be attempted
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
@@ -81,108 +79,6 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 
-/// Disables reporting
-#[derive(Copy, Clone)]
-pub struct NoReporting;
-
-impl Reporter for NoReporting {}
-impl ReporterFactory for NoReporting {
-    type ReporterType = Self;
-
-    fn make(&self, _location: &dyn fmt::Display) -> Self {
-        NoReporting
-    }
-}
-
-/// Plug 2 [Reporter]s into one and have them both notified.
-///
-/// `RA` is notified first.
-#[derive(Clone)]
-pub struct CompositeReporter<RA: Reporter, RB: Reporter>(pub RA, pub RB);
-
-impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
-    fn effective_range(&self, range: InclusiveRange) {
-        self.0.effective_range(range);
-        self.1.effective_range(range);
-    }
-
-    fn download_started(&self) {
-        self.0.download_started();
-        self.1.download_started();
-    }
-
-    fn download_completed(&self, time: Duration) {
-        self.0.download_completed(time);
-        self.1.download_completed(time);
-    }
-
-    fn download_failed(&self, time: Option<Duration>) {
-        self.0.download_failed(time);
-        self.1.download_failed(time);
-    }
-
-    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
-        self.0.retry_attempt(location, error, next_in);
-        self.1.retry_attempt(location, error, next_in);
-    }
-
-    fn stream_resume_attempt(
-        &self,
-        location: &dyn fmt::Display,
-        error: &IoError,
-        orig_range: InclusiveRange,
-        remaining_range: InclusiveRange,
-    ) {
-        self.0
-            .stream_resume_attempt(location, error, orig_range, remaining_range);
-        self.1
-            .stream_resume_attempt(location, error, orig_range, remaining_range);
-    }
-
-    fn panic_detected(&self, msg: &str) {
-        self.0.panic_detected(msg);
-        self.1.panic_detected(msg);
-    }
-
-    fn queue_full(&self) {
-        self.0.queue_full();
-        self.1.queue_full();
-    }
-
-    fn chunk_completed(
-        &self,
-        part_index: u64,
-        chunk_index: usize,
-        n_bytes: usize,
-        time: std::time::Duration,
-    ) {
-        self.0
-            .chunk_completed(part_index, chunk_index, n_bytes, time);
-        self.1
-            .chunk_completed(part_index, chunk_index, n_bytes, time);
-    }
-
-    fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
-        self.0.part_started(part_index, range);
-        self.1.part_started(part_index, range);
-    }
-
-    fn part_completed(
-        &self,
-        part_index: u64,
-        n_chunks: usize,
-        n_bytes: u64,
-        time: std::time::Duration,
-    ) {
-        self.0.part_completed(part_index, n_chunks, n_bytes, time);
-        self.1.part_completed(part_index, n_chunks, n_bytes, time);
-    }
-
-    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
-        self.0.part_failed(error, part_index, range);
-        self.1.part_failed(error, part_index, range);
-    }
-}
 mod simple_reporter {
     //! Simple reporting with (mostly) counters
 
@@ -200,7 +96,7 @@ mod simple_reporter {
         InclusiveRange,
     };
 
-    use super::{Reporter, ReporterFactory};
+    use super::{Probe, ProbeFactory};
 
     /// Creates [SimpleReporter]s
     pub struct SimpleReporterFactory {
@@ -222,11 +118,9 @@ mod simple_reporter {
         }
     }
 
-    impl ReporterFactory for SimpleReporterFactory {
-        type ReporterType = SimpleReporter;
-
-        fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType {
-            SimpleReporter::new(location, self.skip_first_chunk_timings)
+    impl ProbeFactory for SimpleReporterFactory {
+        fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe> {
+            Arc::new(SimpleReporter::new(location, self.skip_first_chunk_timings))
         }
     }
 
@@ -350,7 +244,7 @@ mod simple_reporter {
         pub max_part_time: Duration,
     }
 
-    impl Reporter for SimpleReporter {
+    impl Probe for SimpleReporter {
         fn effective_range(&self, effective_range: InclusiveRange) {
             *self.inner.effective_range.lock().unwrap() = Some(effective_range);
         }

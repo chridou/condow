@@ -16,9 +16,9 @@
 //! let client = S3ClientWrapper::new(Region::default());
 //! let condow = client.condow(Config::default()).unwrap();
 //!
-//! let location = Bucket::new("my_bucket").object("my_object");
+//! let s3_obj = Bucket::new("my_bucket").object("my_object");
 //!
-//! let stream = condow.download(location, 23..46).await.unwrap();
+//! let stream = condow.blob().at(s3_obj).range(23..46).download().await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
 //! # };
 //! # ()
@@ -26,9 +26,10 @@
 use std::{
     fmt,
     ops::{Deref, DerefMut},
+    str::FromStr,
 };
 
-use anyhow::Error as AnyError;
+use anyhow::{anyhow, Error as AnyError};
 use futures::{future::BoxFuture, stream::TryStreamExt};
 use rusoto_core::{request::BufferedHttpResponse, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
@@ -162,7 +163,26 @@ impl fmt::Display for S3Location {
     }
 }
 
-/// Just a wrapper around a clietn
+impl FromStr for S3Location {
+    type Err = AnyError;
+
+    fn from_str(uri: &str) -> Result<Self, Self::Err> {
+        let prefixes = vec!["s3://", "s3a://", "s3n://"];
+        let res = prefixes
+            .iter()
+            .find(|&&p| uri.starts_with(p))
+            .map(|p| uri.trim_start_matches(p))
+            .ok_or_else(|| anyhow!(format!("Invalid S3 protocol prefix in uri: {}", uri)))?;
+
+        let (bucket, key) = res
+            .split_once('/')
+            .ok_or_else(|| anyhow!(format!("Invalid S3 uri: {}", uri)))?;
+
+        Ok(Bucket::new(bucket).object(key))
+    }
+}
+
+/// Just a wrapper around a client
 /// to implement the trait [CondowClient](condow_client::CondowClient) on.
 #[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
@@ -227,7 +247,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let get_object_request = GetObjectRequest {
                 bucket: bucket.into_inner(),
                 key: object_key.into_inner(),
-                range: spec.http_range_value(),
+                range: spec.http_bytes_range_value(),
                 ..Default::default()
             };
 

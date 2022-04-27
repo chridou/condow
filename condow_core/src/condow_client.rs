@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::{fmt, ops::RangeInclusive};
+use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
 
 use futures::future::BoxFuture;
 
@@ -29,10 +29,10 @@ pub enum DownloadSpec {
 impl DownloadSpec {
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
     /// if the variant is [DownloadSpec::Range]
-    pub fn http_range_value(&self) -> Option<String> {
+    pub fn http_bytes_range_value(&self) -> Option<String> {
         match self {
             DownloadSpec::Complete => None,
-            DownloadSpec::Range(r) => Some(r.http_range_value()),
+            DownloadSpec::Range(r) => Some(r.http_bytes_range_value()),
         }
     }
 
@@ -90,11 +90,19 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
 
 /// A location usable for testing.
 #[derive(Debug, Clone, Copy)]
-pub struct NoLocation;
+pub struct IgnoreLocation;
 
-impl std::fmt::Display for NoLocation {
+impl std::fmt::Display for IgnoreLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<no location>")
+    }
+}
+
+impl FromStr for IgnoreLocation {
+    type Err = Infallible;
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+        Ok(IgnoreLocation)
     }
 }
 
@@ -115,13 +123,13 @@ mod in_memory {
     };
     use tracing::trace;
 
-    use super::{CondowClient, DownloadSpec, NoLocation};
+    use super::{CondowClient, DownloadSpec, IgnoreLocation};
 
     /// Holds the BLOB in memory as owned or static data.
     ///
     /// Use for testing.
     #[derive(Clone)]
-    pub struct InMemoryClient<L = NoLocation> {
+    pub struct InMemoryClient<L = IgnoreLocation> {
         blob: Blob,
         chunk_size: usize,
         _location: PhantomData<L>,
@@ -361,7 +369,7 @@ pub mod failing_client_simulator {
         Condow, InclusiveRange,
     };
 
-    pub use super::NoLocation;
+    pub use super::IgnoreLocation;
 
     /// A builder for a [FailingClientSimulator]
     pub struct FailingClientSimulatorBuilder {
@@ -446,7 +454,7 @@ pub mod failing_client_simulator {
     ///
     /// Clones will share the responses to be played back
     #[derive(Clone)]
-    pub struct FailingClientSimulator<L = NoLocation> {
+    pub struct FailingClientSimulator<L = IgnoreLocation> {
         blob: Blob,
         responses: Arc<Mutex<vec::IntoIter<ResponseBehaviour>>>,
         chunk_size: usize,
@@ -1220,7 +1228,7 @@ pub mod failing_client_simulator {
             client: &FailingClientSimulator,
             range: R,
         ) -> Result<Result<Vec<u8>, Vec<u8>>, CondowError> {
-            let (mut stream, _bytes_hint) = client.download(NoLocation, range.into()).await?;
+            let (mut stream, _bytes_hint) = client.download(IgnoreLocation, range.into()).await?;
 
             let mut received = Vec::new();
 

@@ -5,18 +5,18 @@ use std::{
 
 use bytes::Bytes;
 use futures::{
-    future::{self, BoxFuture, FutureExt, TryFutureExt},
+    future::{self, BoxFuture, FutureExt},
     stream, StreamExt as _,
 };
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec, NoLocation},
+    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
     errors::CondowError,
-    reader::RandomAccessReader,
+    reader::{RandomAccessReader, ReaderAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
-    DownloadRange, Downloads,
+    DownloadRange, Downloads, Params, RequestNoLocation,
 };
 
 #[derive(Clone)]
@@ -64,7 +64,7 @@ impl Default for TestCondowClient {
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = NoLocation;
+    type Location = IgnoreLocation;
 
     fn get_size(
         &self,
@@ -369,7 +369,6 @@ async fn check_chunk_stream_variable_chunk_size() {
 
     assert_eq!(result, expected);
 }
-
 #[derive(Clone)]
 pub struct TestDownloader {
     blob: Arc<Mutex<Vec<u8>>>,
@@ -402,54 +401,53 @@ impl TestDownloader {
     pub fn set_pattern(self, pattern: Vec<Option<usize>>) {
         *self.pattern.lock().unwrap() = pattern;
     }
-
-    pub fn blob(&self) -> Vec<u8> {
-        self.blob.lock().unwrap().clone()
-    }
 }
 
-impl Downloads<NoLocation> for TestDownloader {
-    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
-        &'a self,
-        location: NoLocation,
-        range: R,
-    ) -> BoxFuture<'a, Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>>
-    {
-        self.download_chunks(location, range)
-            .and_then(|st| async move { PartStream::from_chunk_stream(st) })
-            .boxed()
+impl Downloads for TestDownloader {
+    type Location = IgnoreLocation;
+
+    fn blob(&self) -> RequestNoLocation<IgnoreLocation> {
+        let me = self.clone();
+
+        let download_fn = move |_: IgnoreLocation, params: Params| {
+            let result = make_a_stream(&me.blob, params.range, me.pattern.lock().unwrap().clone());
+
+            futures::future::ready(result).boxed()
+        };
+
+        RequestNoLocation::new(download_fn)
     }
 
-    fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
-        &'a self,
-        _location: NoLocation,
-        range: R,
-    ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
-        Box::pin(make_a_stream(
-            self.blob.as_ref(),
-            range.into(),
-            self.pattern.lock().unwrap().clone(),
-        ))
-    }
-
-    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, _location: IgnoreLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 
-    fn reader_with_length(
-        &self,
-        location: NoLocation,
-        length: u64,
-    ) -> RandomAccessReader<Self, NoLocation>
+    fn reader_with_length(&self, _location: IgnoreLocation, length: u64) -> RandomAccessReader
     where
         Self: Sized,
     {
-        RandomAccessReader::new_with_length(self.clone(), location, length)
+        RandomAccessReader::new_with_length(self.clone(), length)
     }
 }
 
-async fn make_a_stream(
+impl ReaderAdapter for TestDownloader {
+    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
+        <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
+    }
+
+    fn download_range<'a>(
+        &'a self,
+        range: DownloadRange,
+    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
+        <TestDownloader as Downloads>::blob(self)
+            .range(range)
+            .download()
+            .boxed()
+    }
+}
+
+fn make_a_stream(
     blob: &Mutex<Vec<u8>>,
     range: DownloadRange,
     pattern: Vec<Option<usize>>,
@@ -513,16 +511,153 @@ async fn make_a_stream(
 }
 
 #[tokio::test]
-async fn check_test_downloader() {
+async fn check_test_downloader_1() {
+    // Use the range patterns completely and even cycle them
     for n in 1..255 {
         let expected: Vec<u8> = (0..n).collect();
 
         let downloader = TestDownloader::new(n as usize);
 
-        let parts = downloader.download(NoLocation, ..).await.unwrap();
-
-        let result = parts.into_vec().await.unwrap();
+        let result = downloader
+            .blob()
+            .range(..)
+            .download_into_vec()
+            .await
+            .unwrap();
 
         assert_eq!(result, expected, "bytes read ({} items)", n);
     }
+}
+
+#[tokio::test]
+async fn check_test_downloader_2() {
+    let sample: Vec<u8> = (0..101).collect();
+
+    let downloader = TestDownloader::new_with_blob(sample.clone());
+
+    let result = downloader
+        .blob()
+        .range(..)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1A");
+
+    let result = downloader
+        .blob()
+        .range(0..101)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1B");
+
+    let result = downloader
+        .blob()
+        .range(0..=100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1C");
+
+    let result = downloader
+        .blob()
+        .range(1..100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..100], "2");
+
+    let result = downloader
+        .blob()
+        .range(1..=100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..=100], "3");
+
+    let result = downloader
+        .blob()
+        .range(..=33)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..=33], "4");
+
+    let result = downloader
+        .blob()
+        .range(..40)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..40], "5");
+}
+
+#[tokio::test]
+async fn check_test_downloader_as_reader_adapter() {
+    let sample: Vec<u8> = (0..101).collect();
+
+    let downloader = TestDownloader::new_with_blob(sample.clone());
+
+    let result = downloader
+        .download_range((..).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1A");
+
+    let result = downloader
+        .download_range((0..101).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1B");
+
+    let result = downloader
+        .download_range((0..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1C");
+
+    let result = downloader
+        .download_range((1..100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..100], "2");
+
+    let result = downloader
+        .download_range((1..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..=100], "3");
+
+    let result = downloader
+        .download_range((..=33).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..=33], "4");
+
+    let result = downloader
+        .download_range((..40).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..40], "5");
 }

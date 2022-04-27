@@ -1,10 +1,9 @@
 mod download {
     use crate::{
-        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, NoLocation},
+        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
         config::Config,
         errors::CondowErrorKind,
         machinery::download_range,
-        reporter::NoReporting,
     };
 
     #[tokio::test]
@@ -24,15 +23,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         let result_bytes = stream.into_vec().await.unwrap();
 
@@ -58,15 +57,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         assert_eq!(
             stream.into_vec().await.unwrap_err().kind(),
@@ -93,15 +92,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         assert_eq!(
             stream.into_vec().await.unwrap_err().kind(),
@@ -128,15 +127,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         let err = stream.into_vec().await.unwrap_err();
 
@@ -166,15 +165,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         let err = stream.into_vec().await.unwrap_err();
 
@@ -202,15 +201,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         let err = stream.into_vec().await.unwrap_err();
 
@@ -240,15 +239,15 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            &condow,
-            NoLocation,
+            condow,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
-            NoReporting,
+            Default::default(),
         )
         .await;
 
-        let (stream, _report) = result.unwrap().into_parts();
+        let stream = result.unwrap();
 
         let err = stream.into_vec().await.unwrap_err();
 
@@ -262,10 +261,9 @@ mod download_chunks {
     use tracing::Span;
 
     use crate::{
-        condow_client::NoLocation,
+        condow_client::IgnoreLocation,
         config::Config,
         machinery::{download_chunks, DownloadSpanGuard},
-        reporter::NoReporting,
         streams::BytesHint,
         test_utils::*,
         InclusiveRange,
@@ -288,11 +286,11 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,
-            NoReporting,
+            Default::default(),
             DownloadSpanGuard::new(Span::none()),
         )
         .await
@@ -320,11 +318,11 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,
-            NoReporting,
+            Default::default(),
             DownloadSpanGuard::new(Span::none()),
         )
         .await
@@ -352,11 +350,11 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,
-            NoReporting,
+            Default::default(),
             DownloadSpanGuard::new(Span::none()),
         )
         .await

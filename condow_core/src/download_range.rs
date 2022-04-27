@@ -13,14 +13,41 @@ use crate::errors::CondowError;
 pub struct InclusiveRange(pub u64, pub u64);
 
 impl InclusiveRange {
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the last item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.end_incl(), 9);
+    /// ```
     pub fn end_incl(&self) -> u64 {
         self.1
     }
 
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         if self.1 < self.0 {
@@ -44,7 +71,15 @@ impl InclusiveRange {
     }
 
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
-    pub fn http_range_value(&self) -> String {
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.http_bytes_range_value(), "bytes=4-9");
+    /// ```
+    pub fn http_bytes_range_value(&self) -> String {
         format!("bytes={}-{}", self.0, self.1)
     }
 }
@@ -82,15 +117,42 @@ impl OffsetRange {
         Self(offset, len)
     }
 
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the first item after the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.end_excl(), 10);
+    /// ```
     pub fn end_excl(&self) -> u64 {
         self.0 + self.1
     }
 
     #[allow(clippy::len_without_is_empty)]
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     pub fn len(&self) -> u64 {
         self.1
     }
@@ -111,22 +173,68 @@ impl fmt::Display for OffsetRange {
 /// is part of the file. This is the default behaviour. If this
 /// behaviour is disabled, it is up to the caller to ensure a valid
 /// range which does not exceed the end of the file is supplied.
+///
+/// Naming
+///
+/// variants where the last index is included in the range are suffixed with
+/// "Inclusive". Those missing the suffix do not include the last index which
+/// makes them exlusive. This is the same convention as with the stdlib.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClosedRange {
+    /// From including the first value to excluding the second value
     FromTo(u64, u64),
+    /// From including the first value to including the second value
     FromToInclusive(u64, u64),
+    /// From the beginning to excluding the value
     To(u64),
+    /// From the beginning to including the value
     ToInclusive(u64),
 }
 
 impl ClosedRange {
+    /// Validates the range.
+    ///
+    /// Fails with an error containig the reason if the range is invalid.
+    ///
+    /// Ranges with only 1 parameter are always valid.
+    ///
+    /// ## Examples
+    ///
+    /// [ClosedRange::FromTo]:
+    ///
+    /// ```
+    /// use condow_core::ClosedRange;
+    ///
+    /// let range = ClosedRange::FromTo(0,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromTo(1,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromTo(1,0);
+    /// assert!(range.validate().is_err());
+    /// ```
+    ///
+    /// [ClosedRange::FromToInclusive]:
+    ///
+    /// ```
+    /// use condow_core::ClosedRange;
+    ///
+    /// let range = ClosedRange::FromToInclusive(0,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromToInclusive(1,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromToInclusive(1,0);
+    /// assert!(range.validate().is_err());
+    /// ```
     pub fn validate(&self) -> Result<(), CondowError> {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
                     Err(CondowError::new_invalid_range(format!(
-                        "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
-                        a, b
+                        "FromTo: 'to'({b}) must not be lesser than 'from'({a})"
                     )))
                 } else {
                     Ok(())
@@ -135,8 +243,7 @@ impl ClosedRange {
             Self::FromToInclusive(a, b) => {
                 if b < a {
                     Err(CondowError::new_invalid_range(format!(
-                        "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
-                        a, b
+                        "FromToInclusive: 'to'({b}) must not be lesser than 'from'({a})"
                     )))
                 } else {
                     Ok(())
@@ -229,10 +336,10 @@ impl ClosedRange {
 impl fmt::Display for ClosedRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ClosedRange::To(to) => write!(f, "[0..{}[", to),
-            ClosedRange::ToInclusive(to) => write!(f, "[0..{}]", to),
-            ClosedRange::FromTo(from, to) => write!(f, "[{}..{}[", from, to),
-            ClosedRange::FromToInclusive(from, to) => write!(f, "[{}..{}]", from, to),
+            ClosedRange::To(to) => write!(f, "[0..{to}["),
+            ClosedRange::ToInclusive(to) => write!(f, "[0..{to}]"),
+            ClosedRange::FromTo(from, to) => write!(f, "[{from}..{to}["),
+            ClosedRange::FromToInclusive(from, to) => write!(f, "[{from}..{to}]"),
         }
     }
 }

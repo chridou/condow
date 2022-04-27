@@ -18,8 +18,8 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::ClientRetryWrapper,
     errors::{CondowError, IoError},
-    machinery::{range_stream::RangeRequest, DownloadSpanGuard},
-    reporter::Reporter,
+    machinery::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal},
+    probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
 
@@ -39,11 +39,11 @@ pub(crate) struct SequentialDownloader {
 }
 
 impl SequentialDownloader {
-    pub fn new<C: CondowClient, R: Reporter>(
+    pub fn new<C: CondowClient>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         buffer_size: usize,
-        mut context: DownloaderContext<R>,
+        mut context: DownloaderContext,
     ) -> Self {
         let (request_sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
@@ -72,7 +72,7 @@ impl SequentialDownloader {
                         .download(
                             location.clone(),
                             DownloadSpec::Range(range_request.blob_range),
-                            &context.reporter,
+                            &context.probe,
                         )
                         .instrument(span.clone())
                         .await
@@ -87,7 +87,7 @@ impl SequentialDownloader {
                             }
                         }
                         Err(err) => {
-                            context.reporter.part_failed(
+                            context.probe.part_failed(
                                 &err,
                                 range_request.part_index,
                                 &range_request.blob_range,
@@ -126,30 +126,30 @@ impl SequentialDownloader {
 ///
 /// Will abort the download vial the [KillSwitch] if the download of
 /// a part was not marked as completed.
-pub(crate) struct DownloaderContext<R: Reporter> {
+pub(crate) struct DownloaderContext {
     started_at: Instant,
     counter: Arc<AtomicUsize>,
     kill_switch: KillSwitch,
-    reporter: R,
+    probe: ProbeInternal,
     results_sender: UnboundedSender<ChunkStreamItem>,
     completed: bool,
     /// This must exist for the whole download
     download_span_guard: DownloadSpanGuard,
 }
 
-impl<R: Reporter> DownloaderContext<R> {
+impl DownloaderContext {
     pub fn new(
         results_sender: UnboundedSender<ChunkStreamItem>,
         counter: Arc<AtomicUsize>,
         kill_switch: KillSwitch,
-        reporter: R,
+        probe: ProbeInternal,
         started_at: Instant,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
         Self {
             counter,
-            reporter,
+            probe,
             kill_switch,
             started_at,
             results_sender,
@@ -190,13 +190,13 @@ impl<R: Reporter> DownloaderContext<R> {
     }
 }
 
-impl<R: Reporter> Drop for DownloaderContext<R> {
+impl Drop for DownloaderContext {
     fn drop(&mut self) {
         if !self.completed {
             self.kill_switch.push_the_button();
 
             let err = if std::thread::panicking() {
-                self.reporter.panic_detected("panic detected in downloader");
+                self.probe.panic_detected("panic detected in downloader");
                 CondowError::new_other("download ended unexpectedly due to a panic")
             } else {
                 CondowError::new_other("download ended unexpectetly")
@@ -210,11 +210,10 @@ impl<R: Reporter> Drop for DownloaderContext<R> {
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.kill_switch.is_pushed() {
                 debug!(parent: self.download_span_guard.span(), "download failed");
-                self.reporter
-                    .download_failed(Some(self.started_at.elapsed()))
+                self.probe.download_failed(Some(self.started_at.elapsed()))
             } else {
                 debug!(parent: self.download_span_guard.span(), "download succeeded");
-                self.reporter.download_completed(self.started_at.elapsed())
+                self.probe.download_completed(self.started_at.elapsed())
             }
         }
     }
@@ -229,9 +228,9 @@ impl<R: Reporter> Drop for DownloaderContext<R> {
 /// sending an error only.
 ///
 /// [Bytes]: bytes::bytes
-async fn consume_and_dispatch_bytes<R: Reporter>(
+async fn consume_and_dispatch_bytes(
     mut bytes_stream: BytesStream,
-    context: &mut DownloaderContext<R>,
+    context: &mut DownloaderContext,
     range_request: RangeRequest,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
@@ -242,7 +241,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
     let mut chunk_start = Instant::now();
 
     context
-        .reporter
+        .probe
         .part_started(range_request.part_index, range_request.blob_range);
 
     while let Some(bytes_res) = bytes_stream.next().await {
@@ -264,7 +263,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                         range_request.blob_range.len(),
                         bytes_received
                     ));
-                    context.reporter.part_failed(
+                    context.probe.part_failed(
                         &err,
                         range_request.part_index,
                         &range_request.blob_range,
@@ -273,7 +272,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                     return Err(());
                 }
 
-                context.reporter.chunk_completed(
+                context.probe.chunk_completed(
                     range_request.part_index,
                     chunk_index,
                     n_bytes,
@@ -292,7 +291,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
                 offset_in_range += n_bytes as u64;
             }
             Err(IoError(msg)) => {
-                context.reporter.part_failed(
+                context.probe.part_failed(
                     &CondowError::new_io(msg.clone()),
                     range_request.part_index,
                     &range_request.blob_range,
@@ -303,7 +302,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
         }
     }
 
-    context.reporter.part_completed(
+    context.probe.part_completed(
         range_request.part_index,
         chunk_index,
         bytes_received,
@@ -320,7 +319,7 @@ async fn consume_and_dispatch_bytes<R: Reporter>(
             bytes_received
         ));
         context
-            .reporter
+            .probe
             .part_failed(&err, range_request.part_index, &range_request.blob_range);
         let _ = context.send_err(err);
         Err(())
@@ -341,7 +340,7 @@ mod tests {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
         config::Config,
         errors::{CondowError, CondowErrorKind},
@@ -353,7 +352,6 @@ mod tests {
             range_stream::RangeStream,
             DownloadSpanGuard,
         },
-        reporter::NoReporting,
         streams::{BytesHint, Chunk, ChunkStream},
         test_utils::*,
         InclusiveRange,
@@ -385,7 +383,7 @@ mod tests {
         assert!(check(InclusiveRange(0, 99), client, 100).await.is_err());
     }
 
-    async fn check<C: CondowClient<Location = NoLocation>>(
+    async fn check<C: CondowClient<Location = IgnoreLocation>>(
         range: InclusiveRange,
         client: C,
         part_size_bytes: u64,
@@ -405,13 +403,13 @@ mod tests {
 
         let mut downloader = SequentialDownloader::new(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             config.buffer_size.into(),
             DownloaderContext::new(
                 results_sender,
                 Arc::new(AtomicUsize::new(0)),
                 KillSwitch::new(),
-                NoReporting,
+                Default::default(),
                 Instant::now(),
                 DownloadSpanGuard::new(Span::none()),
             ),

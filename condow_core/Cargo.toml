@@ -1,6 +1,6 @@
 [package]
 name = "condow_core"
-version = "0.12.4"
+version = "0.13.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
@@ -11,7 +11,6 @@ repository = "https://github.com/chridou/condow"
 keywords = [ "download", "network", "parallel", "files"]
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
 pin-project-lite = "0.2"
 bytes = "1"
