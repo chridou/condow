@@ -67,6 +67,10 @@ pub use request::*;
 pub mod test_utils;
 
 /// A common interface for downloading
+///
+/// This trait is not object safe. If you want to use dynamic dispatch you
+/// might consider the trait [DownloadsUntyped] which is object safe
+/// and accepts string slices as a location.
 pub trait Downloads {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
