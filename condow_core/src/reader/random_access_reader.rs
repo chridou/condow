@@ -16,7 +16,7 @@ use crate::{
     condow_client::CondowClient,
     config::Mebi,
     errors::CondowError,
-    streams::{ChunkStream, PartStream},
+    streams::{ChunkStream, OrderedChunkStream},
     Condow, DownloadRange,
 };
 
@@ -82,7 +82,7 @@ pub trait ReaderAdapter: Send + Sync + 'static {
     fn download_range<'a>(
         &'a self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>>;
+    ) -> BoxFuture<'a, Result<OrderedChunkStream<ChunkStream>, CondowError>>;
 }
 
 pub(crate) struct CondowAdapter<C: CondowClient> {
@@ -107,7 +107,7 @@ where
     fn download_range<'a>(
         &'a self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
+    ) -> BoxFuture<'a, Result<OrderedChunkStream<ChunkStream>, CondowError>> {
         self.condow
             .blob()
             .range(range)

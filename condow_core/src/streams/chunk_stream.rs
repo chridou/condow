@@ -3,58 +3,13 @@ use std::{
     task::{Context, Poll},
 };
 
-use bytes::Bytes;
 use futures::{channel::mpsc, ready, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
-use crate::errors::CondowError;
+use crate::{errors::CondowError, streams::ChunkStreamItem};
 
-use super::{BytesHint, PartStream};
+use super::{BytesHint, OrderedChunkStream, Chunk};
 
-/// The type of the elements returned by a [ChunkStream]
-pub type ChunkStreamItem = Result<Chunk, CondowError>;
-
-/// A chunk belonging to a downloaded part
-///
-/// All chunks of a part will have the correct order
-/// for a part with the same `part_index` but the chunks
-/// of different parts can be intermingled due
-/// to the nature of a concurrent download.
-#[derive(Debug, Clone)]
-pub struct Chunk {
-    /// Index of the part this chunk belongs to
-    pub part_index: u64,
-    /// Index of the chunk within the part
-    pub chunk_index: usize,
-    /// Offset of the chunk within the BLOB
-    pub blob_offset: u64,
-    /// Offset of the chunk within the downloaded range
-    pub range_offset: u64,
-    /// The bytes
-    pub bytes: Bytes,
-    /// Bytes left in following chunks. If 0 this is the last chunk of the part.
-    pub bytes_left: u64,
-}
-
-impl Chunk {
-    /// Returns `true` if this is the last chunk of the part
-    pub fn is_last(&self) -> bool {
-        self.bytes_left == 0
-    }
-
-    /// Returns the number of bytes in this chunk
-    pub fn len(&self) -> usize {
-        self.bytes.len()
-    }
-
-    /// Returns `true` if there are no bytes in this chunk.
-    ///
-    /// This should not happen since we would not expect
-    /// "no bytes" being sent over the network.
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
 
 pin_project! {
     /// A stream of [Chunk]s received from the network
@@ -201,8 +156,8 @@ impl ChunkStream {
     /// Turns this stream into a [PartStream]
     ///
     /// Fails if this [ChunkStream] was already iterated.
-    pub fn try_into_part_stream(self) -> Result<PartStream<Self>, CondowError> {
-        PartStream::try_from(self)
+    pub fn try_into_part_stream(self) -> Result<OrderedChunkStream<Self>, CondowError> {
+        OrderedChunkStream::try_from(self)
     }
 }
 

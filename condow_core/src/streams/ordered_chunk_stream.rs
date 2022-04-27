@@ -10,7 +10,7 @@ use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
 
-use super::{BytesHint, ChunkStream, ChunkStreamItem};
+use super::{BytesHint, ChunkStream, ChunkStreamItem, Chunk};
 
 /// The type of the elements returned by a [PartStream]
 pub type PartStreamItem = Result<Part, CondowError>;
@@ -43,28 +43,36 @@ impl Part {
 /// A struct to collect and aggregate received chunks for a part
 struct PartEntry {
     part_index: u64,
-    blob_offset: u64,
-    range_offset: u64,
-    chunks: Vec<Bytes>,
+    chunks: Vec<Chunk>,
     is_complete: bool,
 }
 
+impl PartEntry {
+    pub fn new(part_index: u64) -> Self {
+        Self {
+        part_index,
+        chunks: Vec::with_capacity(16),
+        is_complete: false,
+    }
+}
+}
+
 pin_project! {
-    /// A stream of downloaded parts
+    /// A stream of downloaded chunks ordered
     ///
-    /// All parts and their chunks are ordered as they would
+    /// All chunks are ordered as they would
     /// have appeared in a sequential download of a range/BLOB
-    pub struct PartStream<St> {
+    pub struct OrderedChunkStream<St> {
         bytes_hint: BytesHint,
         #[pin]
         stream: St,
         is_closed: bool,
-        next_part_idx: u64,
+        current_part: PartEntry,
         collected_parts: HashMap<u64, PartEntry>
     }
 }
 
-impl<St> PartStream<St>
+impl<St> OrderedChunkStream<St>
 where
     St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
 {
@@ -79,7 +87,7 @@ where
             bytes_hint,
             stream,
             is_closed: false,
-            next_part_idx: 0,
+            current_part: PartEntry::new(0),
             collected_parts: HashMap::default(),
         }
     }
@@ -157,12 +165,11 @@ where
     pub fn bytes_stream(
         self,
     ) -> impl Stream<Item = Result<Bytes, CondowError>> + Send + Sync + 'static {
-        self.map_ok(|part| stream::iter(part.chunks.into_iter().map(Ok)))
-            .try_flatten()
+        self.map_ok(|chunk| chunk.bytes)
     }
 }
 
-impl PartStream<ChunkStream> {
+impl OrderedChunkStream<ChunkStream> {
     /// Create a new [PartStream] from the given [ChunkStream]
     ///
     /// Will fail if the [ChunkStream] was already iterated.
@@ -177,8 +184,8 @@ impl PartStream<ChunkStream> {
     }
 }
 
-impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
-    type Item = PartStreamItem;
+impl<St: Stream<Item = ChunkStreamItem>> Stream for OrderedChunkStream<St> {
+    type Item = ChunkStreamItem;
 
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         if self.is_closed {
@@ -274,11 +281,11 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for PartStream<St> {
     }
 }
 
-impl TryFrom<ChunkStream> for PartStream<ChunkStream> {
+impl TryFrom<ChunkStream> for OrderedChunkStream<ChunkStream> {
     type Error = CondowError;
 
     fn try_from(chunk_stream: ChunkStream) -> Result<Self, Self::Error> {
-        PartStream::from_chunk_stream(chunk_stream)
+        OrderedChunkStream::from_chunk_stream(chunk_stream)
     }
 }
 
