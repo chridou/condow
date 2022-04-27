@@ -336,7 +336,11 @@ impl AsyncSeek for RandomAccessReader {
 mod tests {
     use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-    use crate::{condow_client::NoLocation, test_utils::TestDownloader, Downloads};
+    use crate::{
+        condow_client::{InMemoryClient, NoLocation},
+        test_utils::TestDownloader,
+        Downloads,
+    };
 
     use super::*;
 
@@ -545,5 +549,78 @@ mod tests {
                 assert_eq!(buf, expected, "bytes read ({} items, mode: {:?})", n, mode);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn check_condow_reader_adapter() {
+        let sample: Vec<u8> = (0..101).collect();
+
+        let condow = InMemoryClient::new(sample.clone())
+            .condow(Default::default())
+            .unwrap();
+        let adapter = CondowAdapter::new(condow, NoLocation);
+
+        let result = adapter
+            .download_range((..).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample, "1A");
+
+        let result = adapter
+            .download_range((0..101).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample, "1B");
+
+        let result = adapter
+            .download_range((0..=100).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample, "1C");
+
+        let result = adapter
+            .download_range((1..100).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample[1..100], "2");
+
+        let result = adapter
+            .download_range((1..=100).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample[1..=100], "3");
+
+        let result = adapter
+            .download_range((..=33).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample[..=33], "4");
+
+        let result = adapter
+            .download_range((..40).into())
+            .await
+            .unwrap()
+            .into_vec()
+            .await
+            .unwrap();
+        assert_eq!(result, sample[..40], "5");
     }
 }
