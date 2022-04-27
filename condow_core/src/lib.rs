@@ -225,18 +225,30 @@ where
     }
 
     /// Get the size of a BLOB at the given location
-    pub async fn get_size(&self, location: C::Location) -> Result<u64, CondowError> {
-        self.client.get_size(location, &Default::default()).await
+    pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
+        self.client
+            .get_size(location.into(), &Default::default())
+            .await
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub async fn reader(&self, location: C::Location) -> Result<RandomAccessReader, CondowError> {
-        RandomAccessReader::new(CondowAdapter::new(self.clone(), location)).await
+    pub async fn reader<L: Into<C::Location>>(
+        &self,
+        location: L,
+    ) -> Result<RandomAccessReader, CondowError> {
+        RandomAccessReader::new(CondowAdapter::new(self.clone(), location.into())).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length(&self, location: C::Location, length: u64) -> RandomAccessReader {
-        RandomAccessReader::new_with_length(CondowAdapter::new(self.clone(), location), length)
+    pub fn reader_with_length<L: Into<C::Location>>(
+        &self,
+        location: L,
+        length: u64,
+    ) -> RandomAccessReader {
+        RandomAccessReader::new_with_length(
+            CondowAdapter::new(self.clone(), location.into()),
+            length,
+        )
     }
 }
 
