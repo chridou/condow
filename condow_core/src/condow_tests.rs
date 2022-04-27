@@ -85,7 +85,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
-        use crate::condow_client::NoLocation;
+        use crate::condow_client::IgnoreLocation;
         use crate::machinery;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -117,7 +117,7 @@ mod range {
 
                             let result_stream = machinery::download_range(
                                 condow.clone(),
-                                NoLocation,
+                                IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Always,
                                 Default::default(),
@@ -183,7 +183,7 @@ mod range {
     mod closed {
         use std::sync::Arc;
 
-        use crate::condow_client::NoLocation;
+        use crate::condow_client::IgnoreLocation;
         use crate::machinery;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -216,7 +216,7 @@ mod range {
 
                             let result_stream = machinery::download_range(
                                 condow.clone(),
-                                NoLocation,
+                                IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
                                 Default::default(),
@@ -262,7 +262,7 @@ mod range {
 
                             let result_stream = machinery::download_range(
                                 condow.clone(),
-                                NoLocation,
+                                IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
                                 Default::default(),
@@ -283,7 +283,7 @@ mod range {
             mod start_at_0 {
                 use std::sync::Arc;
 
-                use crate::condow_client::NoLocation;
+                use crate::condow_client::IgnoreLocation;
                 use crate::machinery;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -317,7 +317,7 @@ mod range {
 
                                     let result_stream = machinery::download_range(
                                         condow.clone(),
-                                        NoLocation,
+                                        IgnoreLocation,
                                         range,
                                         crate::GetSizeMode::Default,
                                         Default::default(),
@@ -363,7 +363,7 @@ mod range {
 
                                     let result_stream = machinery::download_range(
                                         condow.clone(),
-                                        NoLocation,
+                                        IgnoreLocation,
                                         range,
                                         crate::GetSizeMode::Default,
                                         Default::default(),
@@ -384,7 +384,7 @@ mod range {
             mod start_after_0 {
                 use std::sync::Arc;
 
-                use crate::condow_client::NoLocation;
+                use crate::condow_client::IgnoreLocation;
                 use crate::machinery;
                 use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
 
@@ -420,7 +420,7 @@ mod range {
 
                                         let result_stream = machinery::download_range(
                                             condow.clone(),
-                                            NoLocation,
+                                            IgnoreLocation,
                                             range,
                                             crate::GetSizeMode::Default,
                                             Default::default(),
@@ -473,7 +473,7 @@ mod range {
 
                                         let result_stream = machinery::download_range(
                                             condow.clone(),
-                                            NoLocation,
+                                            IgnoreLocation,
                                             range,
                                             crate::GetSizeMode::Default,
                                             Default::default(),

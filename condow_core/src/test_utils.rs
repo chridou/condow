@@ -12,7 +12,7 @@ use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec, NoLocation},
+    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
     errors::CondowError,
     reader::{RandomAccessReader, ReaderAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
@@ -64,7 +64,7 @@ impl Default for TestCondowClient {
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = NoLocation;
+    type Location = IgnoreLocation;
 
     fn get_size(
         &self,
@@ -404,12 +404,12 @@ impl TestDownloader {
 }
 
 impl Downloads for TestDownloader {
-    type Location = NoLocation;
+    type Location = IgnoreLocation;
 
-    fn blob(&self) -> RequestNoLocation<NoLocation> {
+    fn blob(&self) -> RequestNoLocation<IgnoreLocation> {
         let me = self.clone();
 
-        let download_fn = move |_: NoLocation, params: Params| {
+        let download_fn = move |_: IgnoreLocation, params: Params| {
             let result = make_a_stream(&me.blob, params.range, me.pattern.lock().unwrap().clone());
 
             futures::future::ready(result).boxed()
@@ -418,12 +418,12 @@ impl Downloads for TestDownloader {
         RequestNoLocation::new(download_fn)
     }
 
-    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, _location: IgnoreLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 
-    fn reader_with_length(&self, _location: NoLocation, length: u64) -> RandomAccessReader
+    fn reader_with_length(&self, _location: IgnoreLocation, length: u64) -> RandomAccessReader
     where
         Self: Sized,
     {
@@ -433,7 +433,7 @@ impl Downloads for TestDownloader {
 
 impl ReaderAdapter for TestDownloader {
     fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
-        <TestDownloader as Downloads>::get_size(self, NoLocation)
+        <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
     }
 
     fn download_range<'a>(

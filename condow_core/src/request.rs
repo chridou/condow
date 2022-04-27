@@ -7,7 +7,7 @@ use std::sync::Arc;
 use futures::{future::BoxFuture, AsyncRead};
 
 use crate::{
-    condow_client::NoLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
+    condow_client::IgnoreLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
     ChunkStream, DownloadRange, GetSizeMode, PartStream,
 };
 
@@ -23,7 +23,7 @@ type DownloadFn<L> = Box<
 ///
 /// The default is to download the complete BLOB.
 ///
-/// This can only directly download if the type of the location is [NoLocation].
+/// This can only directly download if the type of the location is [IgnoreLocation].
 pub struct RequestNoLocation<L> {
     download_fn: DownloadFn<L>,
     params: Params,
@@ -74,15 +74,15 @@ impl<L> RequestNoLocation<L> {
     }
 }
 
-impl RequestNoLocation<NoLocation> {
+impl RequestNoLocation<IgnoreLocation> {
     /// Download as a [PartStream]
     pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
-        self.at(NoLocation).download().await
+        self.at(IgnoreLocation).download().await
     }
 
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
-        self.at(NoLocation).download_chunks().await
+        self.at(IgnoreLocation).download_chunks().await
     }
 
     /// Downloads into a freshly allocated [Vec]

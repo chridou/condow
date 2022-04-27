@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING** `Reporter` is used dynamically and now called `Probe`
 - **BREAKING** Trait `Downloads` uses request API and has location as associated type
 - **BREAKING** `RandomAccessReader` has type parameter removed
+- **BREAKING** Renamed `NoLocation` to `IgnoreLocation`
 
 ### ADDED
 
@@ -102,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
-- Breaking: In meory clients are generic over the location. Default tyoe is `NoLocation`
+- Breaking: In meory clients are generic over the location. Default type is `NoLocation`
 - Updated README.md
 
 ## [0.10.2] - 2021/10/22

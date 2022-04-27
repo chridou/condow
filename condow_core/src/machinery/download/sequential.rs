@@ -340,7 +340,7 @@ mod tests {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
         config::Config,
         errors::{CondowError, CondowErrorKind},
@@ -383,7 +383,7 @@ mod tests {
         assert!(check(InclusiveRange(0, 99), client, 100).await.is_err());
     }
 
-    async fn check<C: CondowClient<Location = NoLocation>>(
+    async fn check<C: CondowClient<Location = IgnoreLocation>>(
         range: InclusiveRange,
         client: C,
         part_size_bytes: u64,
@@ -403,7 +403,7 @@ mod tests {
 
         let mut downloader = SequentialDownloader::new(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             config.buffer_size.into(),
             DownloaderContext::new(
                 results_sender,

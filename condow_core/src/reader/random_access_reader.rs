@@ -337,7 +337,7 @@ mod tests {
     use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
     use crate::{
-        condow_client::{InMemoryClient, NoLocation},
+        condow_client::{InMemoryClient, IgnoreLocation},
         test_utils::TestDownloader,
         Downloads,
     };
@@ -351,7 +351,7 @@ mod tests {
 
             let downloader = TestDownloader::new(n as usize);
 
-            let mut reader = downloader.reader(NoLocation).await.unwrap();
+            let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
 
             let mut buf = Vec::new();
             let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
@@ -364,7 +364,7 @@ mod tests {
     #[tokio::test]
     async fn offsets_and_seek_from_start() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(NoLocation)
+            .reader(IgnoreLocation)
             .await
             .unwrap();
 
@@ -383,7 +383,7 @@ mod tests {
     #[tokio::test]
     async fn offsets_and_seek_from_end() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(NoLocation)
+            .reader(IgnoreLocation)
             .await
             .unwrap();
 
@@ -400,7 +400,7 @@ mod tests {
     #[tokio::test]
     async fn offsets_and_seek_from_current() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(NoLocation)
+            .reader(IgnoreLocation)
             .await
             .unwrap();
 
@@ -423,7 +423,7 @@ mod tests {
     async fn seek_from_start() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(NoLocation).await.unwrap();
+        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
 
         reader.seek(SeekFrom::Start(1)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -445,7 +445,7 @@ mod tests {
     async fn seek_from_end() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(NoLocation).await.unwrap();
+        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
 
         reader.seek(SeekFrom::End(-10)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -466,7 +466,7 @@ mod tests {
     #[tokio::test]
     async fn seek_from_end_before_byte_zero_must_err() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(NoLocation)
+            .reader(IgnoreLocation)
             .await
             .unwrap();
         // Hit 0 is ok
@@ -481,7 +481,7 @@ mod tests {
     async fn seek_from_current() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(NoLocation).await.unwrap();
+        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
 
         reader.seek(SeekFrom::Current(1)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -502,7 +502,7 @@ mod tests {
     #[tokio::test]
     async fn seek_from_current_before_byte_zero_must_err() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(NoLocation)
+            .reader(IgnoreLocation)
             .await
             .unwrap();
 
@@ -533,7 +533,7 @@ mod tests {
 
                 let downloader = TestDownloader::new_with_blob(expected.clone());
 
-                let mut reader = downloader.reader(NoLocation).await.unwrap();
+                let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
                 reader.set_fetch_ahead_mode(mode);
 
                 let mut buf = Vec::new();
@@ -558,7 +558,7 @@ mod tests {
         let condow = InMemoryClient::new(sample.clone())
             .condow(Default::default())
             .unwrap();
-        let adapter = CondowAdapter::new(condow, NoLocation);
+        let adapter = CondowAdapter::new(condow, IgnoreLocation);
 
         let result = adapter
             .download_range((..).into())

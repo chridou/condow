@@ -1,6 +1,6 @@
 mod download {
     use crate::{
-        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, NoLocation},
+        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
         config::Config,
         errors::CondowErrorKind,
         machinery::download_range,
@@ -24,7 +24,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -58,7 +58,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -93,7 +93,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -128,7 +128,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -166,7 +166,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -202,7 +202,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -240,7 +240,7 @@ mod download {
 
         let result = download_range(
             condow,
-            NoLocation,
+            IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
             Default::default(),
@@ -261,7 +261,7 @@ mod download_chunks {
     use tracing::Span;
 
     use crate::{
-        condow_client::NoLocation,
+        condow_client::IgnoreLocation,
         config::Config,
         machinery::{download_chunks, DownloadSpanGuard},
         streams::BytesHint,
@@ -286,7 +286,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,
@@ -318,7 +318,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,
@@ -350,7 +350,7 @@ mod download_chunks {
 
         let result_stream = download_chunks(
             client.into(),
-            NoLocation,
+            IgnoreLocation,
             range,
             bytes_hint,
             config,

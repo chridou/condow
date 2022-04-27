@@ -38,7 +38,7 @@ mod retry_download {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, IgnoreLocation,
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
@@ -647,7 +647,7 @@ mod retry_download {
 
         let (mut stream, _bytes_hint) = retry_download(
             &client,
-            NoLocation,
+            IgnoreLocation,
             download_spec.into(),
             &config,
             ProbeInternal::new(probe.clone()),
@@ -809,7 +809,7 @@ mod loop_retry_complete_stream {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
@@ -1124,13 +1124,13 @@ mod loop_retry_complete_stream {
 
         let original_range: InclusiveRange = range.into();
         let (initial_stream, _) = client
-            .download(NoLocation, original_range.into())
+            .download(IgnoreLocation, original_range.into())
             .await
             .unwrap();
 
         tokio::spawn(loop_retry_complete_stream(
             initial_stream,
-            NoLocation,
+            IgnoreLocation,
             original_range,
             client,
             next_elem_tx,
@@ -1176,7 +1176,7 @@ mod retry_download_get_stream {
 
     use futures::{stream, FutureExt};
 
-    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
+    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
 
     use super::*;
 
@@ -1338,7 +1338,7 @@ mod retry_download_get_stream {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
+            type Location = IgnoreLocation;
 
             fn get_size(
                 &self,
@@ -1392,7 +1392,7 @@ mod retry_download_get_stream {
         let probe = TestProbe(Default::default());
         match retry_download_get_stream(
             &client,
-            NoLocation,
+            IgnoreLocation,
             DownloadSpec::Complete,
             &config,
             &ProbeInternal::new(probe.clone()),
@@ -1421,7 +1421,7 @@ mod retry_get_size {
 
     use futures::FutureExt;
 
-    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
+    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
 
     use super::*;
 
@@ -1583,7 +1583,7 @@ mod retry_get_size {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
+            type Location = IgnoreLocation;
 
             fn get_size(
                 &self,
@@ -1636,7 +1636,7 @@ mod retry_get_size {
         let probe = TestProbe(Default::default());
         match retry_get_size(
             &client,
-            NoLocation,
+            IgnoreLocation,
             &config,
             &ProbeInternal::new(probe.clone()),
         )
