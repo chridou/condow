@@ -418,7 +418,10 @@ impl Downloads for TestDownloader {
         RequestNoLocation::new(download_fn)
     }
 
-    fn get_size<'a>(&'a self, _location: IgnoreLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(
+        &'a self,
+        _location: IgnoreLocation,
+    ) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }

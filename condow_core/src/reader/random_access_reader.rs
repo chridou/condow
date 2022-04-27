@@ -337,7 +337,7 @@ mod tests {
     use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
     use crate::{
-        condow_client::{InMemoryClient, IgnoreLocation},
+        condow_client::{IgnoreLocation, InMemoryClient},
         test_utils::TestDownloader,
         Downloads,
     };

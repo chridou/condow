@@ -2,7 +2,7 @@
 //!
 //! Builder style APIs to configure individual downloads.
 
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 
 use futures::{future::BoxFuture, AsyncRead};
 
@@ -53,6 +53,40 @@ impl<L> RequestNoLocation<L> {
             location: location.into(),
             params: self.params,
         }
+    }
+
+    /// Specify the location to download the BLOB from
+    ///
+    /// Fails if `location` is not convertable to `Self::L`.
+    pub fn try_at<LL>(self, location: LL) -> Result<Request<L>, CondowError>
+    where
+        LL: TryInto<L>,
+        LL::Error: std::error::Error + Send + Sync + 'static,
+    {
+        Ok(Request {
+            download_fn: self.download_fn,
+            location: location
+                .try_into()
+                .map_err(|err| CondowError::new_other("invalid location").with_source(err))?,
+            params: self.params,
+        })
+    }
+
+    /// Specify the location as a string slice to download the BLOB from
+    ///
+    /// Fails if `location` is not parsable.
+    pub fn try_at_str(self, location: &str) -> Result<Request<L>, CondowError>
+    where
+        L: FromStr,
+        <L as FromStr>::Err: std::error::Error + Send + Sync + 'static,
+    {
+        Ok(Request {
+            download_fn: self.download_fn,
+            location: location.parse().map_err(|err| {
+                CondowError::new_other(format!("invalid location: {location}")).with_source(err)
+            })?,
+            params: self.params,
+        })
     }
 
     /// Specify the range to download
