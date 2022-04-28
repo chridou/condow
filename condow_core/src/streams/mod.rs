@@ -1,7 +1,7 @@
 //! Stream implememtations used by Condow
 use std::fmt;
 
-use crate::errors::{IoError, CondowError};
+use crate::errors::{CondowError, IoError};
 use bytes::Bytes;
 use futures::stream::BoxStream;
 
@@ -23,7 +23,7 @@ pub type ChunkStreamItem = Result<Chunk, CondowError>;
 /// for a part with the same `part_index` but the chunks
 /// of different parts can be intermingled due
 /// to the nature of a concurrent download.
-/// 
+///
 /// If a download should be processed (bytewise) sequentially
 /// the chinks need to be ordered (see [OrderedChunkStream]).
 #[derive(Debug, Clone)]

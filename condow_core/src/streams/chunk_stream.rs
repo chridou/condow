@@ -8,8 +8,7 @@ use pin_project_lite::pin_project;
 
 use crate::{errors::CondowError, streams::ChunkStreamItem};
 
-use super::{BytesHint, OrderedChunkStream, Chunk};
-
+use super::{BytesHint, Chunk, OrderedChunkStream};
 
 pin_project! {
     /// A stream of [Chunk]s received from the network
@@ -156,7 +155,7 @@ impl ChunkStream {
     /// Turns this stream into a [PartStream]
     ///
     /// Fails if this [ChunkStream] was already iterated.
-    pub fn try_into_part_stream(self) -> Result<OrderedChunkStream<Self>, CondowError> {
+    pub fn try_into_part_stream(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::try_from(self)
     }
 }

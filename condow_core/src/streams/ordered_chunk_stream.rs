@@ -5,91 +5,57 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{ready, stream, Stream, StreamExt, TryStreamExt};
+use futures::{channel::mpsc, ready, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
 
-use super::{BytesHint, ChunkStream, ChunkStreamItem, Chunk};
-
-/// The type of the elements returned by a [PartStream]
-pub type PartStreamItem = Result<Part, CondowError>;
-
-/// A downloaded part consisting of 1 or more chunks
-#[derive(Debug, Clone)]
-pub struct Part {
-    /// Index of the part this chunk belongs to
-    pub part_index: u64,
-    /// Offset of the first chunk within the BLOB
-    pub blob_offset: u64,
-    /// Offset of the first chunk within the downloaded range
-    pub range_offset: u64,
-    /// The chunks of bytes in the order received for this part
-    pub chunks: Vec<Bytes>,
-}
-
-impl Part {
-    /// Length of this [Part] in bytes
-    pub fn len(&self) -> u64 {
-        self.chunks.iter().map(|b| b.len() as u64).sum()
-    }
-
-    /// Returns `true` if there are no bytes in this [Part]
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-}
-
-/// A struct to collect and aggregate received chunks for a part
-struct PartEntry {
-    part_index: u64,
-    chunks: Vec<Chunk>,
-    is_complete: bool,
-}
-
-impl PartEntry {
-    pub fn new(part_index: u64) -> Self {
-        Self {
-        part_index,
-        chunks: Vec::with_capacity(16),
-        is_complete: false,
-    }
-}
-}
+use super::{BytesHint, Chunk, ChunkStream, ChunkStreamItem};
 
 pin_project! {
     /// A stream of downloaded chunks ordered
     ///
     /// All chunks are ordered as they would
     /// have appeared in a sequential download of a range/BLOB
-    pub struct OrderedChunkStream<St> {
+    pub struct OrderedChunkStream {
         bytes_hint: BytesHint,
         #[pin]
-        stream: St,
+        inner_stream: Box<dyn Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin>,
         is_closed: bool,
-        current_part: PartEntry,
-        collected_parts: HashMap<u64, PartEntry>
     }
 }
 
-impl<St> OrderedChunkStream<St>
-where
-    St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
-{
+impl OrderedChunkStream {
     /// Create a new [PartStream].
     ///
     /// **Call with care.** This function will only work
     /// if the input stream was not iterated before
     /// since all chunks are needed. The stream might live lock
     /// if the input was already iterated.
-    pub fn new(stream: St, bytes_hint: BytesHint) -> Self {
+    pub fn new<St>(chunk_stream: St, bytes_hint: BytesHint) -> Self
+    where
+        St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+    {
+        let inner_stream = Box::new(collect_n_dispatch(chunk_stream));
+
         Self {
             bytes_hint,
-            stream,
+            inner_stream,
             is_closed: false,
-            current_part: PartEntry::new(0),
-            collected_parts: HashMap::default(),
         }
+    }
+
+    /// Create a new [OrderedChunkStream] from the given [ChunkStream]
+    ///
+    /// Will fail if the [ChunkStream] was already iterated.
+    pub fn from_chunk_stream(chunk_stream: ChunkStream) -> Result<Self, CondowError> {
+        if !chunk_stream.is_fresh() {
+            return Err(CondowError::new_other(
+                "chunk stream already iterated".to_string(),
+            ));
+        }
+        let bytes_hint = chunk_stream.bytes_hint();
+        Ok(Self::new(chunk_stream, bytes_hint))
     }
 
     /// Hint on the remaining bytes on this stream.
@@ -111,23 +77,21 @@ where
 
         let mut offset = 0;
         while let Some(next) = self.next().await {
-            let part = next?;
+            let chunk = next?;
 
-            for chunk in part.chunks {
-                let end_excl = offset + chunk.len();
-                if end_excl > buffer.len() {
-                    return Err(CondowError::new_other(format!(
-                        "write attempt beyond buffer end (buffer len = {}). \
+            let end_excl = offset + chunk.len();
+            if end_excl > buffer.len() {
+                return Err(CondowError::new_other(format!(
+                    "write attempt beyond buffer end (buffer len = {}). \
                         attempted to write at index {}",
-                        buffer.len(),
-                        end_excl
-                    )));
-                }
-
-                buffer[offset..end_excl].copy_from_slice(&chunk[..]);
-
-                offset = end_excl;
+                    buffer.len(),
+                    end_excl
+                )));
             }
+
+            buffer[offset..end_excl].copy_from_slice(&chunk.bytes[..]);
+
+            offset = end_excl;
         }
 
         Ok(offset)
@@ -151,11 +115,9 @@ where
             let mut buffer = Vec::with_capacity(self.bytes_hint.lower_bound() as usize);
 
             while let Some(next) = self.next().await {
-                let part = next?;
+                let chunk = next?;
 
-                for chunk in part.chunks {
-                    buffer.extend(chunk);
-                }
+                buffer.extend(chunk.bytes);
             }
 
             Ok(buffer)
@@ -169,22 +131,7 @@ where
     }
 }
 
-impl OrderedChunkStream<ChunkStream> {
-    /// Create a new [PartStream] from the given [ChunkStream]
-    ///
-    /// Will fail if the [ChunkStream] was already iterated.
-    pub fn from_chunk_stream(chunk_stream: ChunkStream) -> Result<Self, CondowError> {
-        if !chunk_stream.is_fresh() {
-            return Err(CondowError::new_other(
-                "chunk stream already iterated".to_string(),
-            ));
-        }
-        let bytes_hint = chunk_stream.bytes_hint();
-        Ok(Self::new(chunk_stream, bytes_hint))
-    }
-}
-
-impl<St: Stream<Item = ChunkStreamItem>> Stream for OrderedChunkStream<St> {
+impl Stream for OrderedChunkStream {
     type Item = ChunkStreamItem;
 
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -194,62 +141,11 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for OrderedChunkStream<St> {
 
         let this = self.project();
 
-        let next = ready!(this.stream.poll_next(cx));
+        let next = ready!(this.inner_stream.poll_next(cx));
         match next {
             Some(Ok(chunk)) => {
-                if chunk.chunk_index == 0
-                    && chunk.is_last()
-                    && chunk.part_index == *this.next_part_idx
-                {
-                    this.bytes_hint.reduce_by(chunk.len() as u64);
-                    *this.next_part_idx += 1;
-                    Poll::Ready(Some(Ok(Part {
-                        part_index: chunk.part_index,
-                        blob_offset: chunk.blob_offset,
-                        range_offset: chunk.range_offset,
-                        chunks: vec![chunk.bytes],
-                    })))
-                } else {
-                    let entry = this
-                        .collected_parts
-                        .entry(chunk.part_index)
-                        .or_insert_with(|| PartEntry {
-                            part_index: chunk.part_index,
-                            blob_offset: chunk.blob_offset,
-                            range_offset: chunk.range_offset,
-                            chunks: vec![],
-                            is_complete: false,
-                        });
-                    entry.is_complete = chunk.is_last();
-                    entry.chunks.push(chunk.bytes);
-
-                    if let Some(entry) = this.collected_parts.get(this.next_part_idx) {
-                        if entry.is_complete {
-                            let PartEntry {
-                                part_index,
-                                blob_offset: file_offset,
-                                range_offset,
-                                chunks,
-                                ..
-                            } = this.collected_parts.remove(this.next_part_idx).unwrap();
-                            this.bytes_hint
-                                .reduce_by(chunks.iter().map(|c| c.len() as u64).sum());
-                            *this.next_part_idx += 1;
-                            Poll::Ready(Some(Ok(Part {
-                                part_index,
-                                blob_offset: file_offset,
-                                range_offset,
-                                chunks,
-                            })))
-                        } else {
-                            cx.waker().wake_by_ref();
-                            Poll::Pending
-                        }
-                    } else {
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                }
+                this.bytes_hint.reduce_by(chunk.len() as u64);
+                Poll::Ready(Some(Ok(chunk)))
             }
             Some(Err(err)) => {
                 *this.is_closed = true;
@@ -257,21 +153,9 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for OrderedChunkStream<St> {
                 Poll::Ready(Some(Err(err)))
             }
             None => {
-                if let Some(next) = this.collected_parts.remove(this.next_part_idx) {
-                    *this.next_part_idx += 1;
-                    this.bytes_hint
-                        .reduce_by(next.chunks.iter().map(|c| c.len() as u64).sum());
-                    Poll::Ready(Some(Ok(Part {
-                        part_index: next.part_index,
-                        blob_offset: next.blob_offset,
-                        range_offset: next.range_offset,
-                        chunks: next.chunks,
-                    })))
-                } else {
-                    *this.is_closed = true;
-                    *this.bytes_hint = BytesHint::new_exact(0);
-                    Poll::Ready(None)
-                }
+                *this.is_closed = true;
+                *this.bytes_hint = BytesHint::new_exact(0);
+                Poll::Ready(None)
             }
         }
     }
@@ -281,11 +165,78 @@ impl<St: Stream<Item = ChunkStreamItem>> Stream for OrderedChunkStream<St> {
     }
 }
 
-impl TryFrom<ChunkStream> for OrderedChunkStream<ChunkStream> {
+impl TryFrom<ChunkStream> for OrderedChunkStream {
     type Error = CondowError;
 
     fn try_from(chunk_stream: ChunkStream) -> Result<Self, Self::Error> {
         OrderedChunkStream::from_chunk_stream(chunk_stream)
+    }
+}
+
+fn collect_n_dispatch<St>(
+    chunk_stream: St,
+) -> impl Stream<Item = ChunkStreamItem> + Send + Sync + 'static
+where
+    St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+{
+    let (tx, rx) = mpsc::unbounded();
+
+    tokio::spawn(collect_n_dispatch_loop(chunk_stream, tx));
+
+    rx
+}
+
+async fn collect_n_dispatch_loop<StIn>(
+    mut chunk_stream: StIn,
+    send_item: mpsc::UnboundedSender<ChunkStreamItem>,
+) where
+    StIn: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+{
+    let mut current_part_idx = 0;
+    let mut collected_chunks: HashMap<u64, Vec<Chunk>> = HashMap::new();
+    let mut buffer_reservoir = Vec::new();
+
+    while let Some(next) = chunk_stream.next().await {
+        let chunk = match next {
+            Ok(chunk) => chunk,
+            Err(err) => {
+                let _ = send_item.unbounded_send(Err(err));
+                return;
+            }
+        };
+
+        if chunk.part_index == current_part_idx {
+            if chunk.is_last() {
+                current_part_idx += 1;
+            }
+
+            if send_item.unbounded_send(Ok(chunk)).is_err() {
+                return;
+            }
+        } else {
+            let entry = collected_chunks.entry(chunk.part_index).or_insert_with(|| {
+                buffer_reservoir
+                    .pop()
+                    .unwrap_or_else(|| Vec::with_capacity(16))
+            });
+            entry.push(chunk);
+
+            continue;
+        }
+
+        while let Some(mut chunks_to_flush) = collected_chunks.remove(&current_part_idx) {
+            for chunk in chunks_to_flush.drain(..) {
+                if chunk.is_last() {
+                    current_part_idx += 1;
+                }
+
+                if send_item.unbounded_send(Ok(chunk)).is_err() {
+                    return;
+                }
+            }
+
+            buffer_reservoir.push(chunks_to_flush);
+        }
     }
 }
 
@@ -302,9 +253,9 @@ mod tests {
         let mut collected = Vec::new();
 
         while let Some(next) = stream.next().await {
-            let next = next.unwrap();
+            let chunk = next.unwrap();
 
-            next.chunks.iter().flatten().for_each(|&v| {
+            chunk.bytes.iter().for_each(|&v| {
                 collected.push(v);
             });
         }
@@ -319,9 +270,9 @@ mod tests {
         let mut collected = Vec::new();
 
         while let Some(next) = stream.next().await {
-            let next = next.unwrap();
+            let chunk = next.unwrap();
 
-            next.chunks.iter().flatten().for_each(|&v| {
+            chunk.bytes.iter().for_each(|&v| {
                 collected.push(v);
             });
         }
@@ -331,21 +282,79 @@ mod tests {
 
     #[tokio::test]
     async fn check_iter_two_parts_one_chunk() {
-        let (mut stream, expected) = create_part_stream(2, 1, true, Some(10));
+        for run in 1..100 {
+            let (mut stream, expected) = create_part_stream(2, 1, true, Some(10));
 
-        let mut collected = Vec::new();
+            let mut collected = Vec::new();
 
-        while let Some(next) = stream.next().await {
-            let next = next.unwrap();
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
 
-            next.chunks.iter().flatten().for_each(|&v| {
-                collected.push(v);
-            });
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected, "run: {run}");
         }
-
-        assert_eq!(collected, expected);
     }
 
+    #[tokio::test]
+    async fn check_iter_two_parts_two_chunk() {
+        for run in 1..100 {
+            let (mut stream, expected) = create_part_stream(2, 2, true, Some(10));
+
+            let mut collected = Vec::new();
+
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
+
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected, "run: {run}");
+        }
+    }   
+    
+    #[tokio::test]
+    async fn check_iter_three_parts_two_chunk() {
+        for run in 1..100 {
+            let (mut stream, expected) = create_part_stream(3, 2, true, Some(10));
+
+            let mut collected = Vec::new();
+
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
+
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected, "run: {run}");
+        }
+    }       
+
+    #[tokio::test]
+    async fn check_iter_many_parts_many_chunk() {
+        for run in 1..100 {
+            let (mut stream, expected) = create_part_stream(10, 10, true, Some(10));
+
+            let mut collected = Vec::new();
+
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
+
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected, "run: {run}");
+        }
+    }   
     #[tokio::test]
     async fn check_iter_multiple() {
         for parts in 1..10 {
@@ -357,12 +366,12 @@ mod tests {
                 while let Some(next) = stream.next().await {
                     let next = next.unwrap();
 
-                    next.chunks.iter().flatten().for_each(|&v| {
+                    next.bytes.iter().for_each(|&v| {
                         collected.push(v);
                     });
                 }
 
-                assert_eq!(collected, expected);
+                assert_eq!(collected, expected, "parts: {parts} - chunks: {chunks}");
             }
         }
     }

@@ -13,10 +13,7 @@ use futures::{
 };
 
 use crate::{
-    condow_client::CondowClient,
-    config::Mebi,
-    errors::CondowError,
-    streams::{ChunkStream, OrderedChunkStream},
+    condow_client::CondowClient, config::Mebi, errors::CondowError, streams::OrderedChunkStream,
     Condow, DownloadRange,
 };
 
@@ -82,7 +79,7 @@ pub trait ReaderAdapter: Send + Sync + 'static {
     fn download_range<'a>(
         &'a self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream<ChunkStream>, CondowError>>;
+    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>>;
 }
 
 pub(crate) struct CondowAdapter<C: CondowClient> {
@@ -107,7 +104,7 @@ where
     fn download_range<'a>(
         &'a self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream<ChunkStream>, CondowError>> {
+    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
         self.condow
             .blob()
             .range(range)

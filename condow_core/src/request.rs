@@ -110,7 +110,7 @@ impl<L> RequestNoLocation<L> {
 
 impl RequestNoLocation<IgnoreLocation> {
     /// Download as a [PartStream]
-    pub async fn download(self) -> Result<OrderedChunkStream<ChunkStream>, CondowError> {
+    pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
         self.at(IgnoreLocation).download().await
     }
 
@@ -175,7 +175,7 @@ impl<L> Request<L> {
     }
 
     /// Download as a [PartStream]
-    pub async fn download(self) -> Result<OrderedChunkStream<ChunkStream>, CondowError> {
+    pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::from_chunk_stream(self.download_chunks().await?)
     }
 
