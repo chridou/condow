@@ -228,6 +228,10 @@ pub trait DownloadsUntyped {
 /// Downloads BLOBs by splitting the download into parts
 /// which are downloaded concurrently.
 ///
+/// It is recommended to use one of the traits [Downloads] or
+/// [DownloadsUntyped] instead of [Condow] itself since this
+/// struct might get more type parameters in the future.
+/// 
 /// ## Wording
 ///
 /// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
