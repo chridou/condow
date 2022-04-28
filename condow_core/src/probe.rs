@@ -24,7 +24,7 @@
 //! # #[tokio::main]
 //! # async fn main() {
 //!
-//! #[derive(Default, Clone)]
+//!
 //! struct MyProbe {
 //!     bytes_received: Arc<AtomicUsize>,
 //! }
@@ -40,15 +40,74 @@
 //!     }
 //! }
 //!
-//! let probe = MyProbe::default();
+//! let bytes_received = Arc::new(AtomicUsize::default());
+//! let probe = MyProbe { bytes_received: Arc::clone(&bytes_received)};
 //!
 //! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
 //! let config = Config::default();
 //! let condow = Condow::new(client, config).unwrap();
 //!
 //! // Download the complete BLOB
-//! let blob = condow.blob().probe(Arc::new(probe.clone())).wc().await.unwrap();
-//! assert_eq!(probe.bytes_received.load(Ordering::SeqCst), 13);
+//! let blob = condow.blob().probe(Arc::new(probe)).wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 13);
+//! # }
+//! ```
+//!
+//! ## Global Instrumentation
+//!
+//! ```
+//! # use std::time::Duration;
+//! # use std::fmt;
+//! # use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+//! use condow_core::condow_client::{InMemoryClient, IgnoreLocation};
+//! use condow_core::{Condow, config::Config};
+//! use condow_core::probe::{Probe, ProbeFactory};
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//!
+//!
+//! struct MyProbe {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! // Methods of Probe have noop default implementations
+//! impl Probe for MyProbe {
+//!     fn chunk_completed(&self,
+//!         _part_index: u64,
+//!         _chunk_index: usize,
+//!         n_bytes: usize,
+//!         _time: Duration) {
+//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     }
+//! }
+//!
+//! struct MyProbeFactory {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! impl ProbeFactory for MyProbeFactory {
+//!     fn make(&self, _location: &dyn fmt::Display) -> Arc<dyn Probe> {
+//!         let probe = MyProbe {
+//!             bytes_received: Arc::clone(&self.bytes_received),
+//!         };
+//!         Arc::new(probe)
+//!     }
+//! }
+//!
+//! let bytes_received = Arc::new(AtomicUsize::default());
+//! let probe_factory = MyProbeFactory { bytes_received: Arc::clone(&bytes_received)};
+//!
+//! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
+//! let config = Config::default();
+//! let mut condow = Condow::new(client, config).unwrap();
+//! condow.set_probe_factory(Arc::new(probe_factory));
+//!
+//! let blob = condow.blob().wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 13);
+//!
+//! let blob = condow.blob().range(1..5).wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 17);
 //! # }
 //! ```
 use std::{fmt, sync::Arc, time::Duration};
