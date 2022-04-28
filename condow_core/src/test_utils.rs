@@ -15,7 +15,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
     errors::CondowError,
     reader::{RandomAccessReader, ReaderAdapter},
-    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
+    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
     DownloadRange, Downloads, Params, RequestNoLocation,
 };
 
@@ -346,10 +346,13 @@ pub fn create_part_stream(
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
-) -> (PartStream<ChunkStream>, Vec<u8>) {
+) -> (OrderedChunkStream, Vec<u8>) {
     let (stream, values) =
         create_chunk_stream(n_parts, n_chunks, exact_hint, max_variable_chunk_size);
-    (PartStream::from_chunk_stream(stream).unwrap(), values)
+    (
+        OrderedChunkStream::from_chunk_stream(stream).unwrap(),
+        values,
+    )
 }
 
 #[tokio::test]
@@ -442,7 +445,7 @@ impl ReaderAdapter for TestDownloader {
     fn download_range<'a>(
         &'a self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<PartStream<ChunkStream>, CondowError>> {
+    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
         <TestDownloader as Downloads>::blob(self)
             .range(range)
             .download()

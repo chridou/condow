@@ -8,7 +8,7 @@ use futures::{future::BoxFuture, AsyncRead};
 
 use crate::{
     condow_client::IgnoreLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
-    ChunkStream, DownloadRange, GetSizeMode, PartStream,
+    ChunkStream, DownloadRange, GetSizeMode, OrderedChunkStream,
 };
 
 /// A function which downloads from the givel location and the given [Params].
@@ -110,7 +110,7 @@ impl<L> RequestNoLocation<L> {
 
 impl RequestNoLocation<IgnoreLocation> {
     /// Download as a [PartStream]
-    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
+    pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
         self.at(IgnoreLocation).download().await
     }
 
@@ -175,8 +175,8 @@ impl<L> Request<L> {
     }
 
     /// Download as a [PartStream]
-    pub async fn download(self) -> Result<PartStream<ChunkStream>, CondowError> {
-        PartStream::from_chunk_stream(self.download_chunks().await?)
+    pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
+        OrderedChunkStream::from_chunk_stream(self.download_chunks().await?)
     }
 
     /// Download as a [ChunkStream]

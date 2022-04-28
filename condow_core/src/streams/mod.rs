@@ -1,18 +1,66 @@
 //! Stream implememtations used by Condow
 use std::fmt;
 
-use crate::errors::IoError;
+use crate::errors::{CondowError, IoError};
 use bytes::Bytes;
 use futures::stream::BoxStream;
 
 mod chunk_stream;
-mod part_stream;
+mod ordered_chunk_stream;
 
 pub use chunk_stream::*;
-pub use part_stream::*;
+pub use ordered_chunk_stream::*;
 
 /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
 pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
+
+/// The type of the elements returned by a [ChunkStream]
+pub type ChunkStreamItem = Result<Chunk, CondowError>;
+
+/// A chunk belonging to a downloaded part
+///
+/// All chunks of a part will have the correct order
+/// for a part with the same `part_index` but the chunks
+/// of different parts can be intermingled due
+/// to the nature of a concurrent download.
+///
+/// If a download should be processed (bytewise) sequentially
+/// the chinks need to be ordered (see [OrderedChunkStream]).
+#[derive(Debug, Clone)]
+pub struct Chunk {
+    /// Index of the part this chunk belongs to
+    pub part_index: u64,
+    /// Index of the chunk within the part
+    pub chunk_index: usize,
+    /// Offset of the chunk within the BLOB
+    pub blob_offset: u64,
+    /// Offset of the chunk within the downloaded range
+    pub range_offset: u64,
+    /// The bytes
+    pub bytes: Bytes,
+    /// Bytes left in following chunks of the same part. If 0 this is the last chunk of the part.
+    pub bytes_left: u64,
+}
+
+impl Chunk {
+    /// Returns `true` if this is the last chunk of the part
+    pub fn is_last(&self) -> bool {
+        self.bytes_left == 0
+    }
+
+    /// Returns the number of bytes in this chunk
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+
+    /// Returns `true` if there are no bytes in this chunk.
+    ///
+    /// This should not happen since we would not expect
+    /// "no bytes" being sent over the network.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
 
 /// Returns the bounds on the remaining bytes of the stream.
 ///

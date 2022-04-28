@@ -45,7 +45,7 @@ use errors::CondowError;
 use machinery::ProbeInternal;
 use probe::{Probe, ProbeFactory};
 use reader::{CondowAdapter, RandomAccessReader};
-use streams::{ChunkStream, PartStream};
+use streams::{ChunkStream, OrderedChunkStream};
 
 #[macro_use]
 pub(crate) mod helpers;
