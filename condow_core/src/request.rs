@@ -11,7 +11,7 @@ use crate::{
     ChunkStream, DownloadRange, GetSizeMode, OrderedChunkStream,
 };
 
-/// A function which downloads from the givel location and the given [Params].
+/// A function which downloads from the given location and the given [Params].
 ///
 /// This is to make the request objects independent from the actual mechanism
 /// used to download.
@@ -23,7 +23,8 @@ type DownloadFn<L> = Box<
 ///
 /// The default is to download the complete BLOB.
 ///
-/// This can only directly download if the type of the location is [IgnoreLocation].
+/// This can only directly download if the type of the location is [IgnoreLocation]
+/// which probably ony makes sense while testing.
 pub struct RequestNoLocation<L> {
     download_fn: DownloadFn<L>,
     params: Params,
@@ -65,9 +66,9 @@ impl<L> RequestNoLocation<L> {
     {
         Ok(Request {
             download_fn: self.download_fn,
-            location: location
-                .try_into()
-                .map_err(|err| CondowError::new_other("invalid location").with_source(err))?,
+            location: location.try_into().map_err(|err| {
+                CondowError::new_other(format!("invalid location - {err}")).with_source(err)
+            })?,
             params: self.params,
         })
     }
@@ -109,17 +110,23 @@ impl<L> RequestNoLocation<L> {
 }
 
 impl RequestNoLocation<IgnoreLocation> {
-    /// Download as a [PartStream]
+    /// Download as an [OrderedChunkStream]
+    ///
+    /// Provided mainly for testing.
     pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
         self.at(IgnoreLocation).download().await
     }
 
     /// Download as a [ChunkStream]
+    ///
+    /// Provided mainly for testing.
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
         self.at(IgnoreLocation).download_chunks().await
     }
 
     /// Downloads into a freshly allocated [Vec]
+    ///
+    /// Provided mainly for testing.
     pub async fn download_into_vec(self) -> Result<Vec<u8>, CondowError> {
         let stream = self.download_chunks().await?;
         stream.into_vec().await
@@ -128,12 +135,16 @@ impl RequestNoLocation<IgnoreLocation> {
     /// Writes all received bytes into the provided buffer
     ///
     /// Fails if the buffer is too small.
+    ///
+    /// Provided mainly for testing.
     pub async fn download_into_buffer(self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         let stream = self.download_chunks().await?;
         stream.write_buffer(buffer).await
     }
 
     /// Returns an [AsyncRead] which reads over the bytes of the stream
+    ///
+    /// Provided mainly for testing.
     pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
         let stream = self.download().await?.bytes_stream();
         Ok(BytesAsyncReader::new(stream))
@@ -174,7 +185,7 @@ impl<L> Request<L> {
         self
     }
 
-    /// Download as a [PartStream]
+    /// Download as an [OrderedChunkStream]
     pub async fn download(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::from_chunk_stream(self.download_chunks().await?)
     }

@@ -316,8 +316,8 @@ mod tests {
 
             assert_eq!(collected, expected, "run: {run}");
         }
-    }   
-    
+    }
+
     #[tokio::test]
     async fn check_iter_three_parts_two_chunk() {
         for run in 1..100 {
@@ -335,7 +335,7 @@ mod tests {
 
             assert_eq!(collected, expected, "run: {run}");
         }
-    }       
+    }
 
     #[tokio::test]
     async fn check_iter_many_parts_many_chunk() {
@@ -354,7 +354,7 @@ mod tests {
 
             assert_eq!(collected, expected, "run: {run}");
         }
-    }   
+    }
     #[tokio::test]
     async fn check_iter_multiple() {
         for parts in 1..10 {
