@@ -55,6 +55,14 @@ impl Bucket {
         Self(bucket.into())
     }
 
+    /// Specify an object key and make it a [S3Location]
+    ///
+    /// ```
+    /// use condow_rusoto::{Bucket, S3Location};
+    ///
+    /// let location = Bucket::new("bucket").object("key");
+    /// assert_eq!(location, S3Location::new("bucket", "key"));
+    /// ```
     pub fn object<O: Into<ObjectKey>>(self, key: O) -> S3Location {
         S3Location(self, key.into())
     }
@@ -99,6 +107,14 @@ impl ObjectKey {
         Self(key.into())
     }
 
+    /// Specify a bucket and make it a [S3Location]
+    ///
+    /// ```
+    /// use condow_rusoto::{ObjectKey, S3Location};
+    ///
+    /// let location = ObjectKey::new("key").in_bucket("bucket");
+    /// assert_eq!(location, S3Location::new("bucket", "key"));
+    /// ```
     pub fn in_bucket<B: Into<Bucket>>(self, bucket: B) -> S3Location {
         S3Location(bucket.into(), self)
     }
