@@ -19,6 +19,41 @@
 //! All that is required to add more "services" is to implement
 //! the [CondowClient] trait.
 //!
+//! ## Usage
+//!
+//! To use condow a client to access remote data is required. In the examples below
+//! [InMemoryClient] is used. Usually this would be some client which really accesses
+//! remote BLOBs.
+//!
+//! ```
+//! use condow_core::condow_client::InMemoryClient;
+//! use condow_core::{Condow, config::Config};
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//! // First we need a client...
+//! let client = InMemoryClient::<String>::new_static(b"a remote BLOB");
+//!
+//! // ... and a configuration for Condow
+//! let config = Config::default();
+//!
+//! let condow = Condow::new(client, config).unwrap();
+//!
+//! assert_eq!(condow.get_size("a location").await.unwrap(), 13);
+//!
+//! // Download the complete BLOB
+//! let blob = condow.blob().at("a location").download_into_vec().await.unwrap();
+//! assert_eq!(blob, b"a remote BLOB");
+//!
+//! // Download part of a BLOB. Any Rust range syntax will work.
+//! let blob = condow.blob().at("a location").range(2..=7).download_into_vec().await.unwrap();
+//! assert_eq!(blob, b"remote");
+//!
+//! let blob = condow.blob().at("a location").range(2..).download_into_vec().await.unwrap();
+//! assert_eq!(blob, b"remote BLOB");
+//! # }
+//! ```
+//!
 //! ## Retries
 //!
 //! ConDow supports retries. These can be done on the downloads themselves
@@ -34,6 +69,7 @@
 //!
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
+//! [InMemoryClient]:condow_client::InMemoryClient
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Error as AnyError;
@@ -110,6 +146,35 @@ pub trait Downloads {
 /// Downloads from a location specified by a &[str].
 ///
 /// This trait is object safe
+///
+///  ```
+/// # use std::sync::Arc;
+/// use condow_core::{Condow, DownloadsUntyped, config::Config};
+/// use condow_core::condow_client::InMemoryClient;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// // First we need a client... Let's make the type of the location simply `u32`s
+/// let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
+///
+/// // ... and a configuration for Condow
+/// let config = Config::default();
+///
+/// let condow = Condow::new(client, config).unwrap();
+///
+/// // The trait is object save:
+/// let downloader: Arc<dyn DownloadsUntyped> = Arc::new(condow);
+///
+/// // "42" parses as `u32`
+/// assert_eq!(downloader.get_size("42").await.unwrap(), 13);
+///
+/// // "x" does not
+/// assert!(downloader.get_size("x").await.is_err());
+///
+/// let blob = downloader.blob().at("42").download_into_vec().await.unwrap();
+/// assert_eq!(blob, b"a remote BLOB");
+/// # }
+/// ```
 pub trait DownloadsUntyped {
     /// Download a BLOB via the returned request object
     fn blob(&self) -> RequestNoLocation<&str>;

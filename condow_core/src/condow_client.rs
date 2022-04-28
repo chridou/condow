@@ -106,6 +106,15 @@ impl FromStr for IgnoreLocation {
     }
 }
 
+impl<T> From<T> for IgnoreLocation
+where
+    T: AsRef<str>,
+{
+    fn from(_: T) -> Self {
+        IgnoreLocation
+    }
+}
+
 mod in_memory {
     use std::{marker::PhantomData, sync::Arc};
 

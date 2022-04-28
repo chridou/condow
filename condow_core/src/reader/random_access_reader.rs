@@ -74,6 +74,11 @@ enum State {
     Error,
 }
 
+/// A trait providing the essential functionality to access
+/// a BLOB at a fixed location used by the [RandomAccessReader].
+///
+/// Contract:
+/// `get_size`and `download_range` must point to the same location.
 pub trait ReaderAdapter: Send + Sync + 'static {
     fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>>;
     fn download_range<'a>(
@@ -82,6 +87,7 @@ pub trait ReaderAdapter: Send + Sync + 'static {
     ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>>;
 }
 
+/// A [ReaderAdapter] for [Condow] tied to a specific location
 pub(crate) struct CondowAdapter<C: CondowClient> {
     condow: Condow<C>,
     location: C::Location,
@@ -117,6 +123,10 @@ where
 /// Implements [AsyncRead] and [AsyncSeek]
 ///
 /// This reader allows for random access on the BLOB.
+///
+/// Random access on a remote BLOB via a reader is a rather unusual case and
+/// is provided to interface with libraries which are based on reading data
+/// via [AsyncRead] and [AsyncSeek].
 ///
 /// # Behaviour
 ///
