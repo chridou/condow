@@ -5,7 +5,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{channel::mpsc, ready, Stream, StreamExt, TryStreamExt};
+use futures::{channel::mpsc::{self, UnboundedReceiver}, ready, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -20,7 +20,7 @@ pin_project! {
     pub struct OrderedChunkStream {
         bytes_hint: BytesHint,
         #[pin]
-        inner_stream: Box<dyn Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin>,
+        inner_receiver: UnboundedReceiver<ChunkStreamItem>,
         is_closed: bool,
     }
 }
@@ -36,11 +36,11 @@ impl OrderedChunkStream {
     where
         St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
     {
-        let inner_stream = Box::new(collect_n_dispatch(chunk_stream));
+        let inner_receiver = collect_n_dispatch(chunk_stream);
 
         Self {
             bytes_hint,
-            inner_stream,
+            inner_receiver,
             is_closed: false,
         }
     }
@@ -141,7 +141,7 @@ impl Stream for OrderedChunkStream {
 
         let this = self.project();
 
-        let next = ready!(this.inner_stream.poll_next(cx));
+        let next = ready!(this.inner_receiver.poll_next(cx));
         match next {
             Some(Ok(chunk)) => {
                 this.bytes_hint.reduce_by(chunk.len() as u64);
@@ -175,7 +175,7 @@ impl TryFrom<ChunkStream> for OrderedChunkStream {
 
 fn collect_n_dispatch<St>(
     chunk_stream: St,
-) -> impl Stream<Item = ChunkStreamItem> + Send + Sync + 'static
+) -> UnboundedReceiver<ChunkStreamItem>
 where
     St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
 {
