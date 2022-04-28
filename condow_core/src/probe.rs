@@ -1,8 +1,56 @@
-//! Probes & Instrumentation
+//! # Probes & Instrumentation
 //!
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
+//!
+//! Instrumentation is done via the [Probe] trait. Implementations
+//! will always be shared via an [Arc] internally.
+//!
+//! Instrumentation can be done for each individual download or globally
+//! where a [Probe] is injectecd internally for each download.
+//!
+//! Both methods can be combined.
+//!
+//! ## Per request probing
+//!
+//! ```
+//! # use std::time::Duration;
+//! # use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+//! use condow_core::condow_client::{InMemoryClient, IgnoreLocation};
+//! use condow_core::{Condow, config::Config};
+//! use condow_core::probe::Probe;
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//!
+//! #[derive(Default, Clone)]
+//! struct MyProbe {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! // Methods of Probe have noop default implementations
+//! impl Probe for MyProbe {
+//!     fn chunk_completed(&self,
+//!         _part_index: u64,
+//!         _chunk_index: usize,
+//!         n_bytes: usize,
+//!         _time: Duration) {
+//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     }
+//! }
+//!
+//! let probe = MyProbe::default();
+//!
+//! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
+//! let config = Config::default();
+//! let condow = Condow::new(client, config).unwrap();
+//!
+//! // Download the complete BLOB
+//! let blob = condow.blob().probe(Arc::new(probe.clone())).wc().await.unwrap();
+//! assert_eq!(probe.bytes_received.load(Ordering::SeqCst), 13);
+//! # }
+//! ```
 use std::{fmt, sync::Arc, time::Duration};
 
 use crate::{

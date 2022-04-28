@@ -67,6 +67,11 @@
 //! their underlying implementation. In this case you should disable retries for either the
 //! client or ConDow itself.
 //!
+//! ## Instrumentation
+//!
+//! Instrumentation can be done for each individual download or centralized
+//! for global monitoring. For further information see the [probe] module.
+//!
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
 //! [InMemoryClient]:condow_client::InMemoryClient

@@ -5,7 +5,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{channel::mpsc::{self, UnboundedReceiver}, ready, Stream, StreamExt, TryStreamExt};
+use futures::{
+    channel::mpsc::{self, UnboundedReceiver},
+    ready, Stream, StreamExt, TryStreamExt,
+};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -173,9 +176,7 @@ impl TryFrom<ChunkStream> for OrderedChunkStream {
     }
 }
 
-fn collect_n_dispatch<St>(
-    chunk_stream: St,
-) -> UnboundedReceiver<ChunkStreamItem>
+fn collect_n_dispatch<St>(chunk_stream: St) -> UnboundedReceiver<ChunkStreamItem>
 where
     St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
 {

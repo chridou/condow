@@ -4,7 +4,10 @@
 
 use std::{str::FromStr, sync::Arc};
 
-use futures::{future::BoxFuture, AsyncRead};
+use futures::{
+    future::{self, BoxFuture},
+    AsyncRead, TryStreamExt,
+};
 
 use crate::{
     condow_client::IgnoreLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
@@ -149,6 +152,17 @@ impl RequestNoLocation<IgnoreLocation> {
         let stream = self.download().await?.bytes_stream();
         Ok(BytesAsyncReader::new(stream))
     }
+
+    /// Pulls the bytes into the void
+    ///
+    /// Provided mainly for testing.
+    pub async fn wc(self) -> Result<(), CondowError> {
+        self.download_chunks()
+            .await?
+            .try_for_each(|_| future::ok(()))
+            .await?;
+        Ok(())
+    }
 }
 
 /// A request for a download from a specific location
@@ -213,6 +227,15 @@ impl<L> Request<L> {
     pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
         let stream = self.download().await?.bytes_stream();
         Ok(BytesAsyncReader::new(stream))
+    }
+
+    /// Pulls the bytes into the void
+    pub async fn wc(self) -> Result<(), CondowError> {
+        self.download_chunks()
+            .await?
+            .try_for_each(|_| future::ok(()))
+            .await?;
+        Ok(())
     }
 }
 
