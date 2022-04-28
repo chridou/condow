@@ -135,6 +135,44 @@ impl From<&str> for ObjectKey {
 }
 
 /// Full "path" to an S3 object
+///
+///
+/// ## Examples
+///
+/// `FromStr`
+///
+/// ```
+/// use condow_rusoto::S3Location;
+///
+/// let location: S3Location = "s3://my_bucket/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_object"));
+///
+/// let location: S3Location = "s3a://my_bucket/my_prefix/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_prefix/my_object"));
+///
+/// let location: S3Location = "s3n://my_bucket/my_prefix/1/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_prefix/1/my_object"));
+///
+///
+/// // invalid protocol
+/// assert!("s4://my_bucket/my_object".parse::<S3Location>().is_err());
+/// // missing object key
+/// assert!("s3://my_bucket".parse::<S3Location>().is_err());
+/// // empty object key
+/// assert!("s3://my_bucket/".parse::<S3Location>().is_err());
+/// // no bucket and object key
+/// assert!("s3://".parse::<S3Location>().is_err());
+/// // empty bucket
+/// assert!("s3:///my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("my_bucket/my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("//my_bucket/my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("//my_bucket/my_object".parse::<S3Location>().is_err());
+/// // well... obvious...
+/// assert!("".parse::<S3Location>().is_err());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct S3Location(Bucket, ObjectKey);
 
@@ -167,16 +205,32 @@ impl FromStr for S3Location {
     type Err = AnyError;
 
     fn from_str(uri: &str) -> Result<Self, Self::Err> {
-        let prefixes = vec!["s3://", "s3a://", "s3n://"];
+        if uri.is_empty() {
+            return Err(anyhow!("S3 URI must no be empty"));
+        }
+
+        let prefixes = ["s3://", "s3a://", "s3n://"];
         let res = prefixes
             .iter()
             .find(|&&p| uri.starts_with(p))
             .map(|p| uri.trim_start_matches(p))
-            .ok_or_else(|| anyhow!(format!("Invalid S3 protocol prefix in uri: {}", uri)))?;
+            .ok_or_else(|| anyhow!(format!("invalid protocol for S3 URI: '{uri}'")))?;
 
-        let (bucket, key) = res
-            .split_once('/')
-            .ok_or_else(|| anyhow!(format!("Invalid S3 uri: {}", uri)))?;
+        let (bucket, key) = res.split_once('/').ok_or_else(|| {
+            anyhow!(format!(
+                "S3 URI must contain a bucket \
+            and object key seperated by a '/': {uri}"
+            ))
+        })?;
+
+        let bucket = bucket.trim();
+        let key = key.trim();
+
+        if bucket.is_empty() {
+            return Err(anyhow!("bucket (S3 URI) must no be empty: {uri}"));
+        } else if key.is_empty() {
+            return Err(anyhow!("object key (S3 URI) must no be empty: {uri}"));
+        }
 
         Ok(Bucket::new(bucket).object(key))
     }

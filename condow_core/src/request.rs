@@ -67,7 +67,7 @@ impl<L> RequestNoLocation<L> {
             download_fn: self.download_fn,
             location: location
                 .try_into()
-                .map_err(|err| CondowError::new_other("invalid location").with_source(err))?,
+                .map_err(|err| CondowError::new_other(format!("invalid location - {err}")).with_source(err))?,
             params: self.params,
         })
     }
