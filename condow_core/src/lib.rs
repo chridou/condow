@@ -231,19 +231,19 @@ pub trait DownloadsUntyped {
 /// It is recommended to use one of the traits [Downloads] or
 /// [DownloadsUntyped] instead of [Condow] itself since this
 /// struct might get more type parameters in the future.
-/// 
+///
 /// ## Wording
 ///
 /// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make up a part.
-pub struct Condow<C> {
+pub struct Condow<C, PF = ()> {
     client: ClientRetryWrapper<C>,
     config: Config,
-    probe_factory: Option<Arc<dyn ProbeFactory>>,
+    probe_factory: Option<Arc<PF>>,
 }
 
-impl<C: CondowClient> Clone for Condow<C> {
+impl<C: CondowClient, PF: ProbeFactory> Clone for Condow<C, PF> {
     fn clone(&self) -> Self {
         Self {
             client: self.client.clone(),
@@ -253,28 +253,46 @@ impl<C: CondowClient> Clone for Condow<C> {
     }
 }
 
-impl<C: CondowClient> Condow<C>
+impl<C> Condow<C>
 where
     C: CondowClient,
 {
     /// Create a new CONcurrent DOWnloader.
     ///
     /// Fails if the [Config] is not valid.
-    pub fn new(client: C, config: Config) -> Result<Self, AnyError> {
+    pub fn new(client: C, config: Config) -> Result<Condow<C, ()>, AnyError> {
         let config = config.validated()?;
-        Ok(Self {
+        Ok(Condow {
             client: ClientRetryWrapper::new(client, config.retries.clone()),
             config,
             probe_factory: None,
         })
+    }
+}
+
+impl<C, PF> Condow<C, PF>
+where
+    C: CondowClient,
+    PF: ProbeFactory,
+{
+    /// Set a factory for [Probe]s which will add a [Probe] to each request
+    ///
+    /// The [ProbeFactory] is intended to share state with the [Probe] to
+    /// add instrumentation
+    pub fn probe_factory<PPF: ProbeFactory>(self, factory: PPF) -> Condow<C, PPF> {
+        self.probe_factory_shared(Arc::new(factory))
     }
 
     /// Set a factory for [Probe]s which will add a [Probe] to each request
     ///
     /// The [ProbeFactory] is intended to share state with the [Probe] to
     /// add instrumentation
-    pub fn set_probe_factory(&mut self, factory: Arc<dyn ProbeFactory>) {
-        self.probe_factory = Some(factory);
+    pub fn probe_factory_shared<PPF: ProbeFactory>(self, factory: Arc<PPF>) -> Condow<C, PPF> {
+        Condow {
+            client: self.client,
+            config: self.config,
+            probe_factory: Some(factory),
+        }
     }
 
     /// Download a BLOB via the returned request object
@@ -286,13 +304,20 @@ where
                 condow.probe_factory.as_ref().map(|f| f.make(&location)),
             ) {
                 (None, None) => ProbeInternal::Off,
-                (Some(req), None) => ProbeInternal::One(req),
-                (None, Some(fac)) => ProbeInternal::One(fac),
-                (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
+                (Some(req), None) => ProbeInternal::OneDyn(req),
+                (None, Some(fac)) => ProbeInternal::OneStatic(fac),
+                (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(condow, location, params.range, params.get_size_mode, probe)
-                .boxed()
+            machinery::download_range(
+                condow.client,
+                condow.config,
+                location,
+                params.range,
+                params.get_size_mode,
+                probe,
+            )
+            .boxed()
         };
 
         RequestNoLocation::new(download_fn)
@@ -326,9 +351,10 @@ where
     }
 }
 
-impl<C> Downloads for Condow<C>
+impl<C, PF> Downloads for Condow<C, PF>
 where
     C: CondowClient,
+    PF: ProbeFactory,
 {
     type Location = C::Location;
 
@@ -348,11 +374,12 @@ where
     }
 }
 
-impl<C> DownloadsUntyped for Condow<C>
+impl<C, PF> DownloadsUntyped for Condow<C, PF>
 where
     C: CondowClient,
     C::Location: FromStr,
     <C::Location as FromStr>::Err: std::error::Error + Sync + Send + 'static,
+    PF: ProbeFactory,
 {
     fn blob(&self) -> RequestNoLocation<&str> {
         let condow = self.clone();
@@ -374,13 +401,20 @@ where
                 condow.probe_factory.as_ref().map(|f| f.make(&location)),
             ) {
                 (None, None) => ProbeInternal::Off,
-                (Some(req), None) => ProbeInternal::One(req),
-                (None, Some(fac)) => ProbeInternal::One(fac),
-                (Some(req), Some(fac)) => ProbeInternal::Two(req, fac),
+                (Some(req), None) => ProbeInternal::OneDyn(req),
+                (None, Some(fac)) => ProbeInternal::OneStatic(fac),
+                (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(condow, location, params.range, params.get_size_mode, probe)
-                .boxed()
+            machinery::download_range(
+                condow.client,
+                condow.config,
+                location,
+                params.range,
+                params.get_size_mode,
+                probe,
+            )
+            .boxed()
         };
 
         RequestNoLocation::new(download_fn)

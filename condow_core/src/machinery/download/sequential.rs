@@ -39,11 +39,11 @@ pub(crate) struct SequentialDownloader {
 }
 
 impl SequentialDownloader {
-    pub fn new<C: CondowClient>(
+    pub fn new<C: CondowClient, P: Probe + Clone>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         buffer_size: usize,
-        mut context: DownloaderContext,
+        mut context: DownloaderContext<P>,
     ) -> Self {
         let (request_sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
 
@@ -126,23 +126,23 @@ impl SequentialDownloader {
 ///
 /// Will abort the download vial the [KillSwitch] if the download of
 /// a part was not marked as completed.
-pub(crate) struct DownloaderContext {
+pub(crate) struct DownloaderContext<P: Probe + Clone> {
     started_at: Instant,
     counter: Arc<AtomicUsize>,
     kill_switch: KillSwitch,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
     results_sender: UnboundedSender<ChunkStreamItem>,
     completed: bool,
     /// This must exist for the whole download
     download_span_guard: DownloadSpanGuard,
 }
 
-impl DownloaderContext {
+impl<P: Probe + Clone> DownloaderContext<P> {
     pub fn new(
         results_sender: UnboundedSender<ChunkStreamItem>,
         counter: Arc<AtomicUsize>,
         kill_switch: KillSwitch,
-        probe: ProbeInternal,
+        probe: ProbeInternal<P>,
         started_at: Instant,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
@@ -190,7 +190,7 @@ impl DownloaderContext {
     }
 }
 
-impl Drop for DownloaderContext {
+impl<P: Probe + Clone> Drop for DownloaderContext<P> {
     fn drop(&mut self) {
         if !self.completed {
             self.kill_switch.push_the_button();
@@ -228,9 +228,9 @@ impl Drop for DownloaderContext {
 /// sending an error only.
 ///
 /// [Bytes]: bytes::bytes
-async fn consume_and_dispatch_bytes(
+async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     mut bytes_stream: BytesStream,
-    context: &mut DownloaderContext,
+    context: &mut DownloaderContext<P>,
     range_request: RangeRequest,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
