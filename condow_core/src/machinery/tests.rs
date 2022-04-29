@@ -23,7 +23,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -57,7 +58,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -92,7 +94,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -127,7 +130,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -165,7 +169,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -201,7 +206,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,
@@ -239,7 +245,8 @@ mod download {
             .unwrap();
 
         let result = download_range(
-            condow,
+            condow.client,
+            condow.config,
             IgnoreLocation,
             0..100,
             crate::GetSizeMode::Required,

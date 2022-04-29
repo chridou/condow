@@ -183,7 +183,7 @@ mod in_memory {
     where
         L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
     {
-        pub fn condow(&self, config: Config) -> Result<Condow<Self>, AnyError> {
+        pub fn condow(&self, config: Config) -> Result<Condow<Self, ()>, AnyError> {
             Condow::new(self.clone(), config)
         }
     }

@@ -13,8 +13,8 @@ use futures::{
 };
 
 use crate::{
-    condow_client::CondowClient, config::Mebi, errors::CondowError, streams::OrderedChunkStream,
-    Condow, DownloadRange,
+    condow_client::CondowClient, config::Mebi, errors::CondowError, probe::ProbeFactory,
+    streams::OrderedChunkStream, Condow, DownloadRange,
 };
 
 use super::BytesAsyncReader;
@@ -88,20 +88,21 @@ pub trait ReaderAdapter: Send + Sync + 'static {
 }
 
 /// A [ReaderAdapter] for [Condow] tied to a specific location
-pub(crate) struct CondowAdapter<C: CondowClient> {
-    condow: Condow<C>,
+pub(crate) struct CondowAdapter<C: CondowClient, PF: ProbeFactory> {
+    condow: Condow<C, PF>,
     location: C::Location,
 }
 
-impl<C: CondowClient> CondowAdapter<C> {
-    pub fn new(condow: Condow<C>, location: C::Location) -> Self {
+impl<C: CondowClient, PF: ProbeFactory> CondowAdapter<C, PF> {
+    pub fn new(condow: Condow<C, PF>, location: C::Location) -> Self {
         Self { condow, location }
     }
 }
 
-impl<C> ReaderAdapter for CondowAdapter<C>
+impl<C, PF> ReaderAdapter for CondowAdapter<C, PF>
 where
     C: CondowClient,
+    PF: ProbeFactory,
 {
     fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
         self.condow.get_size(self.location.clone()).boxed()

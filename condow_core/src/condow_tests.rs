@@ -116,7 +116,8 @@ mod range {
                             let range = from_idx..;
 
                             let result_stream = machinery::download_range(
-                                condow.clone(),
+                                condow.client.clone(),
+                                condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Always,
@@ -215,7 +216,8 @@ mod range {
                             let expected_range_end = (end_incl as usize + 1).min(data.len());
 
                             let result_stream = machinery::download_range(
-                                condow.clone(),
+                                condow.client.clone(),
+                                condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
@@ -261,7 +263,8 @@ mod range {
                             let expected_range_end = (end_excl as usize).min(data.len());
 
                             let result_stream = machinery::download_range(
-                                condow.clone(),
+                                condow.client.clone(),
+                                condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
                                 crate::GetSizeMode::Default,
@@ -316,7 +319,8 @@ mod range {
                                         (end_incl as usize + 1).min(data.len());
 
                                     let result_stream = machinery::download_range(
-                                        condow.clone(),
+                                        condow.client.clone(),
+                                        condow.config.clone(),
                                         IgnoreLocation,
                                         range,
                                         crate::GetSizeMode::Default,
@@ -362,7 +366,8 @@ mod range {
                                     let expected_range_end = (end_excl as usize).min(data.len());
 
                                     let result_stream = machinery::download_range(
-                                        condow.clone(),
+                                        condow.client.clone(),
+                                        condow.config.clone(),
                                         IgnoreLocation,
                                         range,
                                         crate::GetSizeMode::Default,
@@ -419,7 +424,8 @@ mod range {
                                             (end_incl as usize + 1).min(data.len());
 
                                         let result_stream = machinery::download_range(
-                                            condow.clone(),
+                                            condow.client.clone(),
+                                            condow.config.clone(),
                                             IgnoreLocation,
                                             range,
                                             crate::GetSizeMode::Default,
@@ -472,7 +478,8 @@ mod range {
                                             (end_excl as usize).min(data.len());
 
                                         let result_stream = machinery::download_range(
-                                            condow.clone(),
+                                            condow.client.clone(),
+                                            condow.config.clone(),
                                             IgnoreLocation,
                                             range,
                                             crate::GetSizeMode::Default,

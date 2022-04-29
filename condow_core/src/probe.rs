@@ -67,6 +67,7 @@
 //! # async fn main() {
 //!
 //!
+//! #[derive(Clone)]
 //! struct MyProbe {
 //!     bytes_received: Arc<AtomicUsize>,
 //! }
@@ -87,11 +88,11 @@
 //! }
 //!
 //! impl ProbeFactory for MyProbeFactory {
-//!     fn make(&self, _location: &dyn fmt::Display) -> Arc<dyn Probe> {
-//!         let probe = MyProbe {
+//!     type Probe = MyProbe;
+//!     fn make(&self, _location: &dyn fmt::Display) -> MyProbe {
+//!         MyProbe {
 //!             bytes_received: Arc::clone(&self.bytes_received),
-//!         };
-//!         Arc::new(probe)
+//!         }
 //!     }
 //! }
 //!
@@ -100,8 +101,7 @@
 //!
 //! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
 //! let config = Config::default();
-//! let mut condow = Condow::new(client, config).unwrap();
-//! condow.set_probe_factory(Arc::new(probe_factory));
+//! let condow = Condow::new(client, config).unwrap().probe_factory(probe_factory);
 //!
 //! let blob = condow.blob().wc().await.unwrap();
 //! assert_eq!(bytes_received.load(Ordering::SeqCst), 13);
@@ -110,7 +110,7 @@
 //! assert_eq!(bytes_received.load(Ordering::SeqCst), 17);
 //! # }
 //! ```
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, time::Duration};
 
 use crate::{
     errors::{CondowError, IoError},
@@ -120,10 +120,11 @@ use crate::{
 pub use simple_reporter::*;
 
 pub trait ProbeFactory: Send + Sync + 'static {
+    type Probe: Probe + Clone + Send + Sync + 'static;
     /// Create a new [Probe].
     ///
     /// It might share state with the factory or not
-    fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe>;
+    fn make(&self, location: &dyn fmt::Display) -> Self::Probe;
 }
 
 /// A Probe is an interface to track occurences of different kinds
@@ -186,6 +187,16 @@ pub trait Probe: Send + Sync + 'static {
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 
+impl Probe for () {}
+
+impl ProbeFactory for () {
+    type Probe = ();
+
+    fn make(&self, _location: &dyn fmt::Display) -> Self::Probe {
+        ()
+    }
+}
+
 mod simple_reporter {
     //! Simple reporting with (mostly) counters
 
@@ -203,39 +214,7 @@ mod simple_reporter {
         InclusiveRange,
     };
 
-    use super::{Probe, ProbeFactory};
-
-    /// Creates [SimpleReporter]s
-    pub struct SimpleReporterFactory {
-        skip_first_chunk_timings: bool,
-    }
-
-    impl SimpleReporterFactory {
-        /// Create a new factory
-        ///
-        /// If `skip_first_chunk_timings` is set to `true`
-        /// the first chunk of a part is not considered for
-        /// muasuring timing. This should be enabled
-        /// on HTTP downloads since there is a high chance that
-        /// the first chunk was received with the headers.
-        pub fn new(skip_first_chunk_timings: bool) -> Self {
-            Self {
-                skip_first_chunk_timings,
-            }
-        }
-    }
-
-    impl ProbeFactory for SimpleReporterFactory {
-        fn make(&self, location: &dyn fmt::Display) -> Arc<dyn Probe> {
-            Arc::new(SimpleReporter::new(location, self.skip_first_chunk_timings))
-        }
-    }
-
-    impl Default for SimpleReporterFactory {
-        fn default() -> Self {
-            Self::new(false)
-        }
-    }
+    use super::Probe;
 
     /// A `SimpleReporter` collects metrics and creates a [SimpleReport]
     #[derive(Clone)]

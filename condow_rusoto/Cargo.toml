@@ -1,6 +1,6 @@
 [package]
 name = "condow_rusoto"
-version = "0.15.1"
+version = "0.16.0"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
@@ -12,7 +12,7 @@ keywords = [ "AWS", "S3", "download", "parallel", "rusoto"]
 edition = "2021"
 
 [dependencies]
-condow_core = { version = "0.14", path = "../condow_core"}
+condow_core = { version = "0.15", path = "../condow_core"}
 
 futures = "0.3"
 anyhow = "1.0"

@@ -349,10 +349,10 @@ where
         }
     }
 
-    pub async fn get_size(
+    pub async fn get_size<P: Probe + Clone>(
         &self,
         location: C::Location,
-        probe: &ProbeInternal,
+        probe: &ProbeInternal<P>,
     ) -> Result<u64, CondowError> {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_get_size");
@@ -371,11 +371,11 @@ where
         f.await
     }
 
-    pub async fn download(
+    pub async fn download<P: Probe + Clone>(
         &self,
         location: C::Location,
         spec: DownloadSpec,
-        probe: &ProbeInternal,
+        probe: &ProbeInternal<P>,
     ) -> Result<(BytesStream, BytesHint), CondowError> {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_download_part", %spec);
@@ -406,11 +406,11 @@ where
 }
 
 /// Retries on the `get_size` request according to the [RetryConfig]
-async fn retry_get_size<C>(
+async fn retry_get_size<C, P: Probe + Clone>(
     client: &C,
     location: C::Location,
     config: &RetryConfig,
-    probe: &ProbeInternal,
+    probe: &ProbeInternal<P>,
 ) -> Result<u64, CondowError>
 where
     C: CondowClient,
@@ -444,12 +444,12 @@ where
 ///
 /// If a stream breaks with an [IoError] retries to get
 /// a new stream starting where the broken one ended will be made.
-async fn retry_download<C>(
+async fn retry_download<C, P: Probe + Clone>(
     client: &C,
     location: C::Location,
     spec: DownloadSpec,
     config: &RetryConfig,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
 ) -> Result<(BytesStream, BytesHint), CondowError>
 where
     C: CondowClient,
@@ -507,13 +507,13 @@ where
 ///
 /// `completed_without_panic` must be set to true before exiting
 /// [loop_retry_complete_stream] otherwise a panic is assumed.
-struct RetryLoopPanicGuard {
+struct RetryLoopPanicGuard<P: Probe + Clone> {
     completed_without_panic: bool,
     next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
 }
 
-impl Drop for RetryLoopPanicGuard {
+impl<P: Probe + Clone> Drop for RetryLoopPanicGuard<P> {
     fn drop(&mut self) {
         if !self.completed_without_panic {
             self.probe.panic_detected("panicked while retrying");
@@ -528,14 +528,14 @@ impl Drop for RetryLoopPanicGuard {
 ///
 /// If a stream breaks it tries to complete the `original_range` by
 /// requesting new stream for the remainder of `original_range`
-async fn loop_retry_complete_stream<C>(
+async fn loop_retry_complete_stream<C, P: Probe + Clone>(
     mut stream: BytesStream,
     location: C::Location,
     original_range: InclusiveRange,
     client: C,
     next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
     config: RetryConfig,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
 ) where
     C: CondowClient,
 {
@@ -638,12 +638,12 @@ async fn try_consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
 }
 
 /// Retries to get a new stream for the given download spec.
-async fn retry_download_get_stream<C>(
+async fn retry_download_get_stream<C, P: Probe + Clone>(
     client: &C,
     location: C::Location,
     spec: DownloadSpec,
     config: &RetryConfig,
-    probe: &ProbeInternal,
+    probe: &ProbeInternal<P>,
 ) -> Result<(BytesStream, BytesHint), CondowError>
 where
     C: CondowClient,

@@ -10,19 +10,20 @@ use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::{CondowError, IoError};
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Probe;
-use crate::{Condow, DownloadRange, GetSizeMode, InclusiveRange};
+use crate::{DownloadRange, GetSizeMode, InclusiveRange};
 
 use self::range_stream::RangeStream;
 
 mod download;
 mod range_stream;
 
-pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
-    condow: Condow<C>,
+pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
+    client: ClientRetryWrapper<C>,
+    config: Config,
     location: C::Location,
     range: DR,
     get_size_mode: GetSizeMode,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
 ) -> Result<ChunkStream, CondowError> {
     let range = range.into();
 
@@ -49,7 +50,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
     let (inclusive_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
             debug!(parent: &get_stream_span, "open range");
-            let size = condow.client.get_size(location.clone(), &probe).await?;
+            let size = client.get_size(location.clone(), &probe).await?;
             if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
@@ -58,9 +59,9 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
         }
         DownloadRange::Closed(cl) => {
             debug!(parent: &get_stream_span, "closed range");
-            if get_size_mode.is_load_size_enforced(condow.config.always_get_size) {
+            if get_size_mode.is_load_size_enforced(config.always_get_size) {
                 debug!(parent: &get_stream_span, "get size enforced");
-                let size = condow.client.get_size(location.clone(), &probe).await?;
+                let size = client.get_size(location.clone(), &probe).await?;
                 if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
@@ -75,11 +76,11 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
     };
 
     let stream = download_chunks(
-        condow.client.clone(),
+        client.clone(),
         location,
         inclusive_range,
         bytes_hint,
-        condow.config.clone(),
+        config.clone(),
         probe.clone(),
         download_guard,
     )
@@ -92,13 +93,13 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>>(
     Ok(stream)
 }
 
-async fn download_chunks<C: CondowClient>(
+async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     location: C::Location,
     range: InclusiveRange,
     bytes_hint: BytesHint,
     config: Config,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<ChunkStream, CondowError> {
     probe.effective_range(range);
@@ -156,32 +157,28 @@ impl DownloadSpanGuard {
 /// This is just a wrapper for not having to do
 /// all the "matches" all over the place...
 #[derive(Clone)]
-pub(crate) enum ProbeInternal {
+pub(crate) enum ProbeInternal<P: Probe + Clone> {
     /// Nothing measured
     Off,
-    /// One Probe.
-    ///
-    /// Can be either one exclusively for the request
-    /// or one provided by the shared factory
-    One(Arc<dyn Probe>),
-    /// Per request measurement enabled and also
-    /// per probe factory
-    Two(Arc<dyn Probe>, Arc<dyn Probe>),
+    OneStatic(P),
+    OneDyn(Arc<dyn Probe>),
+    Two(P, Arc<dyn Probe>),
 }
 
 #[cfg(test)]
-impl ProbeInternal {
-    pub fn new<T: Probe>(probe: T) -> Self {
-        Self::One(Arc::new(probe))
+impl<P: Probe + Clone> ProbeInternal<P> {
+    pub fn new(probe: P) -> Self {
+        Self::OneStatic(probe)
     }
 }
 
-impl Probe for ProbeInternal {
+impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     #[inline]
     fn effective_range(&self, range: InclusiveRange) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.effective_range(range),
+            ProbeInternal::OneDyn(p) => p.effective_range(range),
+            ProbeInternal::OneStatic(p) => p.effective_range(range),
             ProbeInternal::Two(p1, p2) => {
                 p1.effective_range(range);
                 p2.effective_range(range);
@@ -193,7 +190,8 @@ impl Probe for ProbeInternal {
     fn download_started(&self) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.download_started(),
+            ProbeInternal::OneDyn(p) => p.download_started(),
+            ProbeInternal::OneStatic(p) => p.download_started(),
             ProbeInternal::Two(p1, p2) => {
                 p1.download_started();
                 p2.download_started();
@@ -205,7 +203,8 @@ impl Probe for ProbeInternal {
     fn download_completed(&self, time: Duration) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.download_completed(time),
+            ProbeInternal::OneDyn(p) => p.download_completed(time),
+            ProbeInternal::OneStatic(p) => p.download_completed(time),
             ProbeInternal::Two(p1, p2) => {
                 p1.download_completed(time);
                 p2.download_completed(time);
@@ -217,7 +216,8 @@ impl Probe for ProbeInternal {
     fn download_failed(&self, time: Option<Duration>) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.download_failed(time),
+            ProbeInternal::OneDyn(p) => p.download_failed(time),
+            ProbeInternal::OneStatic(p) => p.download_failed(time),
             ProbeInternal::Two(p1, p2) => {
                 p1.download_failed(time);
                 p2.download_failed(time);
@@ -229,7 +229,8 @@ impl Probe for ProbeInternal {
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.retry_attempt(location, error, next_in),
+            ProbeInternal::OneDyn(p) => p.retry_attempt(location, error, next_in),
+            ProbeInternal::OneStatic(p) => p.retry_attempt(location, error, next_in),
             ProbeInternal::Two(p1, p2) => {
                 p1.retry_attempt(location, error, next_in);
                 p2.retry_attempt(location, error, next_in);
@@ -247,7 +248,10 @@ impl Probe for ProbeInternal {
     ) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => {
+            ProbeInternal::OneDyn(p) => {
+                p.stream_resume_attempt(location, error, orig_range, remaining_range)
+            }
+            ProbeInternal::OneStatic(p) => {
                 p.stream_resume_attempt(location, error, orig_range, remaining_range)
             }
             ProbeInternal::Two(p1, p2) => {
@@ -261,7 +265,8 @@ impl Probe for ProbeInternal {
     fn panic_detected(&self, msg: &str) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.panic_detected(msg),
+            ProbeInternal::OneDyn(p) => p.panic_detected(msg),
+            ProbeInternal::OneStatic(p) => p.panic_detected(msg),
             ProbeInternal::Two(p1, p2) => {
                 p1.panic_detected(msg);
                 p2.panic_detected(msg);
@@ -273,7 +278,8 @@ impl Probe for ProbeInternal {
     fn queue_full(&self) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.queue_full(),
+            ProbeInternal::OneDyn(p) => p.queue_full(),
+            ProbeInternal::OneStatic(p) => p.queue_full(),
             ProbeInternal::Two(p1, p2) => {
                 p1.queue_full();
                 p2.queue_full();
@@ -291,7 +297,10 @@ impl Probe for ProbeInternal {
     ) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.chunk_completed(part_index, chunk_index, n_bytes, time),
+            ProbeInternal::OneDyn(p) => p.chunk_completed(part_index, chunk_index, n_bytes, time),
+            ProbeInternal::OneStatic(p) => {
+                p.chunk_completed(part_index, chunk_index, n_bytes, time)
+            }
             ProbeInternal::Two(p1, p2) => {
                 p1.chunk_completed(part_index, chunk_index, n_bytes, time);
                 p2.chunk_completed(part_index, chunk_index, n_bytes, time);
@@ -303,7 +312,8 @@ impl Probe for ProbeInternal {
     fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.part_started(part_index, range),
+            ProbeInternal::OneDyn(p) => p.part_started(part_index, range),
+            ProbeInternal::OneStatic(p) => p.part_started(part_index, range),
             ProbeInternal::Two(p1, p2) => {
                 p1.part_started(part_index, range);
                 p2.part_started(part_index, range);
@@ -321,7 +331,8 @@ impl Probe for ProbeInternal {
     ) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.part_completed(part_index, n_chunks, n_bytes, time),
+            ProbeInternal::OneDyn(p) => p.part_completed(part_index, n_chunks, n_bytes, time),
+            ProbeInternal::OneStatic(p) => p.part_completed(part_index, n_chunks, n_bytes, time),
             ProbeInternal::Two(p1, p2) => {
                 p1.part_completed(part_index, n_chunks, n_bytes, time);
                 p2.part_completed(part_index, n_chunks, n_bytes, time);
@@ -333,7 +344,8 @@ impl Probe for ProbeInternal {
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
         match self {
             ProbeInternal::Off => {}
-            ProbeInternal::One(p) => p.part_failed(error, part_index, range),
+            ProbeInternal::OneDyn(p) => p.part_failed(error, part_index, range),
+            ProbeInternal::OneStatic(p) => p.part_failed(error, part_index, range),
             ProbeInternal::Two(p1, p2) => {
                 p1.part_failed(error, part_index, range);
                 p2.part_failed(error, part_index, range);
@@ -342,19 +354,32 @@ impl Probe for ProbeInternal {
     }
 }
 
-impl From<Option<Arc<dyn Probe>>> for ProbeInternal {
+impl From<Option<Arc<dyn Probe>>> for ProbeInternal<()> {
     fn from(probe: Option<Arc<dyn Probe>>) -> Self {
         match probe {
-            Some(probe) => Self::One(probe),
+            Some(probe) => Self::OneDyn(probe),
             None => Self::Off,
         }
     }
 }
 
-impl Default for ProbeInternal {
+impl<P: Probe + Clone> From<Option<P>> for ProbeInternal<P>
+where
+    P: Probe + Clone,
+{
+    fn from(probe: Option<P>) -> Self {
+        match probe {
+            Some(probe) => Self::OneStatic(probe),
+            None => Self::Off,
+        }
+    }
+}
+
+impl Default for ProbeInternal<()> {
     fn default() -> Self {
         Self::Off
     }
 }
+
 #[cfg(test)]
 mod tests;

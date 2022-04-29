@@ -10,6 +10,7 @@ use futures::{channel::mpsc::UnboundedSender, Stream};
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
+    probe::Probe,
     streams::ChunkStreamItem,
 };
 
@@ -21,14 +22,14 @@ mod concurrent;
 mod sequential;
 
 /// Download the parst of a BLOB concurrently
-pub(crate) async fn download_concurrently<C: CondowClient>(
+pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     ranges_stream: impl Stream<Item = RangeRequest>,
     n_concurrent: usize,
     results_sender: UnboundedSender<ChunkStreamItem>,
     client: ClientRetryWrapper<C>,
     config: Config,
     location: C::Location,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<(), ()> {
     let mut downloader = ConcurrentDownloader::new(

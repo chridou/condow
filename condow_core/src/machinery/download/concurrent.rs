@@ -20,22 +20,22 @@ use super::{
     KillSwitch,
 };
 
-pub(crate) struct ConcurrentDownloader {
+pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
     downloaders: Vec<SequentialDownloader>,
     counter: usize,
     kill_switch: KillSwitch,
     config: Config,
-    probe: ProbeInternal,
+    probe: ProbeInternal<P>,
 }
 
-impl ConcurrentDownloader {
+impl<P: Probe + Clone> ConcurrentDownloader<P> {
     pub fn new<C: CondowClient>(
         n_concurrent: usize,
         results_sender: UnboundedSender<ChunkStreamItem>,
         client: ClientRetryWrapper<C>,
         config: Config,
         location: C::Location,
-        probe: ProbeInternal,
+        probe: ProbeInternal<P>,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
         let started_at = Instant::now();
