@@ -193,8 +193,16 @@ async fn collect_n_dispatch_loop<StIn>(
 ) where
     StIn: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
 {
+    // Max number of Vecs to keep for reusage in `buffer_reservoir`
+    const MAX_RESERVOIR_SIZE: usize = 128;
+
+    // This is always the index of the part which is to be published.
+    // All previous parts have already been published since this value
+    // is only incremented if a chunk was published which
+    // was the last chunk of a part.
     let mut current_part_idx = 0;
     let mut collected_chunks: HashMap<u64, Vec<Chunk>> = HashMap::new();
+    // Vecs to be reused.
     let mut buffer_reservoir = Vec::new();
 
     while let Some(next) = chunk_stream.next().await {
@@ -236,7 +244,10 @@ async fn collect_n_dispatch_loop<StIn>(
                 }
             }
 
-            buffer_reservoir.push(chunks_to_flush);
+            if buffer_reservoir.len() < MAX_RESERVOIR_SIZE {
+                // Vec is already empty since it was completely drained.
+                buffer_reservoir.push(chunks_to_flush);
+            }
         }
     }
 }
