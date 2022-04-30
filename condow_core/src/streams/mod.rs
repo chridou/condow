@@ -25,7 +25,7 @@ pub type ChunkStreamItem = Result<Chunk, CondowError>;
 /// to the nature of a concurrent download.
 ///
 /// If a download should be processed (bytewise) sequentially
-/// the chinks need to be ordered (see [OrderedChunkStream]).
+/// the chunks need to be ordered (see [OrderedChunkStream]).
 #[derive(Debug, Clone)]
 pub struct Chunk {
     /// Index of the part this chunk belongs to
