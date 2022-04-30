@@ -194,7 +194,7 @@ async fn collect_n_dispatch_loop<StIn>(
     StIn: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
 {
     // Max number of Vecs to keep for reusage in `buffer_reservoir`
-    const MAX_RESERVOIR_SIZE: usize = 128;
+    const MAX_RESERVOIR_SIZE: usize = 64;
 
     // This is always the index of the part which is to be published.
     // All previous parts have already been published since this value
