@@ -116,6 +116,7 @@ where
             .blob()
             .range(range)
             .at(self.location.clone())
+            .reconfigure(|cfg| cfg.always_get_size(false)) // The reader has the size already
             .download()
             .boxed()
     }
