@@ -10,8 +10,8 @@ use futures::{
 };
 
 use crate::{
-    condow_client::IgnoreLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
-    ChunkStream, DownloadRange, GetSizeMode, OrderedChunkStream,
+    condow_client::IgnoreLocation, config::Config, errors::CondowError, probe::Probe,
+    reader::BytesAsyncReader, ChunkStream, DownloadRange, OrderedChunkStream,
 };
 
 /// A function which downloads from the given location and the given [Params].
@@ -34,7 +34,7 @@ pub struct RequestNoLocation<L> {
 }
 
 impl<L> RequestNoLocation<L> {
-    pub(crate) fn new<F>(download_fn: F) -> Self
+    pub(crate) fn new<F>(download_fn: F, config: Config) -> Self
     where
         F: FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>>
             + Send
@@ -45,7 +45,7 @@ impl<L> RequestNoLocation<L> {
             params: Params {
                 probe: None,
                 range: (..).into(),
-                get_size_mode: GetSizeMode::Default,
+                config,
             },
         }
     }
@@ -105,9 +105,12 @@ impl<L> RequestNoLocation<L> {
         self
     }
 
-    /// Explicitly set the condition on when to query for the Blob size
-    pub fn get_size_mode(mut self, get_size_mode: GetSizeMode) -> Self {
-        self.params.get_size_mode = get_size_mode;
+    /// Override the configuration for this request
+    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    where
+        F: FnOnce(Config) -> Config,
+    {
+        self.params.config = reconfigure(self.params.config);
         self
     }
 }
@@ -193,9 +196,12 @@ impl<L> Request<L> {
         self
     }
 
-    /// Explicitly set the condition on when to query for the Blob size
-    pub fn get_size_mode(mut self, get_size_mode: GetSizeMode) -> Self {
-        self.params.get_size_mode = get_size_mode;
+    /// Override the configuration for this request
+    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    where
+        F: FnOnce(Config) -> Config,
+    {
+        self.params.config = reconfigure(self.params.config);
         self
     }
 
@@ -244,5 +250,5 @@ impl<L> Request<L> {
 pub(crate) struct Params {
     pub probe: Option<Arc<dyn Probe>>,
     pub range: DownloadRange,
-    pub get_size_mode: GetSizeMode,
+    pub config: Config,
 }

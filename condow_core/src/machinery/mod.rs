@@ -10,7 +10,7 @@ use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::{CondowError, IoError};
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Probe;
-use crate::{DownloadRange, GetSizeMode, InclusiveRange};
+use crate::{DownloadRange, InclusiveRange};
 
 use self::range_stream::RangeStream;
 
@@ -22,7 +22,6 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
     config: Config,
     location: C::Location,
     range: DR,
-    get_size_mode: GetSizeMode,
     probe: ProbeInternal<P>,
 ) -> Result<ChunkStream, CondowError> {
     let range = range.into();
@@ -59,7 +58,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         }
         DownloadRange::Closed(cl) => {
             debug!(parent: &get_stream_span, "closed range");
-            if get_size_mode.is_load_size_enforced(config.always_get_size) {
+            if config.always_get_size.into_inner() {
                 debug!(parent: &get_stream_span, "get size enforced");
                 let size = client.get_size(location.clone(), &probe).await?;
                 if let Some(range) = cl.incl_range_from_size(size) {

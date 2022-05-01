@@ -13,6 +13,7 @@ use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    config::Config,
     errors::CondowError,
     reader::{RandomAccessReader, ReaderAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
@@ -418,7 +419,7 @@ impl Downloads for TestDownloader {
             futures::future::ready(result).boxed()
         };
 
-        RequestNoLocation::new(download_fn)
+        RequestNoLocation::new(download_fn, Config::default())
     }
 
     fn get_size<'a>(
@@ -434,6 +435,21 @@ impl Downloads for TestDownloader {
         Self: Sized,
     {
         RandomAccessReader::new_with_length(self.clone(), length)
+    }
+
+    fn reader<'a>(
+        &'a self,
+        location: Self::Location,
+    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
+    where
+        Self: Sized + Sync,
+    {
+        let me = self;
+        async move {
+            let length = Downloads::get_size(me, location.clone()).await?;
+            Ok(me.reader_with_length(location, length))
+        }
+        .boxed()
     }
 }
 

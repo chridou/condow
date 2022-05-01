@@ -109,6 +109,7 @@ mod range {
                             .buffer_size(buffer_size)
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
+                            .always_get_size(true) // case to test
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
@@ -120,7 +121,6 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                crate::GetSizeMode::Always,
                                 Default::default(),
                             )
                             .await
@@ -156,19 +156,15 @@ mod range {
                             .buffer_size(buffer_size)
                             .buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
+                            .always_get_size(false) // case to test
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
                         for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = condow
-                                .blob()
-                                .get_size_mode(crate::GetSizeMode::Required)
-                                .range(range)
-                                .download_chunks()
-                                .await
-                                .unwrap();
+                            let result_stream =
+                                condow.blob().range(range).download_chunks().await.unwrap();
 
                             let result = result_stream.into_vec().await.unwrap();
 
@@ -220,7 +216,6 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                crate::GetSizeMode::Default,
                                 Default::default(),
                             )
                             .await
@@ -267,7 +262,6 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                crate::GetSizeMode::Default,
                                 Default::default(),
                             )
                             .await
@@ -323,7 +317,6 @@ mod range {
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
-                                        crate::GetSizeMode::Default,
                                         Default::default(),
                                     )
                                     .await
@@ -370,7 +363,6 @@ mod range {
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
-                                        crate::GetSizeMode::Default,
                                         Default::default(),
                                     )
                                     .await
@@ -428,7 +420,6 @@ mod range {
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
-                                            crate::GetSizeMode::Default,
                                             Default::default(),
                                         )
                                         .await
@@ -482,7 +473,6 @@ mod range {
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
-                                            crate::GetSizeMode::Default,
                                             Default::default(),
                                         )
                                         .await

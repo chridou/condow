@@ -145,12 +145,12 @@ mod in_memory {
     }
 
     impl<L> InMemoryClient<L> {
-        /// Blob from owned bytes
+        /// BLOB from owned bytes
         pub fn new(blob: Vec<u8>) -> Self {
             Self::new_shared(Arc::new(blob))
         }
 
-        /// Blob from shared bytes
+        /// BLOB from shared bytes
         pub fn new_shared(blob: Arc<Vec<u8>>) -> Self {
             Self {
                 blob: Blob::Owned(blob),
@@ -159,12 +159,12 @@ mod in_memory {
             }
         }
 
-        /// Blob copied from slice
+        /// BLOB copied from slice
         pub fn new_from_slice(blob: &[u8]) -> Self {
             Self::new(blob.to_vec())
         }
 
-        /// Blob with static byte slice
+        /// BLOB with static byte slice
         pub fn new_static(blob: &'static [u8]) -> Self {
             Self {
                 blob: Blob::Static(blob),
