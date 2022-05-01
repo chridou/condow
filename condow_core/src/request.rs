@@ -105,7 +105,7 @@ impl<L> RequestNoLocation<L> {
         self
     }
 
-    /// Override the configuration
+    /// Override the configuration for this request
     pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
     where
         F: FnOnce(Config) -> Config,
@@ -196,7 +196,7 @@ impl<L> Request<L> {
         self
     }
 
-    /// Override the configuration
+    /// Override the configuration for this request
     pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
     where
         F: FnOnce(Config) -> Config,
