@@ -13,10 +13,11 @@ use tokio::time;
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    config::Config,
     errors::CondowError,
     reader::{RandomAccessReader, ReaderAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
-    DownloadRange, Downloads, Params, RequestNoLocation, config::Config,
+    DownloadRange, Downloads, Params, RequestNoLocation,
 };
 
 #[derive(Clone)]

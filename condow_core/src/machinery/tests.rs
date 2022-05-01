@@ -243,7 +243,7 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-           Default::default(),
+            Default::default(),
         )
         .await;
 

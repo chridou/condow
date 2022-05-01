@@ -314,14 +314,8 @@ where
                 (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(
-                condow.client,
-                condow.config,
-                location,
-                params.range,
-                probe,
-            )
-            .boxed()
+            machinery::download_range(condow.client, condow.config, location, params.range, probe)
+                .boxed()
         };
 
         RequestNoLocation::new(download_fn, self.config.clone())
@@ -410,14 +404,8 @@ where
                 (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(
-                condow.client,
-                condow.config,
-                location,
-                params.range,
-                probe,
-            )
-            .boxed()
+            machinery::download_range(condow.client, condow.config, location, params.range, probe)
+                .boxed()
         };
 
         RequestNoLocation::new(download_fn, self.config.clone())

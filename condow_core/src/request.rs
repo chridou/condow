@@ -10,8 +10,8 @@ use futures::{
 };
 
 use crate::{
-    condow_client::IgnoreLocation, errors::CondowError, probe::Probe, reader::BytesAsyncReader,
-    ChunkStream, DownloadRange, OrderedChunkStream, config::Config,
+    condow_client::IgnoreLocation, config::Config, errors::CondowError, probe::Probe,
+    reader::BytesAsyncReader, ChunkStream, DownloadRange, OrderedChunkStream,
 };
 
 /// A function which downloads from the given location and the given [Params].
@@ -106,7 +106,10 @@ impl<L> RequestNoLocation<L> {
     }
 
     /// Override the configuration
-    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self where F: FnOnce(Config) -> Config {
+    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    where
+        F: FnOnce(Config) -> Config,
+    {
         self.params.config = reconfigure(self.params.config);
         self
     }
@@ -194,7 +197,10 @@ impl<L> Request<L> {
     }
 
     /// Override the configuration
-    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self where F: FnOnce(Config) -> Config {
+    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    where
+        F: FnOnce(Config) -> Config,
+    {
         self.params.config = reconfigure(self.params.config);
         self
     }
