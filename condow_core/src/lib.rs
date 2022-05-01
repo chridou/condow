@@ -314,7 +314,7 @@ where
                 (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(condow.client, condow.config, location, params.range, probe)
+            machinery::download_range(condow.client, params.config, location, params.range, probe)
                 .boxed()
         };
 
@@ -404,7 +404,7 @@ where
                 (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
             };
 
-            machinery::download_range(condow.client, condow.config, location, params.range, probe)
+            machinery::download_range(condow.client, params.config, location, params.range, probe)
                 .boxed()
         };
 
