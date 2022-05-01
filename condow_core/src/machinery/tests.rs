@@ -27,7 +27,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -62,7 +61,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -98,7 +96,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -134,7 +131,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -173,7 +169,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -210,7 +205,6 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
             Default::default(),
         )
         .await;
@@ -249,8 +243,7 @@ mod download {
             condow.config,
             IgnoreLocation,
             0..100,
-            crate::GetSizeMode::Required,
-            Default::default(),
+           Default::default(),
         )
         .await;
 

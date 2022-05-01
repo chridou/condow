@@ -86,7 +86,7 @@ use anyhow::Error as AnyError;
 use futures::{future::BoxFuture, FutureExt};
 
 use condow_client::CondowClient;
-use config::{AlwaysGetSize, ClientRetryWrapper, Config};
+use config::{ClientRetryWrapper, Config};
 use errors::CondowError;
 use machinery::ProbeInternal;
 use probe::{Probe, ProbeFactory};
@@ -117,7 +117,7 @@ pub mod test_utils;
 /// This trait is not object safe. If you want to use dynamic dispatch you
 /// might consider the trait [DownloadsUntyped] which is object safe
 /// and accepts string slices as a location.
-pub trait Downloads {
+pub trait Downloads: Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
     /// Download a BLOB via the returned request object
@@ -185,7 +185,7 @@ pub trait Downloads {
 /// assert_eq!(blob, b"a remote BLOB");
 /// # }
 /// ```
-pub trait DownloadsUntyped {
+pub trait DownloadsUntyped: Send + Sync + 'static {
     /// Download a BLOB via the returned request object
     fn blob(&self) -> RequestNoLocation<&str>;
 
@@ -319,13 +319,12 @@ where
                 condow.config,
                 location,
                 params.range,
-                params.get_size_mode,
                 probe,
             )
             .boxed()
         };
 
-        RequestNoLocation::new(download_fn)
+        RequestNoLocation::new(download_fn, self.config.clone())
     }
 
     /// Get the size of a BLOB at the given location
@@ -416,13 +415,12 @@ where
                 condow.config,
                 location,
                 params.range,
-                params.get_size_mode,
                 probe,
             )
             .boxed()
         };
 
-        RequestNoLocation::new(download_fn)
+        RequestNoLocation::new(download_fn, self.config.clone())
     }
 
     fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
@@ -459,38 +457,6 @@ where
         };
 
         Ok(self.reader_with_length(location, length))
-    }
-}
-
-/// Overide the behaviour when [Condow] does a request to get
-/// the size of a BLOB
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum GetSizeMode {
-    /// Request a size on open ranges and also closed ranges
-    /// so that a given upper bound can be adjusted/corrected
-    Always,
-    /// Only request the size of a BLOB when required. This is when an open
-    /// range (e.g. complete BLOB or from x to end)
-    Required,
-    /// As configured with [Condow] itself.
-    ///
-    /// This is the default value.
-    Default,
-}
-
-impl GetSizeMode {
-    fn is_load_size_enforced(self, always_by_default: AlwaysGetSize) -> bool {
-        match self {
-            GetSizeMode::Always => true,
-            GetSizeMode::Required => false,
-            GetSizeMode::Default => always_by_default.into_inner(),
-        }
-    }
-}
-
-impl Default for GetSizeMode {
-    fn default() -> Self {
-        Self::Default
     }
 }
 
