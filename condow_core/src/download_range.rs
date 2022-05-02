@@ -253,6 +253,15 @@ impl ClosedRange {
         }
     }
 
+    pub fn len(&self) -> u64 {
+        match *self {
+            Self::FromTo(a, b) => b - a,
+            Self::FromToInclusive(a, b) => b - a + 1,
+            Self::To(last_excl) => last_excl,
+            Self::ToInclusive(last_incl) => last_incl + 1,
+        }
+    }
+
     pub fn sanitized(self) -> Option<Self> {
         match self {
             Self::FromTo(a, b) => {
@@ -341,6 +350,36 @@ impl fmt::Display for ClosedRange {
             ClosedRange::FromTo(from, to) => write!(f, "[{from}..{to}["),
             ClosedRange::FromToInclusive(from, to) => write!(f, "[{from}..{to}]"),
         }
+    }
+}
+
+impl From<Range<u64>> for ClosedRange {
+    fn from(r: Range<u64>) -> Self {
+        ClosedRange::FromTo(r.start, r.end)
+    }
+}
+
+impl From<RangeInclusive<u64>> for ClosedRange {
+    fn from(r: RangeInclusive<u64>) -> Self {
+        ClosedRange::FromToInclusive(*r.start(), *r.end())
+    }
+}
+
+impl From<RangeTo<u64>> for ClosedRange {
+    fn from(r: RangeTo<u64>) -> Self {
+        ClosedRange::To(r.end)
+    }
+}
+
+impl From<RangeToInclusive<u64>> for ClosedRange {
+    fn from(r: RangeToInclusive<u64>) -> Self {
+        ClosedRange::ToInclusive(r.end)
+    }
+}
+
+impl From<InclusiveRange> for ClosedRange {
+    fn from(r: InclusiveRange) -> Self {
+        ClosedRange::FromToInclusive(r.0, r.1)
     }
 }
 
@@ -481,13 +520,13 @@ impl From<RangeFull> for DownloadRange {
 
 impl From<Range<u64>> for DownloadRange {
     fn from(r: Range<u64>) -> Self {
-        Self::Closed(ClosedRange::FromTo(r.start, r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<RangeInclusive<u64>> for DownloadRange {
     fn from(r: RangeInclusive<u64>) -> Self {
-        Self::Closed(ClosedRange::FromToInclusive(*r.start(), *r.end()))
+        Self::Closed(r.into())
     }
 }
 
@@ -499,25 +538,31 @@ impl From<RangeFrom<u64>> for DownloadRange {
 
 impl From<RangeTo<u64>> for DownloadRange {
     fn from(r: RangeTo<u64>) -> Self {
-        Self::Closed(ClosedRange::To(r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<RangeToInclusive<u64>> for DownloadRange {
     fn from(r: RangeToInclusive<u64>) -> Self {
-        Self::Closed(ClosedRange::ToInclusive(r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<InclusiveRange> for DownloadRange {
     fn from(r: InclusiveRange) -> Self {
-        Self::Closed(ClosedRange::FromToInclusive(r.0, r.1))
+        Self::Closed(r.into())
     }
 }
 
 impl From<OffsetRange> for DownloadRange {
     fn from(r: OffsetRange) -> Self {
         Self::Closed(ClosedRange::FromTo(r.start(), r.end_excl()))
+    }
+}
+
+impl From<ClosedRange> for DownloadRange {
+    fn from(r: ClosedRange) -> Self {
+        Self::Closed(r)
     }
 }
 

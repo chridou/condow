@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{channel::mpsc, ready, Stream, StreamExt};
+use futures::{channel::mpsc, ready, Stream, StreamExt, TryStreamExt, future};
 use pin_project_lite::pin_project;
 
 use crate::{errors::CondowError, streams::ChunkStreamItem};
@@ -157,6 +157,13 @@ impl ChunkStream {
     /// Fails if this [ChunkStream] was already iterated.
     pub fn try_into_part_stream(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::try_from(self)
+    }
+
+    /// Counts the number of bytes downloaded
+    ///
+    /// Provided mainly for testing.
+    pub async fn count_bytes(self) -> Result<u64, CondowError> {
+        self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64)).await
     }
 }
 
