@@ -26,7 +26,7 @@
 //! remote BLOBs.
 //!
 //! The [Condow] struct itself can be used to download BLOBs. It might not be
-//! convinient to pass it around since it has 2 type parameters. Consider the
+//! convenient to pass it around since it has 2 type parameters. Consider the
 //! traits [Downloads] (which has only an associated type) or [DownloadUntyped]
 //! (which is even object safe) to pass around instances of [Condow].
 //!
