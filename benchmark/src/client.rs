@@ -7,10 +7,10 @@ use futures::{future::BoxFuture, stream, FutureExt, StreamExt};
 
 use condow_core::{
     condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
-    config::Config,
+    config::{Config, Mebi},
     errors::CondowError,
     streams::{BytesHint, BytesStream},
-    Condow,
+    ClosedRange, Condow, DownloadRange,
 };
 
 /// A client for benchmarking which returns zero bytes only.
@@ -21,8 +21,12 @@ pub struct BenchmarkClient {
 }
 
 impl BenchmarkClient {
-    pub fn new(chunk_size: u64, size: u64) -> Self {
+    pub fn new(size: u64, chunk_size: u64) -> Self {
         BenchmarkClient { chunk_size, size }
+    }
+
+    pub fn new_always_one_chunk(size: u64) -> Self {
+        BenchmarkClient::new(size, size)
     }
 }
 
@@ -79,4 +83,76 @@ impl CondowClient for BenchmarkClient {
 
         futures::future::ok((stream, BytesHint::new_exact(bytes_to_send))).boxed()
     }
+}
+
+#[tokio::test]
+async fn full_range_one_chunk_one_mebi() {
+    let client = BenchmarkClient::new_always_one_chunk(Mebi(1).into());
+    let condow = client.condow(Default::default()).unwrap();
+
+    let blob = condow.blob().download_into_vec().await.unwrap();
+
+    assert_eq!(blob.len() as u64, Mebi(1).value())
+}
+
+#[tokio::test]
+async fn open_range_one_chunk_one_mebi() {
+    let client = BenchmarkClient::new_always_one_chunk(Mebi(1).into());
+    let condow = client.condow(Default::default()).unwrap();
+
+    let blob = condow.blob().range(0..).download_into_vec().await.unwrap();
+
+    assert_eq!(blob.len() as u64, Mebi(1).value())
+}
+
+#[tokio::test]
+async fn closed_range_one_chunk_one_mebi() {
+    let client = BenchmarkClient::new_always_one_chunk(Mebi(1).into());
+    let condow = client.condow(Default::default()).unwrap();
+
+    let range: ClosedRange = (45u64..934_123).into();
+    let blob = condow
+        .blob()
+        .range(range)
+        .download_into_vec()
+        .await
+        .unwrap();
+
+    assert_eq!(blob.len() as u64, range.len())
+}
+
+#[tokio::test]
+async fn full_range_many_chunks_one_mebi() {
+    let client = BenchmarkClient::new(Mebi(1).into(), 1667); // prime number
+    let condow = client.condow(Default::default()).unwrap();
+
+    let blob = condow.blob().download_into_vec().await.unwrap();
+
+    assert_eq!(blob.len() as u64, Mebi(1).value())
+}
+
+#[tokio::test]
+async fn open_range_many_chunks_one_mebi() {
+    let client = BenchmarkClient::new(Mebi(1).into(), 1667); // prime number
+    let condow = client.condow(Default::default()).unwrap();
+
+    let blob = condow.blob().range(0..).download_into_vec().await.unwrap();
+
+    assert_eq!(blob.len() as u64, Mebi(1).value())
+}
+
+#[tokio::test]
+async fn closed_range_many_chunks_one_mebi() {
+    let client = BenchmarkClient::new(Mebi(1).into(), 1667); // prime number
+    let condow = client.condow(Default::default()).unwrap();
+
+    let range: ClosedRange = (45u64..934_123).into();
+    let blob = condow
+        .blob()
+        .range(range)
+        .download_into_vec()
+        .await
+        .unwrap();
+
+    assert_eq!(blob.len() as u64, range.len())
 }
