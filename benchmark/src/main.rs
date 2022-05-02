@@ -1,52 +1,17 @@
-use std::{time::{Duration, Instant}, collections::BTreeMap};
+use std::io;
 
-use client::BenchmarkClient;
-use condow_core::config::Mebi;
-
-mod client;
 mod benchmarks;
+mod client;
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     let results = benchmarks::run().await.unwrap();
 
-    println!("{results:#?}")
-}
+    let mut wtr = csv::Writer::from_writer(io::stdout());
 
-fn create_client() -> BenchmarkClient {
-    BenchmarkClient::new(Mebi(16).value(), 7489) // Prime number
-}
-
-#[derive(Debug)]
-pub struct Measurements {
-    name: String,
-    measurements: Vec<Duration>,
-}
-
-impl Measurements {
-    pub fn new<T: Into<String>>(name: T) -> Self {
-        Self {
-            name: name.into(),
-            measurements: Vec::with_capacity(128),
-        }
+    for stat in results.stats() {
+        wtr.serialize(stat).unwrap();
     }
 
-    pub fn measurement(&mut self, start: Instant, end: Instant) {
-        self.measurements.push(end-start);
-    }
-}
-
-#[derive(Debug)]
-pub struct Benchmarks {
-    measurements: BTreeMap<String, Measurements>
-}
-
-impl Benchmarks {
-    pub fn new() -> Self {
-        Benchmarks { measurements: BTreeMap::new() }
-    }
-
-    pub fn add_measurements(&mut self, measurements: Measurements) {
-        self.measurements.insert(measurements.name.clone(), measurements);
-    }
+    wtr.flush().unwrap();
 }

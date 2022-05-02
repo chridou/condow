@@ -19,3 +19,5 @@ tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] 
 bytes = "1"
 tracing = "0.1"
 anyhow = "1.0"
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }

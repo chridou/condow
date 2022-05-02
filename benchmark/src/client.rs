@@ -25,6 +25,7 @@ impl BenchmarkClient {
         BenchmarkClient { chunk_size, size }
     }
 
+    #[cfg(test)]
     pub fn new_always_one_chunk(size: u64) -> Self {
         BenchmarkClient::new(size, size)
     }
