@@ -3,5 +3,6 @@
 members = [
     "condow_core",
     "condow_rusoto",
-    "condow_fs"
+    "condow_fs",
+    "benchmark"
 ]
