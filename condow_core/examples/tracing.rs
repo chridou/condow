@@ -65,7 +65,7 @@ async fn run() -> Result<(), Error> {
     let blob = (0u32..1_000).map(|x| x as u8).collect::<Vec<_>>();
 
     let config = Config::default()
-        .buffers_full_delay_ms(0)
+        .max_buffers_full_delay_ms(0)
         .part_size_bytes(13)
         .max_concurrency(2);
 

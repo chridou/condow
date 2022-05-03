@@ -390,7 +390,7 @@ mod tests {
     ) -> Result<(), CondowError> {
         let config = Config::default()
             .buffer_size(10)
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(part_size_bytes)
             .max_concurrency(1); // Won't work otherwise
 

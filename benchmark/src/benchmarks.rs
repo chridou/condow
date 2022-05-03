@@ -177,9 +177,8 @@ mod scenarios {
 
     impl Scenario {
         pub fn gen_downloader(&self) -> impl Downloads<Location = IgnoreLocation> {
-            let config = Config::default() //.buffers_full_delay_ms(1)
+            let config = Config::default()
                 .max_concurrency(self.max_concurrency)
-                //.buffer_size(1_000)
                 .part_size_bytes(self.part_size);
             let client = BenchmarkClient::new(self.blob_size, CHUNK_SIZE);
             client.condow(config).unwrap()

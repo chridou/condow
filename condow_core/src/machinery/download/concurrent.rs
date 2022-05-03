@@ -2,7 +2,7 @@
 
 use std::{
     sync::{atomic::AtomicUsize, Arc},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use futures::{channel::mpsc::UnboundedSender, StreamExt};
@@ -71,16 +71,20 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
     pub async fn download(&mut self, ranges: PartRequestIterator) -> Result<(), ()> {
         self.probe.download_started();
         let mut ranges_stream = ranges.into_stream();
+
+        let max_buffers_full_delay: Duration = self.config.max_buffers_full_delay_ms.into();
+        let n_downloaders = self.downloaders.len();
+
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
-
-            let buffers_full_delay = self.config.buffers_full_delay_ms.into();
-            let n_downloaders = self.downloaders.len();
+            let mut current_buffers_full_delay = Duration::from_secs(0);
 
             loop {
                 if attempt % self.downloaders.len() == 0 {
                     self.probe.queue_full();
-                    tokio::time::sleep(buffers_full_delay).await;
+                    tokio::time::sleep(current_buffers_full_delay).await;
+                    current_buffers_full_delay = max_buffers_full_delay
+                        .min(current_buffers_full_delay + Duration::from_millis(1));
                 }
                 let idx = self.counter + attempt;
                 let downloader = &mut self.downloaders[idx % n_downloaders];

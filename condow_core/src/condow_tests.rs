@@ -27,7 +27,7 @@ mod blob {
                 for n_concurrency in [1usize, 10] {
                     let config = Config::default()
                         .buffer_size(buffer_size)
-                        .buffers_full_delay_ms(0)
+                        .max_buffers_full_delay_ms(0)
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
                     let condow = Condow::new(client.clone(), config).unwrap();
@@ -63,7 +63,7 @@ mod blob {
                 for n_concurrency in [1usize, 10] {
                     let config = Config::default()
                         .buffer_size(buffer_size)
-                        .buffers_full_delay_ms(0)
+                        .max_buffers_full_delay_ms(0)
                         .part_size_bytes(part_size)
                         .max_concurrency(n_concurrency);
                     let condow = Condow::new(client.clone(), config).unwrap();
@@ -107,7 +107,7 @@ mod range {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay_ms(0)
+                            .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .always_get_size(true) // case to test
                             .max_concurrency(n_concurrency);
@@ -154,7 +154,7 @@ mod range {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay_ms(0)
+                            .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .always_get_size(false) // case to test
                             .max_concurrency(n_concurrency);
@@ -202,7 +202,7 @@ mod range {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay_ms(0)
+                            .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
@@ -248,7 +248,7 @@ mod range {
                     for n_concurrency in [1usize, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
-                            .buffers_full_delay_ms(0)
+                            .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
@@ -302,7 +302,7 @@ mod range {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
-                                    .buffers_full_delay_ms(0)
+                                    .max_buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
@@ -349,7 +349,7 @@ mod range {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
-                                    .buffers_full_delay_ms(0)
+                                    .max_buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
@@ -403,7 +403,7 @@ mod range {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
-                                    .buffers_full_delay_ms(0)
+                                    .max_buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();
@@ -456,7 +456,7 @@ mod range {
                             for n_concurrency in [1usize, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
-                                    .buffers_full_delay_ms(0)
+                                    .max_buffers_full_delay_ms(0)
                                     .part_size_bytes(part_size)
                                     .max_concurrency(n_concurrency);
                                 let condow = Condow::new(client.clone(), config).unwrap();

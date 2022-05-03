@@ -11,7 +11,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(2)
             .disable_retries();
@@ -43,7 +43,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(2)
             .disable_retries();
@@ -78,7 +78,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(2)
             .disable_retries();
@@ -113,7 +113,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(2)
             .disable_retries();
@@ -149,7 +149,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(1)
             .configure_retries(|rc| rc.max_attempts(1).initial_delay_ms(0));
@@ -187,7 +187,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(2)
             .disable_retries();
@@ -223,7 +223,7 @@ mod download {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         let config = Config::default()
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(1)
             .configure_retries(|rc| rc.max_attempts(1).initial_delay_ms(0));
@@ -277,7 +277,7 @@ mod download_chunks {
 
         let config = Config::default()
             .buffer_size(buffer_size)
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(1);
 
@@ -309,7 +309,7 @@ mod download_chunks {
 
         let config = Config::default()
             .buffer_size(buffer_size)
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(1);
 
@@ -341,7 +341,7 @@ mod download_chunks {
 
         let config = Config::default()
             .buffer_size(buffer_size)
-            .buffers_full_delay_ms(0)
+            .max_buffers_full_delay_ms(0)
             .part_size_bytes(10)
             .max_concurrency(1);
 
