@@ -10,14 +10,14 @@ use tracing::{debug, info, info_span, Span};
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::{CondowError, IoError};
-use crate::streams::{BytesHint, Chunk, ChunkStream, ChunkStreamItem};
+use crate::streams::{BytesHint, Chunk, ChunkStream};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
 
-use self::range_stream::{RangeRequest, RangeStream};
+use self::part_request::PartRequestIterator;
 
 mod download;
-mod range_stream;
+mod part_request;
 
 pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
@@ -105,12 +105,11 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 ) -> Result<ChunkStream, CondowError> {
     probe.effective_range(range);
 
-    let (_n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
-    let mut range_requests = ranges_stream.collect::<Vec<_>>().await;
+    let range_requests = PartRequestIterator::new(range, config.part_size_bytes.into());
 
-    debug!(parent: download_span_guard.span(), "downloading {} parts", range_requests.len());
+    debug!(parent: download_span_guard.span(), "downloading {} parts", range_requests.exact_size_hint());
 
-    if range_requests.len() == 0 {
+    if range_requests.exact_size_hint() == 0 {
         panic!("n_parts must not be 0. This is a bug");
     }
 
@@ -119,9 +118,15 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     let effective_concurrency = config
         .max_concurrency
         .into_inner()
-        .min(range_requests.len());
-    if range_requests.len() == 1 {
-        tokio::spawn(download_chunks_sequentially(range_requests, client, location, probe, sender));
+        .min(range_requests.exact_size_hint() as usize);
+    if range_requests.exact_size_hint() == 1 {
+        tokio::spawn(download_chunks_sequentially(
+            range_requests,
+            client,
+            location,
+            probe,
+            sender,
+        ));
     } else {
         tokio::spawn(async move {
             let result = download::download_concurrently(
@@ -143,13 +148,13 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 }
 
 async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
-    mut range_requests: Vec<RangeRequest>,
+    mut range_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: ProbeInternal<P>,
     sender: UnboundedSender<Result<Chunk, CondowError>>,
 ) {
-    let range_request = range_requests.pop().unwrap();
+    let range_request = range_requests.next().unwrap();
     let (stream, _bytes_hint) = client
         .download(location, range_request.blob_range.into(), &probe)
         .await

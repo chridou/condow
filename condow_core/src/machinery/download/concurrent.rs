@@ -5,12 +5,12 @@ use std::{
     time::Instant,
 };
 
-use futures::{channel::mpsc::UnboundedSender, stream, StreamExt};
+use futures::{channel::mpsc::UnboundedSender, StreamExt};
 
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    machinery::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal},
+    machinery::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal},
     probe::Probe,
     streams::ChunkStreamItem,
 };
@@ -68,9 +68,9 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
         }
     }
 
-    pub async fn download(&mut self, ranges: Vec<RangeRequest>) -> Result<(), ()> {
+    pub async fn download(&mut self, ranges: PartRequestIterator) -> Result<(), ()> {
         self.probe.download_started();
-        let mut ranges_stream = stream::iter(ranges.into_iter());
+        let mut ranges_stream = ranges.into_stream();
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
 

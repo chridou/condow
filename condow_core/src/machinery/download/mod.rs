@@ -5,7 +5,7 @@ use std::sync::{
     Arc,
 };
 
-use futures::{channel::mpsc::UnboundedSender, Stream};
+use futures::channel::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient,
@@ -16,14 +16,14 @@ use crate::{
 
 use self::concurrent::ConcurrentDownloader;
 
-use super::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal};
+use super::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal};
 
 mod concurrent;
 mod sequential;
 
 /// Download the parst of a BLOB concurrently
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
-    ranges: Vec<RangeRequest>,
+    ranges: PartRequestIterator,
     n_concurrent: usize,
     results_sender: UnboundedSender<ChunkStreamItem>,
     client: ClientRetryWrapper<C>,

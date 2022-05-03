@@ -18,7 +18,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::ClientRetryWrapper,
     errors::{CondowError, IoError},
-    machinery::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal},
+    machinery::{part_request::PartRequest, DownloadSpanGuard, ProbeInternal},
     probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
@@ -35,7 +35,7 @@ use super::KillSwitch;
 /// Usually one `SequentialDownloader` is created for each level of
 /// concurrency.  
 pub(crate) struct SequentialDownloader {
-    request_sender: Sender<RangeRequest>,
+    request_sender: Sender<PartRequest>,
 }
 
 impl SequentialDownloader {
@@ -45,7 +45,7 @@ impl SequentialDownloader {
         buffer_size: usize,
         mut context: DownloaderContext<P>,
     ) -> Self {
-        let (request_sender, request_receiver) = mpsc::channel::<RangeRequest>(buffer_size);
+        let (request_sender, request_receiver) = mpsc::channel::<PartRequest>(buffer_size);
 
         let download_span = context.span().clone();
 
@@ -106,7 +106,7 @@ impl SequentialDownloader {
         SequentialDownloader { request_sender }
     }
 
-    pub fn enqueue(&mut self, req: RangeRequest) -> Result<Option<RangeRequest>, ()> {
+    pub fn enqueue(&mut self, req: PartRequest) -> Result<Option<PartRequest>, ()> {
         match self.request_sender.try_send(req) {
             Ok(()) => Ok(None),
             Err(err) => {
@@ -231,7 +231,7 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
 async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     mut bytes_stream: BytesStream,
     context: &mut DownloaderContext<P>,
-    range_request: RangeRequest,
+    range_request: PartRequest,
 ) -> Result<(), ()> {
     let mut chunk_index = 0;
     let mut offset_in_range = 0;
@@ -349,7 +349,7 @@ mod tests {
                 sequential::{DownloaderContext, SequentialDownloader},
                 KillSwitch,
             },
-            range_stream::RangeStream,
+            part_request::PartRequestIterator,
             DownloadSpanGuard,
         },
         streams::{BytesHint, Chunk, ChunkStream},
@@ -396,8 +396,8 @@ mod tests {
 
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
 
-        let (_n_parts, mut ranges_stream) =
-            RangeStream::create(range, config.part_size_bytes.into());
+        let mut ranges_stream =
+            PartRequestIterator::new(range, config.part_size_bytes.into()).into_stream();
 
         let (result_stream, results_sender) = ChunkStream::new(bytes_hint);
 
