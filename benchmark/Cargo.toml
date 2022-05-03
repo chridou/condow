@@ -1,5 +1,5 @@
 [package]
-name = "benchmark"
+name = "condow-bench"
 version = "0.0.1"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
