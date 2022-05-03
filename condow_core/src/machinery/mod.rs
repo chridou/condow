@@ -14,7 +14,7 @@ use crate::streams::{BytesHint, Chunk, ChunkStream, ChunkStreamItem};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
 
-use self::range_stream::{RangeStream, RangeRequest};
+use self::range_stream::{RangeRequest, RangeStream};
 
 mod download;
 mod range_stream;
@@ -120,8 +120,8 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
         .max_concurrency
         .into_inner()
         .min(range_requests.len());
-    if effective_concurrency == 1 {
-        tokio::spawn(fun_name(range_requests, client, location, probe, sender));
+    if range_requests.len() == 1 {
+        tokio::spawn(download_chunks_sequentially(range_requests, client, location, probe, sender));
     } else {
         tokio::spawn(async move {
             let result = download::download_concurrently(
@@ -142,7 +142,13 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     Ok(chunk_stream)
 }
 
-async fn fun_name<C: CondowClient, P: Probe>(mut range_requests: Vec<RangeRequest>, client: ClientRetryWrapper<C>, location: C::Location, probe: ProbeInternal<P>, sender: UnboundedSender<Result<Chunk, CondowError>>)  {
+async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
+    mut range_requests: Vec<RangeRequest>,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
+    probe: ProbeInternal<P>,
+    sender: UnboundedSender<Result<Chunk, CondowError>>,
+) {
     let range_request = range_requests.pop().unwrap();
     let (stream, _bytes_hint) = client
         .download(location, range_request.blob_range.into(), &probe)
