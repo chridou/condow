@@ -20,13 +20,14 @@ pub async fn run() -> Result<Benchmarks, anyhow::Error> {
     Ok(benchmarks_collected)
 }
 
+/// Measured timings for a benchmark
 #[derive(Debug)]
-pub struct Measurements {
+pub struct Benchmark {
     name: String,
     timings: Vec<Duration>,
 }
 
-impl Measurements {
+impl Benchmark {
     pub fn new<T: Into<String>>(name: T) -> Self {
         Self {
             name: name.into(),
@@ -34,15 +35,18 @@ impl Measurements {
         }
     }
 
+    /// Add a new measured time
     pub fn measured(&mut self, start: Instant, end: Instant) {
         self.timings.push(end - start);
     }
 
+    /// Convert to [Stats]
     pub fn stats(&self) -> Stats {
         Stats::new(self)
     }
 }
 
+/// Simple statistical values to compare benchmarks
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Stats {
     #[serde(rename = "#")]
@@ -55,7 +59,7 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(measurements: &Measurements) -> Self {
+    pub fn new(measurements: &Benchmark) -> Self {
         let first_ms = measurements.timings[0].as_secs_f64() * 1_000.0;
         let mut min_ms = f64::MAX;
         let mut max_ms = 0.0f64;
@@ -82,24 +86,25 @@ impl Stats {
     }
 }
 
+/// Simply multiple [Benchmark]s
 #[derive(Debug)]
 pub struct Benchmarks {
-    measurements: Vec<Measurements>,
+    benchmarks: Vec<Benchmark>,
 }
 
 impl Benchmarks {
     pub fn new() -> Self {
         Benchmarks {
-            measurements: Vec::new(),
+            benchmarks: Vec::new(),
         }
     }
 
-    pub fn add_measurements(&mut self, measurements: Measurements) {
-        self.measurements.push(measurements);
+    pub fn add_measurements(&mut self, measurements: Benchmark) {
+        self.benchmarks.push(measurements);
     }
 
     pub fn stats(&self) -> Vec<Stats> {
-        self.measurements
+        self.benchmarks
             .iter()
             .enumerate()
             .map(|(idx, m)| {
@@ -162,6 +167,7 @@ mod scenarios {
         collected
     }
 
+    /// A scenario is a configuration which is applied to (almost) all benchmarks
     #[derive(Debug, Clone)]
     pub struct Scenario {
         pub blob_size: u64,
@@ -194,11 +200,12 @@ mod scenarios {
 }
 
 mod chunk_stream_unordered {
+    //! Benchmarks for [ChunkStream](condow_core::streams::ChumkStream)
     use std::time::Instant;
 
     use condow_core::Downloads;
 
-    use super::{scenarios::Scenario, Benchmarks, Measurements};
+    use super::{scenarios::Scenario, Benchmarks, Benchmark};
 
     pub async fn run(
         scenario: &Scenario,
@@ -215,7 +222,7 @@ mod chunk_stream_unordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements = Measurements::new(format!("chunk_stream_count_bytes_{scenario}"));
+        let mut measurements = Benchmark::new(format!("chunk_stream_count_bytes_{scenario}"));
 
         let downloader = scenario.gen_downloader();
 
@@ -246,7 +253,7 @@ mod chunk_stream_unordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements = Measurements::new(format!("chunk_stream_fill_buffer_{scenario}"));
+        let mut measurements = Benchmark::new(format!("chunk_stream_fill_buffer_{scenario}"));
 
         let downloader = scenario.gen_downloader();
 
@@ -275,6 +282,7 @@ mod chunk_stream_unordered {
 }
 
 mod chunk_stream_ordered {
+    //! Benchmarks for [OrderedChunkStream](condow_core::streams::OrderedChumkStream)
     use std::time::Instant;
 
     use condow_core::condow_client::IgnoreLocation;
@@ -283,7 +291,7 @@ mod chunk_stream_ordered {
     use futures::AsyncReadExt;
 
     use super::scenarios::{Scenario, CHUNK_SIZE};
-    use super::{Benchmarks, Measurements};
+    use super::{Benchmarks, Benchmark};
 
     pub async fn run(
         scenario: &Scenario,
@@ -302,7 +310,7 @@ mod chunk_stream_ordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         let mut measurements =
-            Measurements::new(format!("chunk_stream_ordered_count_bytes_{scenario}"));
+            Benchmark::new(format!("chunk_stream_ordered_count_bytes_{scenario}"));
 
         let downloader = scenario.gen_downloader();
 
@@ -329,7 +337,7 @@ mod chunk_stream_ordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         let mut measurements =
-            Measurements::new(format!("chunk_stream_ordered_fill_buffer_{scenario}"));
+            Benchmark::new(format!("chunk_stream_ordered_fill_buffer_{scenario}"));
 
         let downloader = scenario.gen_downloader();
 
@@ -364,7 +372,7 @@ mod chunk_stream_ordered {
         let buf_sizes = &[1_024usize, 4_096, CHUNK_SIZE as usize];
 
         for &buf_size in buf_sizes {
-            let mut measurements = Measurements::new(format!(
+            let mut measurements = Benchmark::new(format!(
                 "chunk_stream_ordered_random_access_reader_buf_{buf_size}_{scenario}"
             ));
 
@@ -402,6 +410,9 @@ mod chunk_stream_ordered {
     }
 }
 mod condow_client {
+    //! Benchmarks for the client which delivers byte streams.
+    //! 
+    //! Ths is the [BenchmarkClient] used to deliver data for the other benchmarks
     use std::time::Instant;
 
     use condow_core::condow_client::{CondowClient, DownloadSpec, IgnoreLocation};
@@ -411,7 +422,7 @@ mod condow_client {
 
     use super::{
         scenarios::{BLOB_SIZE, CHUNK_SIZE},
-        Benchmarks, Measurements,
+        Benchmarks, Benchmark,
     };
 
     pub async fn run(benchmarks_collected: &mut Benchmarks) -> Result<(), anyhow::Error> {
@@ -419,8 +430,8 @@ mod condow_client {
         Ok(())
     }
 
-    async fn many_chunks(num_iterations: usize) -> Result<Measurements, anyhow::Error> {
-        let mut results = Measurements::new("client_get_chunks");
+    async fn many_chunks(num_iterations: usize) -> Result<Benchmark, anyhow::Error> {
+        let mut results = Benchmark::new("client_get_chunks");
 
         let client = BenchmarkClient::new(BLOB_SIZE, CHUNK_SIZE);
 
