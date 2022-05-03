@@ -242,6 +242,14 @@ impl PartSizeBytes {
         Self(part_size_bytes.into())
     }
 
+    pub const fn from_u64(part_size_bytes: u64) -> Self {
+        Self(part_size_bytes)
+    }
+
+    pub const fn into_inner(self) -> u64 {
+        self.0
+    }
+
     env_funs!("PART_SIZE_BYTES");
 }
 
@@ -333,6 +341,12 @@ new_type! {
     #[doc="Maximum concurrency of a single download"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub copy struct MaxConcurrency(usize, env="MAX_CONCURRENCY");
+}
+
+impl MaxConcurrency {
+    pub const fn from_usize(max: usize) -> Self {
+        Self(max)
+    }
 }
 
 impl Default for MaxConcurrency {

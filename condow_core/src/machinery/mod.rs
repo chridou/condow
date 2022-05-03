@@ -120,10 +120,12 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     }
     let n_parts = n_parts as usize;
 
+    let effective_concurrency = config.max_concurrency.into_inner().min(n_parts);
+
     tokio::spawn(async move {
         let result = download::download_concurrently(
             ranges_stream,
-            config.max_concurrency.into_inner().min(n_parts),
+            effective_concurrency,
             sender,
             client,
             config,

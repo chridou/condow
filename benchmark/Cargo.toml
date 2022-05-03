@@ -1,0 +1,23 @@
+[package]
+name = "condow-bench"
+version = "0.0.1"
+authors = ["Christian Douven <chridou@users.noreply.github.com>"]
+readme = "README.md"
+license = "Apache-2.0/MIT"
+description = "Framework for concurrent downloads"
+documentation = "https://docs.rs/condow_core"
+homepage = "https://github.com/chridou/condow"
+repository = "https://github.com/chridou/condow"
+keywords = [ "download", "network", "parallel", "files"]
+edition = "2021"
+
+[dependencies]
+condow_core = { version = "0.16", path = "../condow_core"}
+
+futures = "0.3"
+tokio = { version = "1", features = ["rt", "macros", "time", "rt-multi-thread"] }
+bytes = "1"
+tracing = "0.1"
+anyhow = "1.0"
+csv = "1.1"
+serde = { version = "1", features = ["derive"] }
