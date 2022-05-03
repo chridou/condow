@@ -205,7 +205,7 @@ mod chunk_stream_unordered {
 
     use condow_core::Downloads;
 
-    use super::{scenarios::Scenario, Benchmarks, Benchmark};
+    use super::{scenarios::Scenario, Benchmark, Benchmarks};
 
     pub async fn run(
         scenario: &Scenario,
@@ -291,7 +291,7 @@ mod chunk_stream_ordered {
     use futures::AsyncReadExt;
 
     use super::scenarios::{Scenario, CHUNK_SIZE};
-    use super::{Benchmarks, Benchmark};
+    use super::{Benchmark, Benchmarks};
 
     pub async fn run(
         scenario: &Scenario,
@@ -411,7 +411,7 @@ mod chunk_stream_ordered {
 }
 mod condow_client {
     //! Benchmarks for the client which delivers byte streams.
-    //! 
+    //!
     //! Ths is the [BenchmarkClient] used to deliver data for the other benchmarks
     use std::time::Instant;
 
@@ -422,7 +422,7 @@ mod condow_client {
 
     use super::{
         scenarios::{BLOB_SIZE, CHUNK_SIZE},
-        Benchmarks, Benchmark,
+        Benchmark, Benchmarks,
     };
 
     pub async fn run(benchmarks_collected: &mut Benchmarks) -> Result<(), anyhow::Error> {

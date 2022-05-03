@@ -23,7 +23,7 @@ mod sequential;
 
 /// Download the parst of a BLOB concurrently
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
-    ranges_stream: impl Stream<Item = RangeRequest>,
+    ranges: Vec<RangeRequest>,
     n_concurrent: usize,
     results_sender: UnboundedSender<ChunkStreamItem>,
     client: ClientRetryWrapper<C>,
@@ -42,7 +42,7 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
         download_span_guard,
     );
 
-    downloader.download(ranges_stream).await
+    downloader.download(ranges).await
 }
 
 /// Shared state to control cancellation of a download

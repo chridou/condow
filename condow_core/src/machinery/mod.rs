@@ -3,16 +3,18 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::channel::mpsc::UnboundedSender;
+use futures::{StreamExt, TryStreamExt};
 use tracing::{debug, info, info_span, Span};
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::{CondowError, IoError};
-use crate::streams::{BytesHint, ChunkStream};
+use crate::streams::{BytesHint, Chunk, ChunkStream, ChunkStreamItem};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
 
-use self::range_stream::RangeStream;
+use self::range_stream::{RangeStream, RangeRequest};
 
 mod download;
 mod range_stream;
@@ -103,41 +105,76 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 ) -> Result<ChunkStream, CondowError> {
     probe.effective_range(range);
 
-    let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
+    let (_n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
+    let mut range_requests = ranges_stream.collect::<Vec<_>>().await;
 
-    debug!(parent: download_span_guard.span(), "downloading {n_parts} parts");
+    debug!(parent: download_span_guard.span(), "downloading {} parts", range_requests.len());
 
-    if n_parts == 0 {
+    if range_requests.len() == 0 {
         panic!("n_parts must not be 0. This is a bug");
     }
 
     let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
 
-    if n_parts > usize::MAX as u64 {
-        return Err(CondowError::new_other(
-            "usize overflow while casting from u64",
-        ));
+    let effective_concurrency = config
+        .max_concurrency
+        .into_inner()
+        .min(range_requests.len());
+    if effective_concurrency == 1 {
+        tokio::spawn(fun_name(range_requests, client, location, probe, sender));
+    } else {
+        tokio::spawn(async move {
+            let result = download::download_concurrently(
+                range_requests,
+                effective_concurrency,
+                sender,
+                client,
+                config,
+                location,
+                probe,
+                download_span_guard,
+            )
+            .await;
+            result
+        });
     }
-    let n_parts = n_parts as usize;
-
-    let effective_concurrency = config.max_concurrency.into_inner().min(n_parts);
-
-    tokio::spawn(async move {
-        let result = download::download_concurrently(
-            ranges_stream,
-            effective_concurrency,
-            sender,
-            client,
-            config,
-            location,
-            probe,
-            download_span_guard,
-        )
-        .await;
-        result
-    });
 
     Ok(chunk_stream)
+}
+
+async fn fun_name<C: CondowClient, P: Probe>(mut range_requests: Vec<RangeRequest>, client: ClientRetryWrapper<C>, location: C::Location, probe: ProbeInternal<P>, sender: UnboundedSender<Result<Chunk, CondowError>>)  {
+    let range_request = range_requests.pop().unwrap();
+    let (stream, _bytes_hint) = client
+        .download(location, range_request.blob_range.into(), &probe)
+        .await
+        .unwrap();
+    let mut chunk_index = 0;
+    let mut range_offset = 0;
+    let mut blob_offset = range_request.blob_range.start();
+    let mut bytes_left = range_request.blob_range.len();
+    let mut stream = stream
+        .map_ok(|bytes| {
+            let bytes_len = bytes.len() as u64;
+            let chunk = Chunk {
+                part_index: 0,
+                chunk_index,
+                blob_offset,
+                range_offset,
+                bytes,
+                bytes_left,
+            };
+            chunk_index += 1;
+            blob_offset += bytes_len;
+            range_offset += bytes_len;
+            bytes_left -= bytes_len;
+            chunk
+        })
+        .map_err(Into::into);
+    while let Some(next) = stream.next().await {
+        if sender.unbounded_send(next).is_err() {
+            break;
+        }
+    }
 }
 
 /// This struct contains a span which must be kept alive until whole download is completed
