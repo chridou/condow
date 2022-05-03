@@ -4,12 +4,10 @@ use serde::{Deserialize, Serialize};
 
 use self::scenarios::gen_scenarios;
 
-pub async fn run() -> Result<Benchmarks, anyhow::Error> {
+pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
     let mut benchmarks_collected = Benchmarks::new();
 
     let scenarios = gen_scenarios();
-
-    let num_iterations = 31;
 
     condow_client::run(&mut benchmarks_collected).await?;
     for scenario in scenarios {
@@ -430,7 +428,7 @@ mod condow_client {
     }
 
     async fn many_chunks(num_iterations: usize) -> Result<Benchmark, anyhow::Error> {
-        let mut results = Benchmark::new("client_get_chunks");
+        let mut results = Benchmark::new(format!("client_get_chunks_{:05}k", BLOB_SIZE / 1000));
 
         let client = BenchmarkClient::new(BLOB_SIZE, CHUNK_SIZE);
 
