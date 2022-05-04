@@ -167,6 +167,7 @@ async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
         let mut stream = stream
             .map_ok(|bytes| {
                 let bytes_len = bytes.len() as u64;
+                bytes_left -= bytes_len;
                 let chunk = Chunk {
                     part_index: part_request.part_index,
                     chunk_index,
@@ -178,13 +179,13 @@ async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
                 chunk_index += 1;
                 blob_offset += bytes_len;
                 range_offset += bytes_len;
-                bytes_left -= bytes_len;
                 chunk
             })
             .map_err(Into::into);
-        while let Some(next) = stream.next().await {
-            if sender.unbounded_send(next).is_err() {
-                break;
+        while let Some(chunk_or_error) = stream.next().await {
+            let received_error = chunk_or_error.is_err();
+            if sender.unbounded_send(chunk_or_error).is_err() || received_error {
+                return;
             }
         }
     }
