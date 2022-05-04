@@ -50,10 +50,10 @@ pub struct Stats {
     #[serde(rename = "#")]
     pub index: usize,
     pub name: String,
+    pub avg_ms: f64,
     pub first_ms: f64,
     pub min_ms: f64,
     pub max_ms: f64,
-    pub avg_ms: f64,
 }
 
 impl Stats {
