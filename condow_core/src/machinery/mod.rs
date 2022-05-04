@@ -105,11 +105,11 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 ) -> Result<ChunkStream, CondowError> {
     probe.effective_range(range);
 
-    let range_requests = PartRequestIterator::new(range, config.part_size_bytes.into());
+    let part_requests = PartRequestIterator::new(range, config.part_size_bytes.into());
 
-    debug!(parent: download_span_guard.span(), "downloading {} parts", range_requests.exact_size_hint());
+    debug!(parent: download_span_guard.span(), "downloading {} parts", part_requests.exact_size_hint());
 
-    if range_requests.exact_size_hint() == 0 {
+    if part_requests.exact_size_hint() == 0 {
         panic!("n_parts must not be 0. This is a bug");
     }
 
@@ -118,10 +118,10 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     let effective_concurrency = config
         .max_concurrency
         .into_inner()
-        .min(range_requests.exact_size_hint() as usize);
-    if range_requests.exact_size_hint() == 1 {
+        .min(part_requests.exact_size_hint() as usize);
+    if effective_concurrency == 1 {
         tokio::spawn(download_chunks_sequentially(
-            range_requests,
+            part_requests,
             client,
             location,
             probe,
@@ -130,7 +130,7 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     } else {
         tokio::spawn(async move {
             let result = download::download_concurrently(
-                range_requests,
+                part_requests,
                 effective_concurrency,
                 sender,
                 client,
@@ -148,42 +148,44 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 }
 
 async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
-    mut range_requests: PartRequestIterator,
+    part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: ProbeInternal<P>,
     sender: UnboundedSender<Result<Chunk, CondowError>>,
 ) {
-    let range_request = range_requests.next().unwrap();
-    let (stream, _bytes_hint) = client
-        .download(location, range_request.blob_range.into(), &probe)
-        .await
-        .unwrap();
-    let mut chunk_index = 0;
-    let mut range_offset = 0;
-    let mut blob_offset = range_request.blob_range.start();
-    let mut bytes_left = range_request.blob_range.len();
-    let mut stream = stream
-        .map_ok(|bytes| {
-            let bytes_len = bytes.len() as u64;
-            let chunk = Chunk {
-                part_index: 0,
-                chunk_index,
-                blob_offset,
-                range_offset,
-                bytes,
-                bytes_left,
-            };
-            chunk_index += 1;
-            blob_offset += bytes_len;
-            range_offset += bytes_len;
-            bytes_left -= bytes_len;
-            chunk
-        })
-        .map_err(Into::into);
-    while let Some(next) = stream.next().await {
-        if sender.unbounded_send(next).is_err() {
-            break;
+    //let range_request = range_requests.next().unwrap();
+    for part_request in part_requests {
+        let (stream, _bytes_hint) = client
+            .download(location.clone(), part_request.blob_range.into(), &probe)
+            .await
+            .unwrap();
+        let mut chunk_index = 0;
+        let mut range_offset = 0;
+        let mut blob_offset = part_request.blob_range.start();
+        let mut bytes_left = part_request.blob_range.len();
+        let mut stream = stream
+            .map_ok(|bytes| {
+                let bytes_len = bytes.len() as u64;
+                let chunk = Chunk {
+                    part_index: part_request.part_index,
+                    chunk_index,
+                    blob_offset,
+                    range_offset,
+                    bytes,
+                    bytes_left,
+                };
+                chunk_index += 1;
+                blob_offset += bytes_len;
+                range_offset += bytes_len;
+                bytes_left -= bytes_len;
+                chunk
+            })
+            .map_err(Into::into);
+        while let Some(next) = stream.next().await {
+            if sender.unbounded_send(next).is_err() {
+                break;
+            }
         }
     }
 }
