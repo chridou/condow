@@ -18,7 +18,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::ClientRetryWrapper,
     errors::{CondowError, IoError},
-    machinery::{part_request::PartRequest, DownloadSpanGuard, ProbeInternal},
+    machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
@@ -130,7 +130,7 @@ pub(crate) struct DownloaderContext<P: Probe + Clone> {
     started_at: Instant,
     counter: Arc<AtomicUsize>,
     kill_switch: KillSwitch,
-    probe: ProbeInternal<P>,
+    probe: P,
     results_sender: UnboundedSender<ChunkStreamItem>,
     completed: bool,
     /// This must exist for the whole download
@@ -142,7 +142,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
         results_sender: UnboundedSender<ChunkStreamItem>,
         counter: Arc<AtomicUsize>,
         kill_switch: KillSwitch,
-        probe: ProbeInternal<P>,
+        probe: P,
         started_at: Instant,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
@@ -409,7 +409,7 @@ mod tests {
                 results_sender,
                 Arc::new(AtomicUsize::new(0)),
                 KillSwitch::new(),
-                Default::default(),
+                (),
                 Instant::now(),
                 DownloadSpanGuard::new(Span::none()),
             ),

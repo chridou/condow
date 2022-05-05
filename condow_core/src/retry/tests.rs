@@ -42,7 +42,6 @@ mod retry_download {
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        machinery::ProbeInternal,
         probe::Probe,
         retry::{
             retry_download,
@@ -650,7 +649,7 @@ mod retry_download {
             IgnoreLocation,
             download_spec.into(),
             &config,
-            ProbeInternal::new(probe.clone()),
+            probe.clone(),
         )
         .await?;
 
@@ -813,7 +812,6 @@ mod loop_retry_complete_stream {
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        machinery::ProbeInternal,
         probe::Probe,
         retry::{
             loop_retry_complete_stream,
@@ -1135,7 +1133,7 @@ mod loop_retry_complete_stream {
             client,
             next_elem_tx,
             config,
-            ProbeInternal::new(probe.clone()),
+            probe.clone(),
         ));
 
         let mut received = Vec::new();
@@ -1395,7 +1393,7 @@ mod retry_download_get_stream {
             IgnoreLocation,
             DownloadSpec::Complete,
             &config,
-            &ProbeInternal::new(probe.clone()),
+            &probe.clone(),
         )
         .await
         {
@@ -1634,14 +1632,7 @@ mod retry_get_size {
             .max_delay_ms(0);
 
         let probe = TestProbe(Default::default());
-        match retry_get_size(
-            &client,
-            IgnoreLocation,
-            &config,
-            &ProbeInternal::new(probe.clone()),
-        )
-        .await
-        {
+        match retry_get_size(&client, IgnoreLocation, &config, &probe.clone()).await {
             Ok(_) => Ok(probe.0.load(Ordering::SeqCst)),
             Err(err) => Err((probe.0.load(Ordering::SeqCst), err.kind())),
         }

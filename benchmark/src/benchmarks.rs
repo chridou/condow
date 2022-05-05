@@ -3,14 +3,23 @@ use std::time::{Duration, Instant};
 use condow_core::config::Mebi;
 use serde::{Deserialize, Serialize};
 
-use self::scenarios::gen_scenarios;
+use self::scenarios::{gen_client_scenarios, gen_scenarios};
 
 pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
     let mut benchmarks_collected = Benchmarks::new();
 
-    let scenarios = gen_scenarios();
+    let scenarios = gen_client_scenarios();
+    for (blob_size, chunk_size) in scenarios {
+        condow_client::run(
+            blob_size,
+            chunk_size,
+            num_iterations,
+            &mut benchmarks_collected,
+        )
+        .await?;
+    }
 
-    condow_client::run(&mut benchmarks_collected).await?;
+    let scenarios = gen_scenarios();
     for scenario in scenarios {
         chunk_stream_unordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         chunk_stream_ordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
@@ -23,13 +32,15 @@ pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
 #[derive(Debug)]
 pub struct Benchmark {
     name: String,
+    scenario: String,
     timings: Vec<(Duration, u64)>,
 }
 
 impl Benchmark {
-    pub fn new<T: Into<String>>(name: T) -> Self {
+    pub fn new<T: Into<String>, S: ToString>(name: T, scenario: &S) -> Self {
         Self {
             name: name.into(),
+            scenario: scenario.to_string(),
             timings: Vec::with_capacity(128),
         }
     }
@@ -51,6 +62,7 @@ pub struct Stats {
     #[serde(rename = "#")]
     pub index: usize,
     pub name: String,
+    pub scenario: String,
     pub avg_mebi_bytes_per_sec: f64,
     pub avg_ms: f64,
     pub first_ms: f64,
@@ -59,14 +71,14 @@ pub struct Stats {
 }
 
 impl Stats {
-    pub fn new(measurements: &Benchmark) -> Self {
-        let first_ms = measurements.timings[0].0.as_secs_f64() * 1_000.0;
+    pub fn new(benchmark: &Benchmark) -> Self {
+        let first_ms = benchmark.timings[0].0.as_secs_f64() * 1_000.0;
         let mut min_ms = f64::MAX;
         let mut max_ms = 0.0f64;
         let mut sum_ms = 0.0f64;
         let mut total_bytes = 0;
 
-        measurements
+        benchmark
             .timings
             .iter()
             .map(|(time, bytes)| (time.as_secs_f64() * 1_000.0, bytes))
@@ -82,11 +94,12 @@ impl Stats {
 
         Self {
             index: 0,
-            name: measurements.name.clone(),
+            name: benchmark.name.clone(),
+            scenario: benchmark.scenario.to_string(),
             first_ms,
             min_ms,
             max_ms,
-            avg_ms: sum_ms / measurements.timings.len() as f64,
+            avg_ms: sum_ms / benchmark.timings.len() as f64,
             avg_mebi_bytes_per_sec,
         }
     }
@@ -134,7 +147,6 @@ mod scenarios {
     use crate::client::BenchmarkClient;
 
     pub const BLOB_SIZE: u64 = Mebi(16).value();
-    pub const CHUNK_SIZE: u64 = 7489; // prime
 
     const PART_SIZE_BYTES: &[PartSizeBytes] = &[
         PartSizeBytes::from_u64(BLOB_SIZE),
@@ -148,25 +160,37 @@ mod scenarios {
         MaxConcurrency::from_usize(16),
         MaxConcurrency::from_usize(64),
     ];
+    const CHUNK_SIZES: &[u64] = &[/*512,*/ 1_024 /*65535*/];
+
+    pub fn gen_client_scenarios() -> Vec<(u64, u64)> {
+        let mut collected = Vec::new();
+        for &chunk_size in CHUNK_SIZES {
+            collected.push((BLOB_SIZE, chunk_size));
+        }
+        collected
+    }
 
     pub fn gen_scenarios() -> Vec<Scenario> {
         let mut collected = Vec::new();
-        for &part_size in PART_SIZE_BYTES {
-            for &max_concurrency in MAX_CONCURRENCIES {
-                let num_parts: u64 = BLOB_SIZE / part_size.into_inner();
-                if num_parts < max_concurrency.into_inner() as u64 {
-                    // Makes no sense since there can
-                    // not be "more concurrency" than parts.
-                    continue;
+        for &chunk_size in CHUNK_SIZES {
+            for &part_size in PART_SIZE_BYTES {
+                for &max_concurrency in MAX_CONCURRENCIES {
+                    let num_parts: u64 = BLOB_SIZE / part_size.into_inner();
+                    if num_parts < max_concurrency.into_inner() as u64 {
+                        // Makes no sense since there can
+                        // not be "more concurrency" than parts.
+                        continue;
+                    }
+
+                    let scenario = Scenario {
+                        blob_size: BLOB_SIZE,
+                        chunk_size,
+                        max_concurrency,
+                        part_size,
+                    };
+
+                    collected.push(scenario);
                 }
-
-                let scenario = Scenario {
-                    blob_size: BLOB_SIZE,
-                    max_concurrency,
-                    part_size,
-                };
-
-                collected.push(scenario);
             }
         }
 
@@ -177,6 +201,7 @@ mod scenarios {
     #[derive(Debug, Clone)]
     pub struct Scenario {
         pub blob_size: u64,
+        pub chunk_size: u64,
         pub max_concurrency: MaxConcurrency,
         pub part_size: PartSizeBytes,
     }
@@ -186,7 +211,7 @@ mod scenarios {
             let config = Config::default()
                 .max_concurrency(self.max_concurrency)
                 .part_size_bytes(self.part_size);
-            let client = BenchmarkClient::new(self.blob_size, CHUNK_SIZE);
+            let client = BenchmarkClient::new(self.blob_size, self.chunk_size);
             client.condow(config).unwrap()
         }
     }
@@ -195,8 +220,9 @@ mod scenarios {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(
                 f,
-                "bs_{:05}k_mc_{:03}_ps_{:05}k",
+                "bs_{:05}k_cs_{:05}_mc_{:03}_ps_{:05}k",
                 self.blob_size / 1_000,
+                self.chunk_size,
                 self.max_concurrency,
                 u64::from(self.part_size) / 1_000
             )
@@ -227,7 +253,7 @@ mod chunk_stream_unordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements = Benchmark::new(format!("chunk_stream_count_bytes_{scenario}"));
+        let mut measurements = Benchmark::new("chunk_stream_count_bytes", scenario);
 
         let downloader = scenario.gen_downloader();
 
@@ -258,7 +284,7 @@ mod chunk_stream_unordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements = Benchmark::new(format!("chunk_stream_fill_buffer_{scenario}"));
+        let mut measurements = Benchmark::new("chunk_stream_fill_buffer", scenario);
 
         let downloader = scenario.gen_downloader();
 
@@ -295,7 +321,7 @@ mod chunk_stream_ordered {
     use condow_core::Downloads;
     use futures::AsyncReadExt;
 
-    use super::scenarios::{Scenario, CHUNK_SIZE};
+    use super::scenarios::Scenario;
     use super::{Benchmark, Benchmarks};
 
     pub async fn run(
@@ -314,8 +340,7 @@ mod chunk_stream_ordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements =
-            Benchmark::new(format!("chunk_stream_ordered_count_bytes_{scenario}"));
+        let mut measurements = Benchmark::new("chunk_stream_ordered_count_bytes", scenario);
 
         let downloader = scenario.gen_downloader();
 
@@ -341,8 +366,7 @@ mod chunk_stream_ordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let mut measurements =
-            Benchmark::new(format!("chunk_stream_ordered_fill_buffer_{scenario}"));
+        let mut measurements = Benchmark::new("chunk_stream_ordered_fill_buffer", scenario);
 
         let downloader = scenario.gen_downloader();
 
@@ -374,42 +398,37 @@ mod chunk_stream_ordered {
         num_iterations: usize,
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
-        let buf_sizes = &[1_024usize, 4_096, CHUNK_SIZE as usize];
+        let mut measurements =
+            Benchmark::new("chunk_stream_ordered_random_access_reader", scenario);
 
-        for &buf_size in buf_sizes {
-            let mut measurements = Benchmark::new(format!(
-                "chunk_stream_ordered_random_access_reader_buf_{buf_size}_{scenario}"
-            ));
+        let downloader = scenario.gen_downloader();
 
-            let downloader = scenario.gen_downloader();
+        let expected_byte_count = scenario.blob_size;
+        let mut bytes_buffer: Vec<u8> = vec![0u8; 1_024];
 
-            let expected_byte_count = scenario.blob_size;
-            let mut bytes_buffer: Vec<u8> = vec![0u8; buf_size];
+        for _ in 0..num_iterations {
+            let start = Instant::now();
 
-            for _ in 0..num_iterations {
-                let start = Instant::now();
+            let mut reader = downloader.reader_with_length(IgnoreLocation, scenario.blob_size);
+            reader.set_fetch_ahead_mode(FetchAheadMode::ToEnd);
 
-                let mut reader = downloader.reader_with_length(IgnoreLocation, scenario.blob_size);
-                reader.set_fetch_ahead_mode(FetchAheadMode::ToEnd);
+            let mut bytes_read = 0;
 
-                let mut bytes_read = 0;
+            loop {
+                let read_into_buf = reader.read(&mut bytes_buffer).await?;
+                bytes_read += read_into_buf;
 
-                loop {
-                    let read_into_buf = reader.read(&mut bytes_buffer).await?;
-                    bytes_read += read_into_buf;
-
-                    if read_into_buf == 0 {
-                        break;
-                    }
+                if read_into_buf == 0 {
+                    break;
                 }
-
-                measurements.measured(start, Instant::now(), scenario.blob_size);
-
-                assert_eq!(bytes_read as u64, expected_byte_count);
             }
 
-            benchmarks_collected.add_measurements(measurements);
+            measurements.measured(start, Instant::now(), scenario.blob_size);
+
+            assert_eq!(bytes_read as u64, expected_byte_count);
         }
+
+        benchmarks_collected.add_measurements(measurements);
 
         Ok(())
     }
@@ -425,20 +444,30 @@ mod condow_client {
 
     use crate::client::BenchmarkClient;
 
-    use super::{
-        scenarios::{BLOB_SIZE, CHUNK_SIZE},
-        Benchmark, Benchmarks,
-    };
+    use super::{Benchmark, Benchmarks};
 
-    pub async fn run(benchmarks_collected: &mut Benchmarks) -> Result<(), anyhow::Error> {
-        benchmarks_collected.add_measurements(many_chunks(100).await?);
+    pub async fn run(
+        blob_size: u64,
+        chunk_size: u64,
+        num_iterations: usize,
+        benchmarks_collected: &mut Benchmarks,
+    ) -> Result<(), anyhow::Error> {
+        benchmarks_collected
+            .add_measurements(many_chunks(blob_size, chunk_size, num_iterations).await?);
         Ok(())
     }
 
-    async fn many_chunks(num_iterations: usize) -> Result<Benchmark, anyhow::Error> {
-        let mut results = Benchmark::new(format!("client_get_chunks_{:05}k", BLOB_SIZE / 1000));
+    async fn many_chunks(
+        blob_size: u64,
+        chunk_size: u64,
+        num_iterations: usize,
+    ) -> Result<Benchmark, anyhow::Error> {
+        let mut results = Benchmark::new(
+            "client_get_chunks",
+            &format!("bs_{:05}k_cs_{:05}", blob_size / 1_000, chunk_size),
+        );
 
-        let client = BenchmarkClient::new(BLOB_SIZE, CHUNK_SIZE);
+        let client = BenchmarkClient::new(blob_size, chunk_size);
 
         for _ in 0..num_iterations {
             let start = Instant::now();
@@ -451,7 +480,7 @@ mod condow_client {
                 .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
                 .await?;
 
-            results.measured(start, Instant::now(), BLOB_SIZE);
+            results.measured(start, Instant::now(), blob_size);
 
             assert_eq!(bytes_read, client.get_size(IgnoreLocation).await?);
         }

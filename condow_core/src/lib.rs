@@ -303,19 +303,34 @@ where
     /// Download a BLOB via the returned request object
     pub fn blob(&self) -> RequestNoLocation<C::Location> {
         let condow = self.clone();
-        let download_fn = move |location: <C as CondowClient>::Location, params: Params| {
-            let probe = match (
-                params.probe,
-                condow.probe_factory.as_ref().map(|f| f.make(&location)),
-            ) {
-                (None, None) => ProbeInternal::Off,
-                (Some(req), None) => ProbeInternal::OneDyn(req),
-                (None, Some(fac)) => ProbeInternal::OneStatic(fac),
-                (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
-            };
-
-            machinery::download_range(condow.client, params.config, location, params.range, probe)
-                .boxed()
+        let download_fn = move |location: <C as CondowClient>::Location, params: Params| match (
+            params.probe,
+            condow.probe_factory.as_ref().map(|f| f.make(&location)),
+        ) {
+            (None, None) => {
+                machinery::download_range(condow.client, params.config, location, params.range, ())
+                    .boxed()
+            }
+            (Some(req), None) => machinery::download_range(
+                condow.client,
+                params.config,
+                location,
+                params.range,
+                ProbeInternal::OneDyn::<()>(req),
+            )
+            .boxed(),
+            (None, Some(fac)) => {
+                machinery::download_range(condow.client, params.config, location, params.range, fac)
+                    .boxed()
+            }
+            (Some(req), Some(fac)) => machinery::download_range(
+                condow.client,
+                params.config,
+                location,
+                params.range,
+                ProbeInternal::Two(fac, req),
+            )
+            .boxed(),
         };
 
         RequestNoLocation::new(download_fn, self.config.clone())
@@ -323,9 +338,7 @@ where
 
     /// Get the size of a BLOB at the given location
     pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
-        self.client
-            .get_size(location.into(), &Default::default())
-            .await
+        self.client.get_size(location.into(), &()).await
     }
 
     /// Creates a [RandomAccessReader] for the given location
@@ -394,18 +407,43 @@ where
                 }
             };
 
-            let probe = match (
+            match (
                 params.probe,
                 condow.probe_factory.as_ref().map(|f| f.make(&location)),
             ) {
-                (None, None) => ProbeInternal::Off,
-                (Some(req), None) => ProbeInternal::OneDyn(req),
-                (None, Some(fac)) => ProbeInternal::OneStatic(fac),
-                (Some(req), Some(fac)) => ProbeInternal::Two(fac, req),
-            };
-
-            machinery::download_range(condow.client, params.config, location, params.range, probe)
-                .boxed()
+                (None, None) => machinery::download_range(
+                    condow.client,
+                    params.config,
+                    location,
+                    params.range,
+                    (),
+                )
+                .boxed(),
+                (Some(req), None) => machinery::download_range(
+                    condow.client,
+                    params.config,
+                    location,
+                    params.range,
+                    ProbeInternal::OneDyn::<()>(req),
+                )
+                .boxed(),
+                (None, Some(fac)) => machinery::download_range(
+                    condow.client,
+                    params.config,
+                    location,
+                    params.range,
+                    fac,
+                )
+                .boxed(),
+                (Some(req), Some(fac)) => machinery::download_range(
+                    condow.client,
+                    params.config,
+                    location,
+                    params.range,
+                    ProbeInternal::Two(fac, req),
+                )
+                .boxed(),
+            }
         };
 
         RequestNoLocation::new(download_fn, self.config.clone())

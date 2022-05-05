@@ -4,19 +4,15 @@ use futures::channel::mpsc::UnboundedSender;
 use futures::{StreamExt, TryStreamExt};
 
 use crate::{
-    condow_client::CondowClient,
-    config::ClientRetryWrapper,
-    errors::CondowError,
-    machinery::{part_request::PartRequestIterator, ProbeInternal},
-    probe::Probe,
-    streams::Chunk,
+    condow_client::CondowClient, config::ClientRetryWrapper, errors::CondowError,
+    machinery::part_request::PartRequestIterator, probe::Probe, streams::Chunk,
 };
 
 pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
-    probe: ProbeInternal<P>,
+    probe: P,
     sender: UnboundedSender<Result<Chunk, CondowError>>,
 ) {
     probe.download_started();
