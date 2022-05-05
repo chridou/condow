@@ -15,10 +15,35 @@ use crate::{
     streams::ChunkStreamItem,
 };
 
-use super::{
-    sequential::{DownloaderContext, SequentialDownloader},
-    KillSwitch,
-};
+use self::worker::{DownloaderContext, SequentialDownloader};
+
+use super::KillSwitch;
+
+mod worker;
+
+/// Download the parst of a BLOB concurrently
+pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
+    ranges: PartRequestIterator,
+    n_concurrent: usize,
+    results_sender: UnboundedSender<ChunkStreamItem>,
+    client: ClientRetryWrapper<C>,
+    config: Config,
+    location: C::Location,
+    probe: ProbeInternal<P>,
+    download_span_guard: DownloadSpanGuard,
+) -> Result<(), ()> {
+    let mut downloader = ConcurrentDownloader::new(
+        n_concurrent,
+        results_sender,
+        client,
+        config.clone(),
+        location,
+        probe,
+        download_span_guard,
+    );
+
+    downloader.download(ranges).await
+}
 
 pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
     downloaders: Vec<SequentialDownloader>,

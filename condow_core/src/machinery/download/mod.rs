@@ -10,18 +10,16 @@ use futures::channel::mpsc::UnboundedSender;
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
+    errors::CondowError,
     probe::Probe,
-    streams::ChunkStreamItem,
+    streams::{Chunk, ChunkStreamItem},
 };
-
-use self::concurrent::ConcurrentDownloader;
 
 use super::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal};
 
 mod concurrent;
 mod sequential;
 
-/// Download the parst of a BLOB concurrently
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     ranges: PartRequestIterator,
     n_concurrent: usize,
@@ -32,17 +30,28 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     probe: ProbeInternal<P>,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<(), ()> {
-    let mut downloader = ConcurrentDownloader::new(
+    self::concurrent::download_concurrently(
+        ranges,
         n_concurrent,
         results_sender,
         client,
-        config.clone(),
+        config,
         location,
         probe,
         download_span_guard,
-    );
+    )
+    .await
+}
 
-    downloader.download(ranges).await
+pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
+    part_requests: PartRequestIterator,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
+    probe: ProbeInternal<P>,
+    sender: UnboundedSender<Result<Chunk, CondowError>>,
+) {
+    self::sequential::download_chunks_sequentially(part_requests, client, location, probe, sender)
+        .await
 }
 
 /// Shared state to control cancellation of a download
