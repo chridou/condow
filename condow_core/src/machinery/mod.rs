@@ -164,7 +164,7 @@ async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
             .await
             .unwrap();
         let mut chunk_index = 0;
-        let mut range_offset = 0;
+        let mut range_offset = part_request.range_offset;
         let mut blob_offset = part_request.blob_range.start();
         let mut bytes_left = part_request.blob_range.len();
         let mut stream = stream
