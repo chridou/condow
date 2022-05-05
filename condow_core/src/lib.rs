@@ -316,7 +316,7 @@ where
                 params.config,
                 location,
                 params.range,
-                ProbeInternal::OneDyn::<()>(request_probe),
+                ProbeInternal::RequestProbe::<()>(request_probe),
             )
             .boxed(),
             (None, Some(factory_probe)) => machinery::download_range(
@@ -332,7 +332,7 @@ where
                 params.config,
                 location,
                 params.range,
-                ProbeInternal::Two(factory_probe, request_probe),
+                ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
             )
             .boxed(),
         };
@@ -428,7 +428,7 @@ where
                     params.config,
                     location,
                     params.range,
-                    ProbeInternal::OneDyn::<()>(request_probe),
+                    ProbeInternal::RequestProbe::<()>(request_probe),
                 )
                 .boxed(),
                 (None, Some(factory_probe)) => machinery::download_range(
@@ -444,7 +444,7 @@ where
                     params.config,
                     location,
                     params.range,
-                    ProbeInternal::Two(factory_probe, request_probe),
+                    ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
                 )
                 .boxed(),
             }
