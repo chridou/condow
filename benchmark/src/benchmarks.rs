@@ -21,6 +21,7 @@ pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
 
     let scenarios = gen_scenarios();
     for scenario in scenarios {
+        raw::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         chunk_stream_unordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         chunk_stream_ordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
     }
@@ -139,7 +140,7 @@ mod scenarios {
     use std::fmt;
 
     use condow_core::{
-        condow_client::IgnoreLocation,
+        condow_client::{CondowClient, IgnoreLocation},
         config::{Config, MaxConcurrency, Mebi, PartSizeBytes},
         Downloads,
     };
@@ -213,6 +214,10 @@ mod scenarios {
                 .part_size_bytes(self.part_size);
             let client = BenchmarkClient::new(self.blob_size, self.chunk_size);
             client.condow(config).unwrap()
+        }
+
+        pub fn gen_client(&self) -> impl CondowClient<Location = IgnoreLocation> {
+            BenchmarkClient::new(self.blob_size, self.chunk_size)
         }
     }
 
@@ -431,6 +436,143 @@ mod chunk_stream_ordered {
         benchmarks_collected.add_measurements(measurements);
 
         Ok(())
+    }
+}
+
+mod raw {
+    //! Manual implementation with almost no overhead to compare against
+
+    use std::time::Instant;
+
+    use bytes::Bytes;
+    use condow_core::{
+        condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+        errors::IoError,
+        streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
+    };
+    use futures::{future, Stream, TryStreamExt};
+
+    use super::{scenarios::Scenario, Benchmark, Benchmarks};
+
+    pub async fn run(
+        scenario: &Scenario,
+        num_iterations: usize,
+        benchmarks_collected: &mut Benchmarks,
+    ) -> Result<(), anyhow::Error> {
+        map_to_chunks_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
+        map_to_chunks_ordered_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
+        Ok(())
+    }
+
+    async fn map_to_chunks_count_bytes(
+        scenario: &Scenario,
+        num_iterations: usize,
+        benchmarks_collected: &mut Benchmarks,
+    ) -> Result<(), anyhow::Error> {
+        if scenario.max_concurrency.into_inner() > 1
+            || scenario.part_size.into_inner() != scenario.blob_size
+        {
+            // 1 part purely sequentially
+            return Ok(());
+        }
+
+        let mut measurements = Benchmark::new("raw_map_to_chunks_count_bytes", scenario);
+
+        let client = scenario.gen_client();
+
+        let expected_byte_count = scenario.blob_size;
+
+        for _ in 0..num_iterations {
+            let start = Instant::now();
+
+            let (bytes_stream, _) = client
+                .download(IgnoreLocation, DownloadSpec::Complete)
+                .await?;
+
+            let chunks_stream = make_chunks_stream(bytes_stream, scenario);
+
+            let bytes_read = chunks_stream
+                .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
+                .await?;
+
+            measurements.measured(start, Instant::now(), scenario.blob_size);
+
+            assert_eq!(bytes_read, expected_byte_count);
+        }
+
+        benchmarks_collected.add_measurements(measurements);
+
+        Ok(())
+    }
+
+    async fn map_to_chunks_ordered_count_bytes(
+        scenario: &Scenario,
+        num_iterations: usize,
+        benchmarks_collected: &mut Benchmarks,
+    ) -> Result<(), anyhow::Error> {
+        if scenario.max_concurrency.into_inner() > 1
+            || scenario.part_size.into_inner() != scenario.blob_size
+        {
+            // 1 part purely sequentially
+            return Ok(());
+        }
+
+        let mut measurements = Benchmark::new("raw_map_to_chunks_ordered_count_bytes", scenario);
+
+        let client = scenario.gen_client();
+
+        let expected_byte_count = scenario.blob_size;
+
+        for _ in 0..num_iterations {
+            let start = Instant::now();
+
+            let (bytes_stream, _) = client
+                .download(IgnoreLocation, DownloadSpec::Complete)
+                .await?;
+
+            let chunks_stream = make_chunks_stream(bytes_stream, scenario);
+            let ordered_stream =
+                OrderedChunkStream::new(chunks_stream, BytesHint::new_exact(scenario.blob_size));
+
+            let bytes_read = ordered_stream.count_bytes().await?;
+
+            measurements.measured(start, Instant::now(), scenario.blob_size);
+
+            assert_eq!(bytes_read, expected_byte_count);
+        }
+
+        benchmarks_collected.add_measurements(measurements);
+
+        Ok(())
+    }
+
+    fn make_chunks_stream<St: Stream<Item = Result<Bytes, IoError>> + Send + 'static>(
+        bytes_stream: St,
+        scenario: &Scenario,
+    ) -> impl Stream<Item = ChunkStreamItem> + Send + 'static {
+        let mut chunk_index = 0;
+        let mut range_offset = 0;
+        let mut blob_offset = 0;
+        let mut bytes_left = scenario.blob_size;
+
+        bytes_stream
+            .map_ok(move |bytes| {
+                let bytes_len = bytes.len() as u64;
+                bytes_left -= bytes_len;
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index,
+                    blob_offset,
+                    range_offset,
+                    bytes,
+                    bytes_left,
+                };
+                chunk_index += 1;
+                blob_offset += bytes_len;
+                range_offset += bytes_len;
+                chunk
+            })
+            .map_err(Into::into)
     }
 }
 mod condow_client {

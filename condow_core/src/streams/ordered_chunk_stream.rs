@@ -37,7 +37,7 @@ impl OrderedChunkStream {
     /// if the input was already iterated.
     pub fn new<St>(chunk_stream: St, bytes_hint: BytesHint) -> Self
     where
-        St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+        St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
     {
         let inner_receiver = collect_n_dispatch(chunk_stream);
 
@@ -186,7 +186,7 @@ impl TryFrom<ChunkStream> for OrderedChunkStream {
 
 fn collect_n_dispatch<St>(chunk_stream: St) -> UnboundedReceiver<ChunkStreamItem>
 where
-    St: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+    St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
 {
     let (tx, rx) = mpsc::unbounded();
 
@@ -199,7 +199,7 @@ async fn collect_n_dispatch_loop<StIn>(
     mut chunk_stream: StIn,
     send_item: mpsc::UnboundedSender<ChunkStreamItem>,
 ) where
-    StIn: Stream<Item = ChunkStreamItem> + Send + Sync + 'static + Unpin,
+    StIn: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
 {
     // Max number of Vecs to keep for reusage in `buffer_reservoir`
     const MAX_RESERVOIR_SIZE: usize = 64;
