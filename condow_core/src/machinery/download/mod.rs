@@ -1,4 +1,6 @@
 //! Perform the actual download
+//!
+//! Downloads can be done concurrently or sequentially.
 
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -20,6 +22,9 @@ use super::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal}
 mod concurrent;
 mod sequential;
 
+/// Download the chunks concurrently
+///
+/// This has more overhead than downloading sequentially.
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     ranges: PartRequestIterator,
     n_concurrent: usize,
@@ -43,6 +48,9 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     .await
 }
 
+/// Download the chunks sequentially.
+///
+/// This has less overhead than dowloading concurrently.
 pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
