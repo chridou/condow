@@ -165,7 +165,12 @@ impl DownloadSpanGuard {
 /// all the "matches" all over the place...
 #[derive(Clone)]
 pub(crate) enum ProbeInternal<P: Probe + Clone> {
+    /// We have no internal [Probe] (from the ProbeFactory) but got a [Probe] via
+    /// the request API
     OneDyn(Arc<dyn Probe>),
+    /// We have a [Probe] from the internal probe factory
+    /// and got a [Probe] via
+    /// the request API
     Two(P, Arc<dyn Probe>),
 }
 

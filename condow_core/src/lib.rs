@@ -311,24 +311,28 @@ where
                 machinery::download_range(condow.client, params.config, location, params.range, ())
                     .boxed()
             }
-            (Some(req), None) => machinery::download_range(
+            (Some(request_probe), None) => machinery::download_range(
                 condow.client,
                 params.config,
                 location,
                 params.range,
-                ProbeInternal::OneDyn::<()>(req),
+                ProbeInternal::OneDyn::<()>(request_probe),
             )
             .boxed(),
-            (None, Some(fac)) => {
-                machinery::download_range(condow.client, params.config, location, params.range, fac)
-                    .boxed()
-            }
-            (Some(req), Some(fac)) => machinery::download_range(
+            (None, Some(factory_probe)) => machinery::download_range(
                 condow.client,
                 params.config,
                 location,
                 params.range,
-                ProbeInternal::Two(fac, req),
+                factory_probe,
+            )
+            .boxed(),
+            (Some(request_probe), Some(factory_probe)) => machinery::download_range(
+                condow.client,
+                params.config,
+                location,
+                params.range,
+                ProbeInternal::Two(factory_probe, request_probe),
             )
             .boxed(),
         };
@@ -419,28 +423,28 @@ where
                     (),
                 )
                 .boxed(),
-                (Some(req), None) => machinery::download_range(
+                (Some(request_probe), None) => machinery::download_range(
                     condow.client,
                     params.config,
                     location,
                     params.range,
-                    ProbeInternal::OneDyn::<()>(req),
+                    ProbeInternal::OneDyn::<()>(request_probe),
                 )
                 .boxed(),
-                (None, Some(fac)) => machinery::download_range(
+                (None, Some(factory_probe)) => machinery::download_range(
                     condow.client,
                     params.config,
                     location,
                     params.range,
-                    fac,
+                    factory_probe,
                 )
                 .boxed(),
-                (Some(req), Some(fac)) => machinery::download_range(
+                (Some(request_probe), Some(factory_probe)) => machinery::download_range(
                     condow.client,
                     params.config,
                     location,
                     params.range,
-                    ProbeInternal::Two(fac, req),
+                    ProbeInternal::Two(factory_probe, request_probe),
                 )
                 .boxed(),
             }
