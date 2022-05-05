@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use condow_core::config::Mebi;
 use serde::{Deserialize, Serialize};
 
 use self::scenarios::gen_scenarios;
@@ -22,7 +23,7 @@ pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
 #[derive(Debug)]
 pub struct Benchmark {
     name: String,
-    timings: Vec<Duration>,
+    timings: Vec<(Duration, u64)>,
 }
 
 impl Benchmark {
@@ -34,8 +35,8 @@ impl Benchmark {
     }
 
     /// Add a new measured time
-    pub fn measured(&mut self, start: Instant, end: Instant) {
-        self.timings.push(end - start);
+    pub fn measured(&mut self, start: Instant, end: Instant, bytes: u64) {
+        self.timings.push((end - start, bytes));
     }
 
     /// Convert to [Stats]
@@ -50,6 +51,7 @@ pub struct Stats {
     #[serde(rename = "#")]
     pub index: usize,
     pub name: String,
+    pub avg_mebi_bytes_per_sec: f64,
     pub avg_ms: f64,
     pub first_ms: f64,
     pub min_ms: f64,
@@ -58,20 +60,25 @@ pub struct Stats {
 
 impl Stats {
     pub fn new(measurements: &Benchmark) -> Self {
-        let first_ms = measurements.timings[0].as_secs_f64() * 1_000.0;
+        let first_ms = measurements.timings[0].0.as_secs_f64() * 1_000.0;
         let mut min_ms = f64::MAX;
         let mut max_ms = 0.0f64;
         let mut sum_ms = 0.0f64;
+        let mut total_bytes = 0;
 
         measurements
             .timings
             .iter()
-            .map(|d| d.as_secs_f64() * 1_000.0)
-            .for_each(|t| {
-                min_ms = min_ms.min(t);
-                max_ms = max_ms.max(t);
-                sum_ms += t;
+            .map(|(time, bytes)| (time.as_secs_f64() * 1_000.0, bytes))
+            .for_each(|(time_ms, bytes)| {
+                min_ms = min_ms.min(time_ms);
+                max_ms = max_ms.max(time_ms);
+                sum_ms += time_ms;
+                total_bytes += bytes;
             });
+
+        let avg_mebi_bytes_per_sec =
+            (total_bytes as f64 / Mebi(1).value() as f64) / (sum_ms / 1_000.0);
 
         Self {
             index: 0,
@@ -80,6 +87,7 @@ impl Stats {
             min_ms,
             max_ms,
             avg_ms: sum_ms / measurements.timings.len() as f64,
+            avg_mebi_bytes_per_sec,
         }
     }
 }
@@ -235,7 +243,7 @@ mod chunk_stream_unordered {
                 .count_bytes()
                 .await?;
 
-            measurements.measured(start, Instant::now());
+            measurements.measured(start, Instant::now(), scenario.blob_size);
 
             assert_eq!(bytes_read, expected_byte_count);
         }
@@ -267,7 +275,7 @@ mod chunk_stream_unordered {
                 .write_buffer(&mut bytes_buffer)
                 .await?;
 
-            measurements.measured(start, Instant::now());
+            measurements.measured(start, Instant::now(), scenario.blob_size);
 
             assert_eq!(bytes_read as u64, expected_byte_count);
         }
@@ -318,7 +326,7 @@ mod chunk_stream_ordered {
 
             let bytes_read = downloader.blob().download().await?.count_bytes().await?;
 
-            measurements.measured(start, Instant::now());
+            measurements.measured(start, Instant::now(), scenario.blob_size);
 
             assert_eq!(bytes_read, expected_byte_count);
         }
@@ -351,7 +359,7 @@ mod chunk_stream_ordered {
                 .write_buffer(&mut bytes_buffer)
                 .await?;
 
-            measurements.measured(start, Instant::now());
+            measurements.measured(start, Instant::now(), scenario.blob_size);
 
             assert_eq!(bytes_read as u64, expected_byte_count);
         }
@@ -395,7 +403,7 @@ mod chunk_stream_ordered {
                     }
                 }
 
-                measurements.measured(start, Instant::now());
+                measurements.measured(start, Instant::now(), scenario.blob_size);
 
                 assert_eq!(bytes_read as u64, expected_byte_count);
             }
@@ -443,7 +451,7 @@ mod condow_client {
                 .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
                 .await?;
 
-            results.measured(start, Instant::now());
+            results.measured(start, Instant::now(), BLOB_SIZE);
 
             assert_eq!(bytes_read, client.get_size(IgnoreLocation).await?);
         }
