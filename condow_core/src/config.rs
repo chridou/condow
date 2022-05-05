@@ -34,11 +34,11 @@ pub struct Config {
     ///
     /// Default is 2
     pub buffer_size: BufferSize,
-    /// If all buffers of all download tasks are full, this is the time
+    /// If all buffers of all download tasks are full, this is the maximum time
     /// to pause until the next attempt.
     ///
     /// Default is 10ms
-    pub buffers_full_delay_ms: BuffersFullDelayMs,
+    pub max_buffers_full_delay_ms: MaxBuffersFullDelayMs,
     /// If `true` [Condow](super::Condow) will also request the
     /// size information of a BLOB to verify the range supplied
     /// by a user.
@@ -74,13 +74,13 @@ impl Config {
         self
     }
 
-    /// Set the delay in case all task buffers are full before a retry
+    /// Set the maximum delay in case all task buffers are full before a retry
     /// to enqueue the next downlod part is made.
-    pub fn buffers_full_delay_ms<T: Into<BuffersFullDelayMs>>(
+    pub fn max_buffers_full_delay_ms<T: Into<MaxBuffersFullDelayMs>>(
         mut self,
-        buffers_full_delay_ms: T,
+        max_buffers_full_delay_ms: T,
     ) -> Self {
-        self.buffers_full_delay_ms = buffers_full_delay_ms.into();
+        self.max_buffers_full_delay_ms = max_buffers_full_delay_ms.into();
         self
     }
 
@@ -159,11 +159,11 @@ impl Config {
             found_any = true;
             self.buffer_size = buffer_size;
         }
-        if let Some(buffers_full_delay_ms) =
-            BuffersFullDelayMs::try_from_env_prefixed(prefix.as_ref())?
+        if let Some(max_buffers_full_delay_ms) =
+            MaxBuffersFullDelayMs::try_from_env_prefixed(prefix.as_ref())?
         {
             found_any = true;
-            self.buffers_full_delay_ms = buffers_full_delay_ms;
+            self.max_buffers_full_delay_ms = max_buffers_full_delay_ms;
         }
         if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
             found_any = true;
@@ -185,7 +185,7 @@ impl Default for Config {
             part_size_bytes: Default::default(),
             max_concurrency: Default::default(),
             buffer_size: Default::default(),
-            buffers_full_delay_ms: Default::default(),
+            max_buffers_full_delay_ms: Default::default(),
             always_get_size: Default::default(),
             retries: Some(Default::default()),
         }
@@ -380,19 +380,19 @@ impl Default for AlwaysGetSize {
 }
 
 new_type! {
-    #[doc="Time to wait for download buffers when all were full in ms"]
+    #[doc="Maximum time to wait for download buffers when all were full in ms"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub copy struct BuffersFullDelayMs(u64, env="BUFFERS_FULL_DELAY_MS");
+    pub copy struct MaxBuffersFullDelayMs(u64, env="MAX_BUFFERS_FULL_DELAY_MS");
 }
 
-impl Default for BuffersFullDelayMs {
+impl Default for MaxBuffersFullDelayMs {
     fn default() -> Self {
         Self(10)
     }
 }
 
-impl From<BuffersFullDelayMs> for Duration {
-    fn from(m: BuffersFullDelayMs) -> Self {
+impl From<MaxBuffersFullDelayMs> for Duration {
+    fn from(m: MaxBuffersFullDelayMs) -> Self {
         Duration::from_millis(m.0)
     }
 }

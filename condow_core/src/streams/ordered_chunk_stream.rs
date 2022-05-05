@@ -7,7 +7,7 @@ use std::{
 use bytes::Bytes;
 use futures::{
     channel::mpsc::{self, UnboundedReceiver},
-    ready, Stream, StreamExt, TryStreamExt, future,
+    future, ready, Stream, StreamExt, TryStreamExt,
 };
 use pin_project_lite::pin_project;
 
@@ -131,7 +131,8 @@ impl OrderedChunkStream {
     ///
     /// Provided mainly for testing.
     pub async fn count_bytes(self) -> Result<u64, CondowError> {
-        self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64)).await
+        self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
+            .await
     }
 
     pub fn bytes_stream(

@@ -2,23 +2,48 @@
 
 use std::{
     sync::{atomic::AtomicUsize, Arc},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
-use futures::{channel::mpsc::UnboundedSender, Stream, StreamExt};
+use futures::{channel::mpsc::UnboundedSender, StreamExt};
 
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    machinery::{range_stream::RangeRequest, DownloadSpanGuard, ProbeInternal},
+    machinery::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal},
     probe::Probe,
     streams::ChunkStreamItem,
 };
 
-use super::{
-    sequential::{DownloaderContext, SequentialDownloader},
-    KillSwitch,
-};
+use self::worker::{DownloaderContext, SequentialDownloader};
+
+use super::KillSwitch;
+
+mod worker;
+
+/// Download the parst of a BLOB concurrently
+pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
+    ranges: PartRequestIterator,
+    n_concurrent: usize,
+    results_sender: UnboundedSender<ChunkStreamItem>,
+    client: ClientRetryWrapper<C>,
+    config: Config,
+    location: C::Location,
+    probe: ProbeInternal<P>,
+    download_span_guard: DownloadSpanGuard,
+) -> Result<(), ()> {
+    let mut downloader = ConcurrentDownloader::new(
+        n_concurrent,
+        results_sender,
+        client,
+        config.clone(),
+        location,
+        probe,
+        download_span_guard,
+    );
+
+    downloader.download(ranges).await
+}
 
 pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
     downloaders: Vec<SequentialDownloader>,
@@ -68,22 +93,23 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
         }
     }
 
-    pub async fn download(
-        &mut self,
-        ranges_stream: impl Stream<Item = RangeRequest>,
-    ) -> Result<(), ()> {
+    pub async fn download(&mut self, ranges: PartRequestIterator) -> Result<(), ()> {
         self.probe.download_started();
-        let mut ranges_stream = Box::pin(ranges_stream);
+        let mut ranges_stream = ranges.into_stream();
+
+        let max_buffers_full_delay: Duration = self.config.max_buffers_full_delay_ms.into();
+        let n_downloaders = self.downloaders.len();
+
         while let Some(mut range_request) = ranges_stream.next().await {
             let mut attempt = 1;
-
-            let buffers_full_delay = self.config.buffers_full_delay_ms.into();
-            let n_downloaders = self.downloaders.len();
+            let mut current_buffers_full_delay = Duration::from_secs(0);
 
             loop {
                 if attempt % self.downloaders.len() == 0 {
                     self.probe.queue_full();
-                    tokio::time::sleep(buffers_full_delay).await;
+                    tokio::time::sleep(current_buffers_full_delay).await;
+                    current_buffers_full_delay = max_buffers_full_delay
+                        .min(current_buffers_full_delay + Duration::from_millis(1));
                 }
                 let idx = self.counter + attempt;
                 let downloader = &mut self.downloaders[idx % n_downloaders];

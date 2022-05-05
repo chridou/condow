@@ -12,10 +12,11 @@ use crate::streams::{BytesHint, ChunkStream};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
 
-use self::range_stream::RangeStream;
+use self::part_request::PartRequestIterator;
 
 mod download;
-mod range_stream;
+
+mod part_request;
 
 pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
@@ -103,39 +104,44 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
 ) -> Result<ChunkStream, CondowError> {
     probe.effective_range(range);
 
-    let (n_parts, ranges_stream) = RangeStream::create(range, config.part_size_bytes.into());
+    let part_requests = PartRequestIterator::new(range, config.part_size_bytes.into());
 
-    debug!(parent: download_span_guard.span(), "downloading {n_parts} parts");
+    debug!(parent: download_span_guard.span(), "downloading {} parts", part_requests.exact_size_hint());
 
-    if n_parts == 0 {
+    if part_requests.exact_size_hint() == 0 {
         panic!("n_parts must not be 0. This is a bug");
     }
 
     let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
 
-    if n_parts > usize::MAX as u64 {
-        return Err(CondowError::new_other(
-            "usize overflow while casting from u64",
-        ));
-    }
-    let n_parts = n_parts as usize;
-
-    let effective_concurrency = config.max_concurrency.into_inner().min(n_parts);
-
-    tokio::spawn(async move {
-        let result = download::download_concurrently(
-            ranges_stream,
-            effective_concurrency,
-            sender,
+    let effective_concurrency = config
+        .max_concurrency
+        .into_inner()
+        .min(part_requests.exact_size_hint() as usize);
+    if effective_concurrency == 1 {
+        tokio::spawn(download::download_chunks_sequentially(
+            part_requests,
             client,
-            config,
             location,
             probe,
-            download_span_guard,
-        )
-        .await;
-        result
-    });
+            sender,
+        ));
+    } else {
+        tokio::spawn(async move {
+            let result = download::download_concurrently(
+                part_requests,
+                effective_concurrency,
+                sender,
+                client,
+                config,
+                location,
+                probe,
+                download_span_guard,
+            )
+            .await;
+            result
+        });
+    }
 
     Ok(chunk_stream)
 }

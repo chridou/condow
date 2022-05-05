@@ -31,14 +31,26 @@ pub struct Chunk {
     /// Index of the part this chunk belongs to
     pub part_index: u64,
     /// Index of the chunk within the part
+    ///
+    /// For each new part this must start with zero.
     pub chunk_index: usize,
-    /// Offset of the chunk within the BLOB
+    /// Offset of the chunk within the (original) BLOB
+    ///
+    /// This value can be used to reconstruct a BLOB consisting of multiple
+    /// downloads. E.g. if there is a buffer which has the size of the original
+    /// BLOB this would be the offset to put the bytes of this chunk.
     pub blob_offset: u64,
     /// Offset of the chunk within the downloaded range
+    ///
+    /// This can be used to reconstruct the range of the BLOB which was downloaded.
+    /// E.g. if there is a buffer which has the size of the downloaded range
+    /// this would be the offset to put the bytes of this chunk.
     pub range_offset: u64,
     /// The bytes
     pub bytes: Bytes,
     /// Bytes left in following chunks of the same part. If 0 this is the last chunk of the part.
+    ///
+    /// This is the bytes left excluding the number of bytes of the current chunk.
     pub bytes_left: u64,
 }
 
