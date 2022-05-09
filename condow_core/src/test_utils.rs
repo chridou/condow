@@ -223,7 +223,7 @@ pub fn create_chunk_stream(
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.unbounded_send(chunk);
+        let _ = tx.send(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -316,7 +316,7 @@ pub fn create_chunk_stream_with_err(
     let mut err_sent = chunks_left_until_err == 0;
     loop {
         if chunks_left_until_err == 0 {
-            let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error")));
+            let _ = tx.send(Err(CondowError::new_other("forced stream error")));
             err_sent = true;
             break;
         }
@@ -325,7 +325,7 @@ pub fn create_chunk_stream_with_err(
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.unbounded_send(chunk);
+        let _ = tx.send(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -336,7 +336,7 @@ pub fn create_chunk_stream_with_err(
     }
 
     if !err_sent {
-        let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error after end")));
+        let _ = tx.send(Err(CondowError::new_other("forced stream error after end")));
     }
 
     (chunk_stream, values)
@@ -503,7 +503,7 @@ fn make_a_stream(
                     if let Some(pattern) = pattern {
                         (chunk_index, pattern)
                     } else {
-                        let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
+                        let _ = tx.send(Err(CondowError::new_other("test error")));
                         break;
                     }
                 } else {
@@ -523,7 +523,7 @@ fn make_a_stream(
                 bytes_left,
             };
 
-            let _ = tx.unbounded_send(Ok(chunk));
+            let _ = tx.send(Ok(chunk));
 
             start = end_excl;
         }

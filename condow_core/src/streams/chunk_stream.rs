@@ -3,8 +3,9 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{channel::mpsc, future, ready, Stream, StreamExt, TryStreamExt};
+use futures::{future, ready, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
+use tokio::sync::mpsc;
 
 use crate::{errors::CondowError, streams::ChunkStreamItem};
 
@@ -27,7 +28,7 @@ pin_project! {
 
 impl ChunkStream {
     pub fn new(bytes_hint: BytesHint) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
-        let (tx, receiver) = mpsc::unbounded();
+        let (tx, receiver) = mpsc::unbounded_channel();
 
         let me = Self {
             bytes_hint,
@@ -233,9 +234,9 @@ impl Stream for ChunkStream {
 
         let mut this = self.project();
         *this.is_fresh = false;
-        let receiver = this.receiver.as_mut();
+        let mut receiver = this.receiver.as_mut();
 
-        let next = ready!(mpsc::UnboundedReceiver::poll_next(receiver, cx));
+        let next = ready!(receiver.poll_recv(cx));
         match next {
             Some(Ok(chunk_item)) => {
                 this.bytes_hint.reduce_by(chunk_item.len() as u64);

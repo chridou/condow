@@ -1,7 +1,7 @@
 use std::time::Instant;
 
-use futures::channel::mpsc::UnboundedSender;
 use futures::{StreamExt, TryStreamExt};
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient, config::ClientRetryWrapper, errors::CondowError,
@@ -60,7 +60,7 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
                     chunk_started_at = Instant::now();
                     n_chunks += 1;
                     let send_result = sender
-                        .unbounded_send(Ok(chunk))
+                        .send(Ok(chunk))
                         .map_err(|e| CondowError::new_io(e.to_string()));
                     if let Err(err) = send_result {
                         probe.part_failed(&err, part_request.part_index, &part_request.blob_range);
@@ -75,7 +75,7 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
                         &part_request.blob_range,
                     );
                     probe.download_failed(Some(download_started_at.elapsed()));
-                    sender.unbounded_send(Err(chunk_error)).ok();
+                    sender.send(Err(chunk_error)).ok();
                     return;
                 }
             }

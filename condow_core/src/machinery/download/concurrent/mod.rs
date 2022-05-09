@@ -5,7 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{channel::mpsc::UnboundedSender, StreamExt};
+use futures::StreamExt;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient,

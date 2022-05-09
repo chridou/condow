@@ -7,7 +7,7 @@ use std::sync::{
     Arc,
 };
 
-use futures::channel::mpsc::UnboundedSender;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient,
