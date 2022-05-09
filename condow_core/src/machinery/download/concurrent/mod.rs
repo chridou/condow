@@ -10,7 +10,7 @@ use futures::{channel::mpsc::UnboundedSender, StreamExt};
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    machinery::{part_request::PartRequestIterator, DownloadSpanGuard, ProbeInternal},
+    machinery::{part_request::PartRequestIterator, DownloadSpanGuard},
     probe::Probe,
     streams::ChunkStreamItem,
 };
@@ -29,7 +29,7 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     config: Config,
     location: C::Location,
-    probe: ProbeInternal<P>,
+    probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<(), ()> {
     let mut downloader = ConcurrentDownloader::new(
@@ -50,7 +50,7 @@ pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
     counter: usize,
     kill_switch: KillSwitch,
     config: Config,
-    probe: ProbeInternal<P>,
+    probe: P,
 }
 
 impl<P: Probe + Clone> ConcurrentDownloader<P> {
@@ -60,7 +60,7 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
         client: ClientRetryWrapper<C>,
         config: Config,
         location: C::Location,
-        probe: ProbeInternal<P>,
+        probe: P,
         download_span_guard: DownloadSpanGuard,
     ) -> Self {
         let started_at = Instant::now();

@@ -8,7 +8,6 @@ use tracing::{debug, debug_span, warn, Instrument, Span};
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     errors::{CondowError, IoError},
-    machinery::ProbeInternal,
     probe::Probe,
     streams::{BytesHint, BytesStream},
     InclusiveRange,
@@ -352,7 +351,7 @@ where
     pub async fn get_size<P: Probe + Clone>(
         &self,
         location: C::Location,
-        probe: &ProbeInternal<P>,
+        probe: &P,
     ) -> Result<u64, CondowError> {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_get_size");
@@ -375,7 +374,7 @@ where
         &self,
         location: C::Location,
         spec: DownloadSpec,
-        probe: &ProbeInternal<P>,
+        probe: &P,
     ) -> Result<(BytesStream, BytesHint), CondowError> {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_download_part", %spec);
@@ -410,7 +409,7 @@ async fn retry_get_size<C, P: Probe + Clone>(
     client: &C,
     location: C::Location,
     config: &RetryConfig,
-    probe: &ProbeInternal<P>,
+    probe: &P,
 ) -> Result<u64, CondowError>
 where
     C: CondowClient,
@@ -449,7 +448,7 @@ async fn retry_download<C, P: Probe + Clone>(
     location: C::Location,
     spec: DownloadSpec,
     config: &RetryConfig,
-    probe: ProbeInternal<P>,
+    probe: P,
 ) -> Result<(BytesStream, BytesHint), CondowError>
 where
     C: CondowClient,
@@ -510,7 +509,7 @@ where
 struct RetryLoopPanicGuard<P: Probe + Clone> {
     completed_without_panic: bool,
     next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
-    probe: ProbeInternal<P>,
+    probe: P,
 }
 
 impl<P: Probe + Clone> Drop for RetryLoopPanicGuard<P> {
@@ -535,7 +534,7 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
     client: C,
     next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
     config: RetryConfig,
-    probe: ProbeInternal<P>,
+    probe: P,
 ) where
     C: CondowClient,
 {
@@ -643,7 +642,7 @@ async fn retry_download_get_stream<C, P: Probe + Clone>(
     location: C::Location,
     spec: DownloadSpec,
     config: &RetryConfig,
-    probe: &ProbeInternal<P>,
+    probe: &P,
 ) -> Result<(BytesStream, BytesHint), CondowError>
 where
     C: CondowClient,

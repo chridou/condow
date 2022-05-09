@@ -138,25 +138,30 @@ pub trait Probe: Send + Sync + 'static {
     fn effective_range(&self, range: InclusiveRange) {}
 
     /// The actual IO started
+    #[inline]
     fn download_started(&self) {}
 
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Probe] if the download was successful.**
+    #[inline]
     fn download_completed(&self, time: Duration) {}
 
     /// IO tasks finished
     ///
     /// **This always is the last method called on a [Probe] if the download failed.**
+    #[inline]
     fn download_failed(&self, time: Option<Duration>) {}
 
     /// An error occurred but a retry will be attempted
+    #[inline]
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
     ///
     /// `orig_range` is the original range for the download attempted.
     /// `remaining_range` the tail of the part which is still missing.
+    #[inline]
     fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
@@ -169,21 +174,27 @@ pub trait Probe: Send + Sync + 'static {
     /// A panic was detected
     ///
     /// Unless from a bug in this library it is most likely caused by the [crate::condow_client::CondowClient] implementation
+    #[inline]
     fn panic_detected(&self, msg: &str) {}
 
     /// All queues are full so no new request could be scheduled
+    #[inline]
     fn queue_full(&self) {}
 
     /// A part was completed
+    #[inline]
     fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
     }
     /// Download of a part has started
+    #[inline]
     fn part_started(&self, part_index: u64, range: InclusiveRange) {}
 
     /// Download of a part was completed
+    #[inline]
     fn part_completed(&self, part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {}
 
     /// Download of a part failed
+    #[inline]
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 

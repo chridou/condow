@@ -121,7 +121,7 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                Default::default(),
+                                (),
                             )
                             .await
                             .unwrap();
@@ -216,7 +216,7 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                Default::default(),
+                                (),
                             )
                             .await
                             .unwrap();
@@ -262,7 +262,7 @@ mod range {
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
-                                Default::default(),
+                                (),
                             )
                             .await
                             .unwrap();
@@ -317,7 +317,7 @@ mod range {
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
-                                        Default::default(),
+                                        (),
                                     )
                                     .await
                                     .unwrap();
@@ -363,7 +363,7 @@ mod range {
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
-                                        Default::default(),
+                                        (),
                                     )
                                     .await
                                     .unwrap();
@@ -420,7 +420,7 @@ mod range {
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
-                                            Default::default(),
+                                            (),
                                         )
                                         .await
                                         .unwrap();
@@ -473,7 +473,7 @@ mod range {
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
-                                            Default::default(),
+                                            (),
                                         )
                                         .await
                                         .unwrap();

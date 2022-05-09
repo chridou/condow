@@ -22,14 +22,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -56,14 +49,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -91,14 +77,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -126,14 +105,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -164,14 +136,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -200,14 +165,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -238,14 +196,7 @@ mod download {
             .condow(config)
             .unwrap();
 
-        let result = download_range(
-            condow.client,
-            condow.config,
-            IgnoreLocation,
-            0..100,
-            Default::default(),
-        )
-        .await;
+        let result = download_range(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
 
         let stream = result.unwrap();
 
@@ -290,7 +241,7 @@ mod download_chunks {
             range,
             bytes_hint,
             config,
-            Default::default(),
+            (),
             DownloadSpanGuard::new(Span::none()),
         )
         .await
@@ -322,7 +273,7 @@ mod download_chunks {
             range,
             bytes_hint,
             config,
-            Default::default(),
+            (),
             DownloadSpanGuard::new(Span::none()),
         )
         .await
@@ -354,7 +305,7 @@ mod download_chunks {
             range,
             bytes_hint,
             config,
-            Default::default(),
+            (),
             DownloadSpanGuard::new(Span::none()),
         )
         .await
