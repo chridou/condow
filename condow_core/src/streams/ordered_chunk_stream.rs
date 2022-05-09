@@ -17,6 +17,10 @@ pin_project! {
     ///
     /// All chunks are ordered as they would
     /// have appeared in a sequential download of a range/BLOB
+    ///
+    /// This stream is fused. If it ever yields `None` it will always
+    /// yield `None` afterwards. The stream will only ever return
+    /// one error which is always followed by a `None`.
     pub struct OrderedChunkStream {
         #[pin]
         chunk_stream: BoxStream<'static, Result<Chunk, CondowError>>,

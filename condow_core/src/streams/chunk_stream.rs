@@ -12,6 +12,10 @@ use super::{BytesHint, Chunk, OrderedChunkStream};
 
 pin_project! {
     /// A stream of [Chunk]s received from the network
+    ///
+    /// This stream is fused. If it ever yields `None` it will always
+    /// yield `None` afterwards. The stream will only ever return
+    /// one error which is always followed by a `None`.
     pub struct ChunkStream {
         bytes_hint: BytesHint,
         #[pin]
