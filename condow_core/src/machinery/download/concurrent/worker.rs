@@ -70,7 +70,7 @@ impl SequentialDownloader {
                         .download(
                             location.clone(),
                             DownloadSpec::Range(range_request.blob_range),
-                            &context.probe,
+                            context.probe.clone(),
                         )
                         .instrument(span.clone())
                         .await
@@ -231,7 +231,6 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     let mut bytes_received = 0;
     let bytes_expected = range_request.blob_range.len();
     let part_start = Instant::now();
-    let mut chunk_start = Instant::now();
 
     context
         .probe
@@ -240,8 +239,6 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
-                let t_chunk = chunk_start.elapsed();
-                chunk_start = Instant::now();
                 let n_bytes = bytes.len();
                 bytes_received += bytes.len() as u64;
 
@@ -265,12 +262,9 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
                     return Err(());
                 }
 
-                context.probe.chunk_completed(
-                    range_request.part_index,
-                    chunk_index,
-                    n_bytes,
-                    t_chunk,
-                );
+                context
+                    .probe
+                    .chunk_completed(range_request.part_index, chunk_index, n_bytes);
 
                 context.send_chunk(Chunk {
                     part_index: range_request.part_index,
@@ -392,7 +386,7 @@ mod tests {
         let mut ranges_stream =
             PartRequestIterator::new(range, config.part_size_bytes.into()).into_stream();
 
-        let (result_stream, results_sender) = ChunkStream::new(bytes_hint);
+        let (result_stream, results_sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
         let mut downloader = SequentialDownloader::new(
             client.into(),

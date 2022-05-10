@@ -2,7 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
-use futures::{channel::mpsc, Stream, StreamExt};
+use futures::{channel::mpsc, Future, Stream, StreamExt};
 use tracing::{debug, debug_span, warn, Instrument, Span};
 
 use crate::{
@@ -370,27 +370,26 @@ where
         f.await
     }
 
-    pub async fn download<P: Probe + Clone>(
+    pub fn download<P: Probe + Clone>(
         &self,
         location: C::Location,
         spec: DownloadSpec,
-        probe: &P,
-    ) -> Result<(BytesStream, BytesHint), CondowError> {
+        probe: P,
+    ) -> impl Future<Output = Result<(BytesStream, BytesHint), CondowError>> + Send + 'static {
         let parent = Span::current();
         let span = debug_span!(parent: &parent, "client_download_part", %spec);
         debug!(parent: &span, "downloading part");
 
-        let f = async {
-            let (client, config) = self.inner.as_ref();
+        let inner = Arc::clone(&self.inner);
+        async move {
+            let (client, config) = inner.as_ref();
             if let Some(config) = config {
                 retry_download(client, location, spec, config, probe.clone()).await
             } else {
                 Ok(client.download(location, spec).await?)
             }
         }
-        .instrument(span);
-
-        f.await
+        .instrument(span)
     }
 }
 

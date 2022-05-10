@@ -3,7 +3,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{future, ready, Stream, StreamExt, TryStreamExt};
+use futures::{future, ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
 use tokio::sync::mpsc;
 
@@ -20,19 +20,23 @@ pin_project! {
     pub struct ChunkStream {
         bytes_hint: BytesHint,
         #[pin]
-        receiver: mpsc::UnboundedReceiver<ChunkStreamItem>,
+        source: SourceFlavour,
         is_closed: bool,
         is_fresh: bool,
     }
 }
 
 impl ChunkStream {
-    pub fn new(bytes_hint: BytesHint) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
+    pub fn new_channel_sink_pair(
+        bytes_hint: BytesHint,
+    ) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
         let (tx, receiver) = mpsc::unbounded_channel();
+
+        let source = SourceFlavour::Channel { receiver };
 
         let me = Self {
             bytes_hint,
-            receiver,
+            source,
             is_closed: false,
             is_fresh: true,
         };
@@ -40,13 +44,22 @@ impl ChunkStream {
         (me, tx)
     }
 
-    /// Returns true if no more items can be pulled from this stream.
-    ///
-    /// Also `true` if an error occurred
+    pub fn from_stream(stream: BoxStream<'static, ChunkStreamItem>, bytes_hint: BytesHint) -> Self {
+        let source = SourceFlavour::Stream { stream };
+
+        Self {
+            bytes_hint,
+            source,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
+
+    /// Returns a [ChunkStream] which does not yield any items
     pub fn empty() -> Self {
-        let (mut me, _) = Self::new(BytesHint(0, Some(0)));
+        let (mut me, _) = Self::new_channel_sink_pair(BytesHint(0, Some(0)));
         me.is_closed = true;
-        me.receiver.close();
+        me.source.close();
         me
     }
 
@@ -79,14 +92,14 @@ impl ChunkStream {
     /// not know, whether we can fill the buffer in a contiguous way.
     pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
         if !self.is_fresh {
-            self.receiver.close();
+            self.source.close();
             return Err(CondowError::new_other(
                 "stream already iterated".to_string(),
             ));
         }
 
         if (buffer.len() as u64) < self.bytes_hint.lower_bound() {
-            self.receiver.close();
+            self.source.close();
             return Err(CondowError::new_other(format!(
                 "buffer to small ({}). at least {} bytes required",
                 buffer.len(),
@@ -107,7 +120,7 @@ impl ChunkStream {
             };
 
             if range_offset > usize::MAX as u64 {
-                self.receiver.close();
+                self.source.close();
                 return Err(CondowError::new_other(
                     "usize overflow while casting from u64",
                 ));
@@ -117,7 +130,7 @@ impl ChunkStream {
 
             let end_excl = range_offset + bytes.len();
             if end_excl > buffer.len() {
-                self.receiver.close();
+                self.source.close();
                 return Err(CondowError::new_other(format!(
                     "write attempt beyond buffer end (buffer len = {}). \
                     attempted to write at index {}",
@@ -143,7 +156,7 @@ impl ChunkStream {
     pub async fn into_vec(mut self) -> Result<Vec<u8>, CondowError> {
         if let Some(total_bytes) = self.bytes_hint.exact() {
             if total_bytes > usize::MAX as u64 {
-                self.receiver.close();
+                self.source.close();
                 return Err(CondowError::new_other(
                     "usize overflow while casting from u64",
                 ));
@@ -173,11 +186,40 @@ impl ChunkStream {
     }
 }
 
+pin_project! {
+    #[project = SourceFlavourProj]
+    enum SourceFlavour {
+         Channel{#[pin] receiver: mpsc::UnboundedReceiver<ChunkStreamItem>},
+         Stream{#[pin] stream: BoxStream<'static, ChunkStreamItem>},
+    }
+}
+
+impl SourceFlavour {
+    fn close(&mut self) {
+        match self {
+            SourceFlavour::Channel { receiver } => receiver.close(),
+            SourceFlavour::Stream { .. } => {}
+        }
+    }
+}
+
+impl Stream for SourceFlavour {
+    type Item = ChunkStreamItem;
+    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = self.project();
+
+        match this {
+            SourceFlavourProj::Stream { stream } => stream.poll_next(cx),
+            SourceFlavourProj::Channel { mut receiver } => receiver.poll_recv(cx),
+        }
+    }
+}
+
 async fn stream_into_vec_with_unknown_size(
     mut stream: ChunkStream,
 ) -> Result<Vec<u8>, CondowError> {
     if !stream.is_fresh {
-        stream.receiver.close();
+        stream.source.close();
         return Err(CondowError::new_other(
             "stream already iterated".to_string(),
         ));
@@ -185,7 +227,7 @@ async fn stream_into_vec_with_unknown_size(
 
     let lower_bound = stream.bytes_hint.lower_bound();
     if lower_bound > usize::MAX as u64 {
-        stream.receiver.close();
+        stream.source.close();
         return Err(CondowError::new_other(
             "usize overflow while casting from u64",
         ));
@@ -204,7 +246,7 @@ async fn stream_into_vec_with_unknown_size(
         };
 
         if range_offset > usize::MAX as u64 {
-            stream.receiver.close();
+            stream.source.close();
             return Err(CondowError::new_other(
                 "usize overflow while casting from u64",
             ));
@@ -234,9 +276,9 @@ impl Stream for ChunkStream {
 
         let mut this = self.project();
         *this.is_fresh = false;
-        let mut receiver = this.receiver.as_mut();
+        let source = this.source.as_mut();
 
-        let next = ready!(receiver.poll_recv(cx));
+        let next = ready!(source.poll_next(cx));
         match next {
             Some(Ok(chunk_item)) => {
                 this.bytes_hint.reduce_by(chunk_item.len() as u64);
@@ -244,7 +286,7 @@ impl Stream for ChunkStream {
             }
             Some(Err(err)) => {
                 *this.is_closed = true;
-                this.receiver.close();
+                this.source.close();
                 *this.bytes_hint = BytesHint::new_exact(0);
                 Poll::Ready(Some(Err(err)))
             }

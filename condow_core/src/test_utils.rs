@@ -216,7 +216,7 @@ pub fn create_chunk_stream(
 
     parts.shuffle(&mut rng);
 
-    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+    let (chunk_stream, tx) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
     loop {
         let n = rng.gen_range(0..parts.len());
@@ -311,7 +311,7 @@ pub fn create_chunk_stream_with_err(
 
     parts.shuffle(&mut rng);
 
-    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+    let (chunk_stream, tx) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
     let mut err_sent = chunks_left_until_err == 0;
     loop {
@@ -489,7 +489,8 @@ fn make_a_stream(
 
     let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
 
-    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len() as u64));
+    let (chunk_stream, tx) =
+        ChunkStream::new_channel_sink_pair(BytesHint::new_exact(bytes.len() as u64));
 
     tokio::spawn(async move {
         let mut start = 0;

@@ -183,8 +183,7 @@ pub trait Probe: Send + Sync + 'static {
 
     /// A part was completed
     #[inline]
-    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
-    }
+    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {}
     /// Download of a part has started
     #[inline]
     fn part_started(&self, part_index: u64, range: InclusiveRange) {}
@@ -231,14 +230,12 @@ mod simple_reporter {
     #[derive(Clone)]
     pub struct SimpleReporter {
         inner: Arc<Inner>,
-        skip_first_chunk_timings: bool,
     }
 
     impl SimpleReporter {
-        pub fn new(location: &dyn fmt::Display, skip_first_chunk_timings: bool) -> Self {
+        pub fn new(location: &dyn fmt::Display) -> Self {
             SimpleReporter {
                 inner: Arc::new(Inner::new(location.to_string())),
-                skip_first_chunk_timings,
             }
         }
 
@@ -303,7 +300,7 @@ mod simple_reporter {
 
     impl Default for SimpleReporter {
         fn default() -> Self {
-            Self::new(&"unknown".to_string(), false)
+            Self::new(&"unknown".to_string())
         }
     }
 
@@ -388,22 +385,11 @@ mod simple_reporter {
             self.inner.n_queue_full.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn chunk_completed(
-            &self,
-            _part_index: u64,
-            chunk_index: usize,
-            n_bytes: usize,
-            time: Duration,
-        ) {
+        fn chunk_completed(&self, _part_index: u64, _chunk_index: usize, n_bytes: usize) {
             let inner = self.inner.as_ref();
             inner.n_chunks_received.fetch_add(1, Ordering::SeqCst);
             inner.min_chunk_bytes.fetch_min(n_bytes, Ordering::SeqCst);
             inner.max_chunk_bytes.fetch_max(n_bytes, Ordering::SeqCst);
-            if self.skip_first_chunk_timings && chunk_index == 0 {
-                let us = time.as_micros() as u64;
-                inner.min_chunk_us.fetch_min(us, Ordering::SeqCst);
-                inner.max_chunk_us.fetch_max(us, Ordering::SeqCst);
-            }
         }
 
         fn part_completed(&self, _part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {

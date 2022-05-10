@@ -14,7 +14,7 @@ use crate::{
     config::{ClientRetryWrapper, Config},
     errors::CondowError,
     probe::Probe,
-    streams::{Chunk, ChunkStreamItem},
+    streams::{ChunkStream, ChunkStreamItem},
 };
 
 use super::{part_request::PartRequestIterator, DownloadSpanGuard};
@@ -56,10 +56,11 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
-    sender: UnboundedSender<Result<Chunk, CondowError>>,
-) {
-    self::sequential::download_chunks_sequentially(part_requests, client, location, probe, sender)
-        .await
+) -> Result<ChunkStream, CondowError> {
+    Ok(
+        self::sequential::download_chunks_sequentially(part_requests, client, location, probe)
+            .await,
+    )
 }
 
 /// Shared state to control cancellation of a download

@@ -1,6 +1,6 @@
 use futures::Stream;
 
-use crate::InclusiveRange;
+use crate::{streams::BytesHint, InclusiveRange};
 
 /// A request to download a part.
 ///
@@ -31,6 +31,7 @@ pub struct PartRequestIterator {
     next_part_index: u64,
     parts_left: u64,
     end_incl: u64,
+    bytes_left: u64,
 }
 
 impl PartRequestIterator {
@@ -46,11 +47,16 @@ impl PartRequestIterator {
             next_part_index: 0,
             parts_left: calc_num_parts(range, part_size),
             end_incl: range.end_incl(),
+            bytes_left: range.len(),
         }
     }
 
     pub fn exact_size_hint(&self) -> u64 {
         self.parts_left
+    }
+
+    pub fn bytes_hint(&self) -> BytesHint {
+        BytesHint::new_exact(self.bytes_left)
     }
 
     /// Turns this iterator into a [Stream]
@@ -78,6 +84,7 @@ impl Iterator for PartRequestIterator {
         };
 
         self.next_range_offset += blob_range.len();
+        self.bytes_left -= blob_range.len();
         self.next_part_index += 1;
 
         self.parts_left -= 1;

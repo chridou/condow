@@ -112,21 +112,14 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
         panic!("n_parts must not be 0. This is a bug");
     }
 
-    let (chunk_stream, sender) = ChunkStream::new(bytes_hint);
-
     let effective_concurrency = config
         .max_concurrency
         .into_inner()
         .min(part_requests.exact_size_hint() as usize);
     if effective_concurrency == 1 {
-        tokio::spawn(download::download_chunks_sequentially(
-            part_requests,
-            client,
-            location,
-            probe,
-            sender,
-        ));
+        download::download_chunks_sequentially(part_requests, client, location, probe).await
     } else {
+        let (chunk_stream, sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
         tokio::spawn(async move {
             let result = download::download_concurrently(
                 part_requests,
@@ -141,9 +134,8 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
             .await;
             result
         });
+        Ok(chunk_stream)
     }
-
-    Ok(chunk_stream)
 }
 
 /// This struct contains a span which must be kept alive until whole download is completed
@@ -272,20 +264,12 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     }
 
     #[inline]
-    fn chunk_completed(
-        &self,
-        part_index: u64,
-        chunk_index: usize,
-        n_bytes: usize,
-        time: std::time::Duration,
-    ) {
+    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {
         match self {
-            ProbeInternal::RequestProbe(p) => {
-                p.chunk_completed(part_index, chunk_index, n_bytes, time)
-            }
+            ProbeInternal::RequestProbe(p) => p.chunk_completed(part_index, chunk_index, n_bytes),
             ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe) => {
-                factory_probe.chunk_completed(part_index, chunk_index, n_bytes, time);
-                request_probe.chunk_completed(part_index, chunk_index, n_bytes, time);
+                factory_probe.chunk_completed(part_index, chunk_index, n_bytes);
+                request_probe.chunk_completed(part_index, chunk_index, n_bytes);
             }
         }
     }

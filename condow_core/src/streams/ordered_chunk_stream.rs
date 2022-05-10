@@ -298,7 +298,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_chunks_1() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -329,7 +330,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_chunks_2() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -370,7 +372,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_1() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -410,7 +413,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_non_interleaved() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -468,7 +472,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_interleaved_0101() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -526,7 +531,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_interleaved_0110() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -584,7 +590,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_1() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -624,7 +631,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_non_interleaved() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -682,7 +690,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_interleaved_1010() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
@@ -740,7 +749,8 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_interleaved_1001() {
-                let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_no_hint());
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
                 let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
                 let chunk = Chunk {
