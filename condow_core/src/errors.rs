@@ -125,7 +125,13 @@ impl From<CondowErrorKind> for CondowError {
 
 impl From<std::io::Error> for CondowError {
     fn from(io: std::io::Error) -> Self {
-        CondowError::new_io("io error").with_source(io)
+        use std::io::ErrorKind;
+        match io.kind() {
+            ErrorKind::NotFound => CondowError::new_not_found("not found"),
+            ErrorKind::PermissionDenied => CondowError::new_access_denied("permission denied"),
+            _ => CondowError::new_io("io error"),
+        }
+        .with_source(io)
     }
 }
 

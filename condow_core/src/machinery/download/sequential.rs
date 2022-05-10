@@ -221,6 +221,8 @@ mod yield_bytes_streams {
     }
 
     pin_project! {
+        /// A stream which queries the client on poll for a byte stream
+        /// on a [PartRequest] as long as there are [PartRequest]s
         pub struct YieldBytesStreams<C: CondowClient, P> {
             client: ClientRetryWrapper<C>,
             location: C::Location,
