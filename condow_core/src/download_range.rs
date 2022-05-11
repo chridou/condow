@@ -9,6 +9,18 @@ use crate::errors::CondowError;
 /// An inclusive range which can not have a length of 0.
 ///
 /// A replacement for [RangeInclusive] with some sugar.
+///
+///
+/// ## Examples
+///
+/// ```
+/// # use condow_core::download_range::InclusiveRange;
+///
+/// let range1: InclusiveRange = (10..=20).into();
+/// let range2 = InclusiveRange(10, 20);
+///
+/// assert_eq!(range1, range2);
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct InclusiveRange(pub u64, pub u64);
 
@@ -96,6 +108,11 @@ impl From<RangeInclusive<u64>> for InclusiveRange {
     }
 }
 
+impl From<RangeToInclusive<u64>> for InclusiveRange {
+    fn from(ri: RangeToInclusive<u64>) -> Self {
+        Self(0, ri.end)
+    }
+}
 impl From<InclusiveRange> for RangeInclusive<u64> {
     fn from(ir: InclusiveRange) -> Self {
         ir.to_std_range()

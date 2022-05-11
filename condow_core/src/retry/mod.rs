@@ -391,6 +391,12 @@ where
         }
         .instrument(span)
     }
+
+    /// Returns the inner [CondowClient]
+    #[allow(dead_code)]
+    pub fn inner_client(&self) -> &C {
+        &self.inner.0
+    }
 }
 
 #[cfg(test)]

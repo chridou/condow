@@ -35,10 +35,12 @@ pub struct PartRequestIterator {
 }
 
 impl PartRequestIterator {
-    pub fn new(range: InclusiveRange, part_size: u64) -> Self {
+    pub fn new<R: Into<InclusiveRange>>(range: R, part_size: u64) -> Self {
         if part_size == 0 {
             panic!("part_size must not be 0. This is a bug somewhere else.");
         }
+
+        let range = range.into();
 
         Self {
             start: range.start(),

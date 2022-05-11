@@ -13,20 +13,27 @@ fn get_test_file_path() -> String {
 
 #[tokio::test]
 async fn download_full() {
+    dbg!(get_test_file_path());
+
     let condow = create_condow_condow();
 
-    let data = condow
-        .blob()
-        .at(get_test_file_path())
-        .range(..)
-        .download()
-        .await
-        .unwrap()
-        .into_vec()
-        .await
-        .unwrap();
+    let f = async {
+        let data = condow
+            .blob()
+            .at(get_test_file_path())
+            .range(..)
+            .download()
+            .await?
+            .into_vec()
+            .await?;
 
-    assert_eq!(&data[..], b"abcdefghijklmnopqrstuvwxyz");
+        Ok::<_, anyhow::Error>(data)
+    };
+
+    match f.await {
+        Ok(data) => assert_eq!(&data[..], b"abcdefghijklmnopqrstuvwxyz"),
+        Err(err) => panic!("{err}"),
+    }
 }
 
 #[tokio::test]

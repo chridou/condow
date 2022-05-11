@@ -105,7 +105,10 @@ where
                 mut fut,
                 part_request,
             } => match fut.poll_unpin(cx) {
-                Poll::Pending => Poll::Pending, // Nothing there. Poll again later. Future will wake us up.
+                Poll::Pending => {
+                    *this.state = State::GettingStream { fut, part_request };
+                    Poll::Pending
+                } // Nothing there. Poll again later. Future will wake us up.
                 Poll::Ready(Ok((stream, bytes_hint))) => {
                     *this.state = State::Start;
                     Poll::Ready(Some(Ok((stream, bytes_hint, part_request))))
@@ -117,5 +120,150 @@ where
             },
             State::Finished => Poll::Ready(None),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use futures::{future, TryStreamExt};
+
+    use crate::{
+        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
+        errors::{CondowError, CondowErrorKind},
+        machinery::part_request::PartRequestIterator,
+        retry::ClientRetryWrapper,
+        test_utils::TestCondowClient,
+    };
+
+    use super::YieldBytesStreams;
+
+    #[tokio::test]
+    async fn non_pending_input_stream() {
+        let client = TestCondowClient::new();
+        let blob = client.data_slice().to_vec();
+        let client = ClientRetryWrapper::new(client, Default::default());
+
+        let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+        let stream = YieldBytesStreams::new(client, IgnoreLocation, part_requests, ());
+        let stream = stream.map_ok(|(st, _, _)| st);
+        let result = stream
+            .try_fold(Vec::new(), |mut acc, bytes_stream| async move {
+                bytes_stream
+                    .try_for_each(|bytes: Bytes| {
+                        acc.extend_from_slice(&bytes);
+                        future::ok(())
+                    })
+                    .await?;
+                Ok(acc)
+            })
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn pending_input_stream() {
+        for pendings in 1..=5 {
+            let client = TestCondowClient::new().pending_on_stream_n_times(pendings);
+            let blob = client.data_slice().to_vec();
+            let client = ClientRetryWrapper::new(client, Default::default());
+
+            let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+            let stream = YieldBytesStreams::new(client, IgnoreLocation, part_requests, ());
+            let stream = stream.map_ok(|(st, _, _)| st);
+            let result = stream
+                .try_fold(Vec::new(), |mut acc, bytes_stream| async move {
+                    bytes_stream
+                        .try_for_each(|bytes: Bytes| {
+                            acc.extend_from_slice(&bytes);
+                            future::ok(())
+                        })
+                        .await?;
+                    Ok(acc)
+                })
+                .await
+                .unwrap();
+
+            let expected = blob;
+            assert_eq!(result, expected, "pendings: {pendings}");
+        }
+    }
+
+    #[tokio::test]
+    async fn pending_on_request() {
+        for pendings in 1..=5 {
+            let client = TestCondowClient::new().pending_on_request_n_times(pendings);
+            let blob = client.data_slice().to_vec();
+            let client = ClientRetryWrapper::new(client, Default::default());
+
+            let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+            let stream = YieldBytesStreams::new(client, IgnoreLocation, part_requests, ());
+            let stream = stream.map_ok(|(st, _, _)| st);
+            let result = stream
+                .try_fold(Vec::new(), |mut acc, bytes_stream| async move {
+                    bytes_stream
+                        .try_for_each(|bytes: Bytes| {
+                            acc.extend_from_slice(&bytes);
+                            future::ok(())
+                        })
+                        .await?;
+                    Ok(acc)
+                })
+                .await
+                .unwrap();
+
+            let expected = blob;
+            assert_eq!(result, expected, "pendings: {pendings}");
+        }
+    }
+
+    #[tokio::test]
+    async fn failures_with_retries() {
+        let blob = (0u32..=999).map(|x| x as u8).collect::<Vec<_>>();
+
+        let client = FailingClientSimulatorBuilder::default()
+            .blob(blob.clone())
+            .chunk_size(7)
+            .responses()
+            .success()
+            .failure(CondowErrorKind::Io)
+            .success()
+            .success_with_stream_failure(3)
+            .success()
+            .failures([CondowErrorKind::Io, CondowErrorKind::Remote])
+            .success_with_stream_failure(6)
+            .failure(CondowError::new_remote("this did not work"))
+            .success_with_stream_failure(2)
+            .finish();
+
+        let client = ClientRetryWrapper::new(client, Some(Default::default()));
+
+        let part_requests = PartRequestIterator::new(0..=999, 13);
+
+        let stream = YieldBytesStreams::new(client, IgnoreLocation, part_requests, ());
+
+        let stream = stream.map_ok(|(stream, _, _)| stream);
+
+        let result = stream
+            .try_fold(Vec::new(), |mut acc, bytes_stream| async move {
+                bytes_stream
+                    .try_for_each(|bytes: Bytes| {
+                        acc.extend_from_slice(&bytes);
+                        future::ok(())
+                    })
+                    .await?;
+                Ok(acc)
+            })
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
     }
 }

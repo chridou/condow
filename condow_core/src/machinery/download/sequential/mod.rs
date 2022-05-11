@@ -213,3 +213,72 @@ where
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use futures::StreamExt;
+
+    use crate::{
+        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
+        errors::{CondowError, CondowErrorKind},
+        machinery::part_request::PartRequestIterator,
+        retry::ClientRetryWrapper,
+        streams::BytesHint,
+        test_utils::TestCondowClient,
+        ChunkStream,
+    };
+
+    use super::PollPartsSeq;
+
+    #[tokio::test]
+    async fn get_ranges() {
+        let client = ClientRetryWrapper::new(TestCondowClient::new().max_jitter_ms(5), None);
+        for part_size in 1..100 {
+            let part_requests = PartRequestIterator::new(0..=99, part_size);
+
+            let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+
+            let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
+                .into_vec()
+                .await
+                .unwrap();
+
+            let expected = &client.inner_client().data_slice()[0..=99];
+            assert_eq!(result, expected, "part_size: {part_size}");
+        }
+    }
+
+    #[tokio::test]
+    async fn failures_with_retries() {
+        let blob = (0u32..=999).map(|x| x as u8).collect::<Vec<_>>();
+
+        let client = FailingClientSimulatorBuilder::default()
+            .blob(blob.clone())
+            .chunk_size(7)
+            .responses()
+            .success()
+            .failure(CondowErrorKind::Io)
+            .success()
+            .success_with_stream_failure(3)
+            .success()
+            .failures([CondowErrorKind::Io, CondowErrorKind::Remote])
+            .success_with_stream_failure(6)
+            .failure(CondowError::new_remote("this did not work"))
+            .success_with_stream_failure(2)
+            .finish();
+
+        let client = ClientRetryWrapper::new(client, Some(Default::default()));
+
+        let part_requests = PartRequestIterator::new(0..=999, 13);
+
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+
+        let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
+            .into_vec()
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
+    }
+}

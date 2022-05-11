@@ -55,6 +55,13 @@ impl ChunkStream {
         }
     }
 
+    pub fn from_stream_typed<St>(stream: St, bytes_hint: BytesHint) -> Self
+    where
+        St: Stream<Item = ChunkStreamItem> + Send + 'static,
+    {
+        Self::from_stream(stream.boxed(), bytes_hint)
+    }
+
     /// Returns a [ChunkStream] which does not yield any items
     pub fn empty() -> Self {
         let (mut me, _) = Self::new_channel_sink_pair(BytesHint(0, Some(0)));
