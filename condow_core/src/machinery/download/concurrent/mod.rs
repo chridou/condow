@@ -1,7 +1,10 @@
 //! Spawns multiple [SequentialDownloader]s to download parts
 
 use std::{
-    sync::{atomic::AtomicUsize, Arc},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
@@ -17,8 +20,6 @@ use crate::{
 };
 
 use self::worker::{DownloaderContext, SequentialDownloader};
-
-use super::KillSwitch;
 
 mod worker;
 
@@ -132,5 +133,29 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
             self.counter += 1;
         }
         Ok(())
+    }
+}
+
+/// Shared state to control cancellation of a download
+#[derive(Clone)]
+pub(crate) struct KillSwitch {
+    is_pushed: Arc<AtomicBool>,
+}
+
+impl KillSwitch {
+    pub fn new() -> Self {
+        Self {
+            is_pushed: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Check whether cancellation of the download was requested
+    pub fn is_pushed(&self) -> bool {
+        self.is_pushed.load(Ordering::SeqCst)
+    }
+
+    /// Request cancellation of the download
+    pub fn push_the_button(&self) {
+        self.is_pushed.store(true, Ordering::SeqCst)
     }
 }

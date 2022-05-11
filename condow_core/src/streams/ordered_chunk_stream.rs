@@ -810,19 +810,17 @@ mod tests {
         mod with_pending {
             //! The `OrderedChunkStream` will receive "pendings"
 
-            use core::fmt;
-            use std::task::Poll;
-
             use bytes::Bytes;
-            use futures::{Stream, StreamExt};
-            use pin_project_lite::pin_project;
-            use tokio::sync::mpsc::{self, unbounded_channel};
+            use futures::{channel::mpsc, StreamExt};
 
-            use crate::streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream};
+            use crate::{
+                streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
+                test_utils::stream_penderizer::{Penderizer, PenderizerModule},
+            };
 
             #[tokio::test]
             async fn parts_0_chunks_1() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -834,7 +832,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -855,7 +853,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_chunks_2() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -867,7 +865,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     let chunk = Chunk {
                         part_index: 0,
@@ -877,7 +875,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -898,7 +896,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_1() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -910,7 +908,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 0,
@@ -919,7 +917,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -940,7 +938,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_non_interleaved() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -952,7 +950,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -961,7 +959,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 0,
@@ -970,7 +968,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -979,7 +977,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1000,7 +998,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_interleaved_0101() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1012,7 +1010,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 0,
@@ -1021,7 +1019,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -1030,7 +1028,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -1039,7 +1037,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1060,7 +1058,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_0_1_chunks_2_interleaved_0110() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1072,7 +1070,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 0,
@@ -1081,7 +1079,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -1090,7 +1088,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -1099,7 +1097,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1120,7 +1118,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_1() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1132,7 +1130,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 0,
@@ -1141,7 +1139,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1162,7 +1160,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_non_interleaved() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1174,7 +1172,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -1183,7 +1181,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 0,
@@ -1192,7 +1190,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -1201,7 +1199,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1222,7 +1220,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_interleaved_1010() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1234,7 +1232,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 0,
@@ -1243,7 +1241,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -1252,7 +1250,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -1261,7 +1259,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1282,7 +1280,7 @@ mod tests {
 
             #[tokio::test]
             async fn parts_1_0_chunks_2_interleaved_1001() {
-                for pending_module in PendingModule::variants() {
+                for pending_module in penderizer_variants() {
                     let (mut ordered_chunk_stream, tx) =
                         gen_pending_stream(pending_module, BytesHint::new_no_hint());
 
@@ -1294,7 +1292,7 @@ mod tests {
                         bytes: Bytes::from_static(&[3]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 0,
@@ -1303,7 +1301,7 @@ mod tests {
                         bytes: Bytes::from_static(&[1]),
                         bytes_left: 1,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 0,
                         chunk_index: 1,
@@ -1312,7 +1310,7 @@ mod tests {
                         bytes: Bytes::from_static(&[2]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
                     let chunk = Chunk {
                         part_index: 1,
                         chunk_index: 1,
@@ -1321,7 +1319,7 @@ mod tests {
                         bytes: Bytes::from_static(&[4]),
                         bytes_left: 0,
                     };
-                    tx.send(Ok(chunk)).unwrap();
+                    tx.unbounded_send(Ok(chunk)).unwrap();
 
                     drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -1341,105 +1339,25 @@ mod tests {
             }
 
             fn gen_pending_stream(
-                pending_module: PendingModule,
+                pending_module: PenderizerModule,
                 bytes_hint: BytesHint,
             ) -> (OrderedChunkStream, mpsc::UnboundedSender<ChunkStreamItem>) {
-                let (tx, rx) = unbounded_channel();
+                let (tx, rx) = mpsc::unbounded();
 
-                let pending_stream = PendingStream::new(rx, pending_module);
+                let pending_stream = Penderizer::new(rx, pending_module);
 
                 let ordered_chunk_stream = OrderedChunkStream::new(pending_stream, bytes_hint);
 
                 (ordered_chunk_stream, tx)
             }
 
-            pin_project! {
-                struct PendingStream {
-                    #[pin]
-                    incoming: mpsc::UnboundedReceiver<ChunkStreamItem>,
-                    pending_module: PendingModule,
-                }
-            }
-
-            impl PendingStream {
-                fn new(
-                    incoming: mpsc::UnboundedReceiver<ChunkStreamItem>,
-                    pending_module: PendingModule,
-                ) -> Self {
-                    Self {
-                        incoming,
-                        pending_module,
-                    }
-                }
-            }
-
-            impl Stream for PendingStream {
-                type Item = ChunkStreamItem;
-
-                fn poll_next(
-                    self: std::pin::Pin<&mut Self>,
-                    cx: &mut std::task::Context<'_>,
-                ) -> std::task::Poll<Option<Self::Item>> {
-                    let mut this = self.project();
-
-                    if this.pending_module.return_pending() {
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
-                    }
-
-                    match this.incoming.poll_recv(cx) {
-                        Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
-                        Poll::Ready(None) => Poll::Ready(None),
-                        Poll::Pending => {
-                            panic!("input must never return pending")
-                        }
-                    }
-                }
-            }
-
-            #[derive(Clone, Copy)]
-            struct PendingModule {
-                consecutive_pendings: usize,
-                pendings_done: usize,
-            }
-
-            impl PendingModule {
-                pub fn new(consecutive_pendings: usize) -> Self {
-                    Self {
-                        consecutive_pendings,
-                        pendings_done: 0,
-                    }
-                }
-
-                fn return_pending(&mut self) -> bool {
-                    let pending = if self.pendings_done < self.consecutive_pendings {
-                        self.pendings_done += 1;
-                        true
-                    } else {
-                        self.pendings_done = 0;
-                        false
-                    };
-                    pending
-                }
-
-                fn variants() -> [Self; 4] {
-                    [
-                        PendingModule::new(1),
-                        PendingModule::new(2),
-                        PendingModule::new(3),
-                        PendingModule::new(4),
-                    ]
-                }
-            }
-
-            impl fmt::Display for PendingModule {
-                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    write!(
-                        f,
-                        "Consecutive pendings: {}, pendings done: {}",
-                        self.consecutive_pendings, self.pendings_done
-                    )
-                }
+            fn penderizer_variants() -> [PenderizerModule; 4] {
+                [
+                    PenderizerModule::new(1),
+                    PenderizerModule::new(2),
+                    PenderizerModule::new(3),
+                    PenderizerModule::new(4),
+                ]
             }
         }
     }

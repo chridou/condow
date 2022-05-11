@@ -74,11 +74,10 @@
 //!
 //! // Methods of Probe have noop default implementations
 //! impl Probe for MyProbe {
-//!     fn chunk_completed(&self,
+//!     fn chunk_recieved(&self,
 //!         _part_index: u64,
 //!         _chunk_index: usize,
-//!         n_bytes: usize,
-//!         _time: Duration) {
+//!         n_bytes: usize) {
 //!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
 //!     }
 //! }
@@ -183,7 +182,18 @@ pub trait Probe: Send + Sync + 'static {
 
     /// A part was completed
     #[inline]
-    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {}
+    fn chunk_received(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {
+        // Just for the time being as long as chunk_completed is not removed
+        #[allow(deprecated)]
+        self.chunk_completed(part_index, chunk_index, n_bytes, Duration::ZERO)
+    }
+
+    /// A part was completed
+    #[inline]
+    #[deprecated(note = "use chunk_received instead", since = "0.17.1")]
+    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
+    }
+
     /// Download of a part has started
     #[inline]
     fn part_started(&self, part_index: u64, range: InclusiveRange) {}
@@ -385,7 +395,7 @@ mod simple_reporter {
             self.inner.n_queue_full.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn chunk_completed(&self, _part_index: u64, _chunk_index: usize, n_bytes: usize) {
+        fn chunk_received(&self, _part_index: u64, _chunk_index: usize, n_bytes: usize) {
             let inner = self.inner.as_ref();
             inner.n_chunks_received.fetch_add(1, Ordering::SeqCst);
             inner.min_chunk_bytes.fetch_min(n_bytes, Ordering::SeqCst);

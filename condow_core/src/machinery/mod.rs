@@ -264,12 +264,12 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     }
 
     #[inline]
-    fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {
+    fn chunk_received(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {
         match self {
-            ProbeInternal::RequestProbe(p) => p.chunk_completed(part_index, chunk_index, n_bytes),
+            ProbeInternal::RequestProbe(p) => p.chunk_received(part_index, chunk_index, n_bytes),
             ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe) => {
-                factory_probe.chunk_completed(part_index, chunk_index, n_bytes);
-                request_probe.chunk_completed(part_index, chunk_index, n_bytes);
+                factory_probe.chunk_received(part_index, chunk_index, n_bytes);
+                request_probe.chunk_received(part_index, chunk_index, n_bytes);
             }
         }
     }

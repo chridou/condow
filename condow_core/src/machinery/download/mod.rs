@@ -2,11 +2,6 @@
 //!
 //! Downloads can be done concurrently or sequentially.
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
@@ -61,28 +56,4 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
         self::sequential::download_chunks_sequentially(part_requests, client, location, probe)
             .await,
     )
-}
-
-/// Shared state to control cancellation of a download
-#[derive(Clone)]
-pub(crate) struct KillSwitch {
-    is_pushed: Arc<AtomicBool>,
-}
-
-impl KillSwitch {
-    pub fn new() -> Self {
-        Self {
-            is_pushed: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// Check whether cancellation of the download was requested
-    pub fn is_pushed(&self) -> bool {
-        self.is_pushed.load(Ordering::SeqCst)
-    }
-
-    /// Request cancellation of the download
-    pub fn push_the_button(&self) {
-        self.is_pushed.store(true, Ordering::SeqCst)
-    }
 }

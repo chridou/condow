@@ -13,6 +13,11 @@ use crate::{
     InclusiveRange,
 };
 
+mod yield_bytes_streams;
+
+/// Download the parts sequentially.
+///
+/// The download is driven by the returned stream.
 pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
@@ -28,7 +33,8 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
     chunk_stream
 }
 
-struct StreamingState {
+/// Stateful data for streaming a part
+struct StreamingPart {
     bytes_stream: BytesStream,
     part_index: u64,
     chunk_index: usize,
@@ -40,16 +46,21 @@ struct StreamingState {
     part_range: InclusiveRange,
 }
 
+/// Internal state of the stream.
 enum State {
+    /// We are waiting for a new [BytesStream] alongside the corresponding [PartRequest].
     WaitingForStream {
         bytes_streams:
             BoxStream<'static, Result<(BytesStream, BytesHint, PartRequest), CondowError>>,
     },
-    Streaming(StreamingState),
+    /// We are streming the [Chunk]s of a part.
+    Streaming(StreamingPart),
+    /// Nothing more to do. Always return `None`
     Finished,
 }
 
 pin_project! {
+    /// A strem which polls parts of a download and yields the [Chunk]s in order
 struct PollPartsSeq<P> {
     state: State,
     probe: P,
@@ -99,13 +110,20 @@ where
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
         let this = self.project();
+
+        // We need to get ownership of the state. So we have to reassign it in each match
+        // arm unless we want to be in "Finished" state.
         let state = std::mem::replace(this.state, State::Finished);
+
         match state {
             State::Finished => Poll::Ready(None),
             State::WaitingForStream { mut bytes_streams } => {
                 match bytes_streams.poll_next_unpin(cx) {
                     Poll::Ready(Some(Ok((bytes_stream, _, part_request)))) => {
-                        *this.state = State::Streaming(StreamingState {
+                        this.probe
+                            .part_started(part_request.part_index, part_request.blob_range);
+
+                        *this.state = State::Streaming(StreamingPart {
                             bytes_stream,
                             part_index: part_request.part_index,
                             chunk_index: 0,
@@ -116,7 +134,7 @@ where
                             part_started_at: Instant::now(),
                             part_range: part_request.blob_range,
                         });
-                        cx.waker().wake_by_ref();
+                        cx.waker().wake_by_ref(); // Stream sent "Ready" we return "Pending" -> We need to wake!
                         Poll::Pending
                     }
                     Poll::Ready(Some(Err(err))) => {
@@ -149,7 +167,7 @@ where
                             bytes_left: streaming_state.bytes_left,
                         };
 
-                        this.probe.chunk_completed(
+                        this.probe.chunk_received(
                             streaming_state.part_index,
                             streaming_state.chunk_index,
                             bytes_len as usize,
@@ -183,7 +201,7 @@ where
                         *this.state = State::WaitingForStream {
                             bytes_streams: streaming_state.bytes_streams,
                         };
-                        cx.waker().wake_by_ref();
+                        cx.waker().wake_by_ref(); // Bytes Stream returned "Ready" and will not wake us up!
                         Poll::Pending
                     }
                     Poll::Pending => {
@@ -191,118 +209,6 @@ where
                         Poll::Pending
                     }
                 }
-            }
-        }
-    }
-}
-
-mod yield_bytes_streams {
-    use std::task::Poll;
-
-    use futures::{future::BoxFuture, FutureExt, Stream};
-    use pin_project_lite::pin_project;
-
-    use crate::{
-        condow_client::CondowClient,
-        errors::CondowError,
-        machinery::part_request::PartRequest,
-        probe::Probe,
-        retry::ClientRetryWrapper,
-        streams::{BytesHint, BytesStream},
-    };
-
-    enum State {
-        Start,
-        Finished,
-        GettingStream {
-            fut: BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>,
-            part_request: PartRequest,
-        },
-    }
-
-    pin_project! {
-        /// A stream which queries the client on poll for a byte stream
-        /// on a [PartRequest] as long as there are [PartRequest]s
-        pub struct YieldBytesStreams<C: CondowClient, P> {
-            client: ClientRetryWrapper<C>,
-            location: C::Location,
-            part_requests: Box<dyn Iterator<Item=PartRequest>+ Send + 'static>,
-            state: State,
-            probe: P,
-        }
-    }
-
-    impl<C, P> YieldBytesStreams<C, P>
-    where
-        C: CondowClient,
-        P: Probe + Clone,
-    {
-        pub(crate) fn new<I>(
-            client: ClientRetryWrapper<C>,
-            location: C::Location,
-            part_requests: I,
-            probe: P,
-        ) -> Self
-        where
-            I: Iterator<Item = PartRequest> + Send + 'static,
-        {
-            YieldBytesStreams {
-                client,
-                location,
-                part_requests: Box::new(part_requests),
-                state: State::Start,
-                probe,
-            }
-        }
-    }
-
-    impl<C, P> Stream for YieldBytesStreams<C, P>
-    where
-        C: CondowClient,
-        P: Probe + Clone,
-    {
-        type Item = Result<(BytesStream, BytesHint, PartRequest), CondowError>;
-
-        fn poll_next(
-            self: std::pin::Pin<&mut Self>,
-            cx: &mut std::task::Context<'_>,
-        ) -> std::task::Poll<Option<Self::Item>> {
-            let this = self.project();
-            let state = std::mem::replace(this.state, State::Finished);
-            match state {
-                State::Start => {
-                    if let Some(part_request) = this.part_requests.next() {
-                        let fut = this
-                            .client
-                            .download(
-                                this.location.clone(),
-                                part_request.blob_range.into(),
-                                this.probe.clone(),
-                            )
-                            .boxed();
-                        *this.state = State::GettingStream { fut, part_request };
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    } else {
-                        *this.state = State::Finished;
-                        Poll::Ready(None)
-                    }
-                }
-                State::GettingStream {
-                    mut fut,
-                    part_request,
-                } => match fut.poll_unpin(cx) {
-                    Poll::Pending => Poll::Pending,
-                    Poll::Ready(Ok((stream, bytes_hint))) => {
-                        *this.state = State::Start;
-                        Poll::Ready(Some(Ok((stream, bytes_hint, part_request))))
-                    }
-                    Poll::Ready(Err(err)) => {
-                        *this.state = State::Finished;
-                        Poll::Ready(Some(Err(err)))
-                    }
-                },
-                State::Finished => Poll::Ready(None),
             }
         }
     }

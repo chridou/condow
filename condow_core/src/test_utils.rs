@@ -533,6 +533,106 @@ fn make_a_stream(
     Ok(chunk_stream)
 }
 
+pub mod stream_penderizer {
+    //! Makes a stream more pending...
+
+    use std::{fmt, task::Poll};
+
+    use futures::Stream;
+    use pin_project_lite::pin_project;
+
+    pin_project! {
+        /// Adds pendings to poll
+        ///
+        /// Useful to test for codepaths on pending in
+        /// custom stream implementations.
+        ///
+        ///
+        /// TODO: Can something be named like this?
+        pub struct Penderizer<St> {
+            #[pin]
+            incoming: St,
+            pending_module: PenderizerModule,
+        }
+    }
+
+    impl<St> Penderizer<St>
+    where
+        St: Stream + Send + 'static + Unpin,
+    {
+        pub fn new(incoming: St, pending_module: PenderizerModule) -> Self {
+            Self {
+                incoming,
+                pending_module,
+            }
+        }
+    }
+
+    impl<St> Stream for Penderizer<St>
+    where
+        St: Stream + Send + 'static + Unpin,
+    {
+        type Item = St::Item;
+
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            let this = self.project();
+
+            if this.pending_module.return_pending() {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+
+            match this.incoming.poll_next(cx) {
+                Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => {
+                    panic!("input must never return pending")
+                }
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct PenderizerModule {
+        /// Zero means no pendings are added
+        consecutive_pendings: usize,
+        pendings_done: usize,
+    }
+
+    impl PenderizerModule {
+        pub fn new(consecutive_pendings: usize) -> Self {
+            Self {
+                consecutive_pendings,
+                pendings_done: 0,
+            }
+        }
+
+        fn return_pending(&mut self) -> bool {
+            let pending = if self.pendings_done < self.consecutive_pendings {
+                self.pendings_done += 1;
+                true
+            } else {
+                self.pendings_done = 0;
+                false
+            };
+            pending
+        }
+    }
+
+    impl fmt::Display for PenderizerModule {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "Consecutive pendings: {}, pendings done: {}",
+                self.consecutive_pendings, self.pendings_done
+            )
+        }
+    }
+}
+
 #[tokio::test]
 async fn check_test_downloader_1() {
     // Use the range patterns completely and even cycle them

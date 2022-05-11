@@ -264,7 +264,7 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
 
                 context
                     .probe
-                    .chunk_completed(range_request.part_index, chunk_index, n_bytes);
+                    .chunk_received(range_request.part_index, chunk_index, n_bytes);
 
                 context.send_chunk(Chunk {
                     part_index: range_request.part_index,
@@ -332,8 +332,8 @@ mod tests {
         config::Config,
         errors::{CondowError, CondowErrorKind},
         machinery::{
-            download::{
-                concurrent::worker::{DownloaderContext, SequentialDownloader},
+            download::concurrent::{
+                worker::{DownloaderContext, SequentialDownloader},
                 KillSwitch,
             },
             part_request::PartRequestIterator,
