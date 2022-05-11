@@ -14,7 +14,7 @@ use crate::errors::CondowError;
 /// ## Examples
 ///
 /// ```
-/// # use condow_core::download_range::InclusiveRange;
+/// # use condow_core::InclusiveRange;
 ///
 /// let range1: InclusiveRange = (10..=20).into();
 /// let range2 = InclusiveRange(10, 20);

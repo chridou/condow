@@ -6,15 +6,13 @@ fn create_condow_condow() -> Condow<FsClient> {
 
 fn get_test_file_path() -> String {
     format!(
-        "{}/tests/test_data",
+        "{}/tests/test_datax",
         std::env::current_dir().unwrap().display()
     )
 }
 
 #[tokio::test]
 async fn download_full() {
-    dbg!(get_test_file_path());
-
     let condow = create_condow_condow();
 
     let f = async {
@@ -32,7 +30,10 @@ async fn download_full() {
 
     match f.await {
         Ok(data) => assert_eq!(&data[..], b"abcdefghijklmnopqrstuvwxyz"),
-        Err(err) => panic!("{err}"),
+        Err(err) => {
+            dbg!(err);
+            panic!("failed. see debug output")
+        }
     }
 }
 

@@ -74,7 +74,7 @@
 //!
 //! // Methods of Probe have noop default implementations
 //! impl Probe for MyProbe {
-//!     fn chunk_recieved(&self,
+//!     fn chunk_received(&self,
 //!         _part_index: u64,
 //!         _chunk_index: usize,
 //!         n_bytes: usize) {
