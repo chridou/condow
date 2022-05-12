@@ -281,4 +281,63 @@ mod tests {
         let expected = blob;
         assert_eq!(result, expected);
     }
+
+    #[tokio::test]
+    async fn pending_on_request() {
+        let client = TestCondowClient::new().pending_on_request_n_times(1);
+        let blob = client.data_slice().to_vec();
+        let client = ClientRetryWrapper::new(client, Default::default());
+
+        let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+
+        let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
+            .into_vec()
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn pending_on_stream() {
+        let client = TestCondowClient::new().pending_on_stream_n_times(1);
+        let blob = client.data_slice().to_vec();
+        let client = ClientRetryWrapper::new(client, Default::default());
+
+        let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+
+        let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
+            .into_vec()
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn pending_on_request_and_stream() {
+        let client = TestCondowClient::new()
+            .pending_on_request_n_times(1)
+            .pending_on_stream_n_times(1);
+        let blob = client.data_slice().to_vec();
+        let client = ClientRetryWrapper::new(client, Default::default());
+
+        let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
+
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+
+        let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
+            .into_vec()
+            .await
+            .unwrap();
+
+        let expected = blob;
+        assert_eq!(result, expected);
+    }
 }

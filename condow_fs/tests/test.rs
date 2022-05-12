@@ -6,7 +6,7 @@ fn create_condow_condow() -> Condow<FsClient> {
 
 fn get_test_file_path() -> String {
     format!(
-        "{}/tests/test_datax",
+        "{}/tests/test_data",
         std::env::current_dir().unwrap().display()
     )
 }
