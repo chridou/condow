@@ -67,8 +67,7 @@ async fn run() -> Result<(), Error> {
     let config = Config::default()
         .max_buffers_full_delay_ms(0)
         .part_size_bytes(13)
-        .max_concurrency(1)
-        .disable_retries();
+        .max_concurrency(2);
 
     let condow = FailingClientSimulatorBuilder::default()
         .blob(blob)
