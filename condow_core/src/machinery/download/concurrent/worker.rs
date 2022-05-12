@@ -8,10 +8,8 @@ use std::{
     time::Instant,
 };
 
-use futures::{
-    channel::mpsc::{self, Sender, UnboundedSender},
-    StreamExt,
-};
+use futures::StreamExt;
+use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
 use tracing::{debug, debug_span, trace, Instrument, Span};
 
 use crate::{
@@ -52,7 +50,7 @@ impl SequentialDownloader {
         tokio::spawn(
             async move {
                 let mut request_receiver = Box::pin(request_receiver);
-                while let Some(range_request) = request_receiver.next().await {
+                while let Some(range_request) = request_receiver.recv().await {
                     let span = debug_span!(
                         parent: context.span(), "download_part", 
                         part_index = %range_request.part_index,
@@ -72,7 +70,7 @@ impl SequentialDownloader {
                         .download(
                             location.clone(),
                             DownloadSpec::Range(range_request.blob_range),
-                            &context.probe,
+                            context.probe.clone(),
                         )
                         .instrument(span.clone())
                         .await
@@ -109,13 +107,8 @@ impl SequentialDownloader {
     pub fn enqueue(&mut self, req: PartRequest) -> Result<Option<PartRequest>, ()> {
         match self.request_sender.try_send(req) {
             Ok(()) => Ok(None),
-            Err(err) => {
-                if err.is_disconnected() {
-                    Err(())
-                } else {
-                    Ok(Some(err.into_inner()))
-                }
-            }
+            Err(TrySendError::Closed(_)) => Err(()),
+            Err(TrySendError::Full(part_request)) => Ok(Some(part_request)),
         }
     }
 }
@@ -159,7 +152,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
     }
 
     pub fn send_chunk(&self, chunk: Chunk) -> Result<(), ()> {
-        if self.results_sender.unbounded_send(Ok(chunk)).is_ok() {
+        if self.results_sender.send(Ok(chunk)).is_ok() {
             return Ok(());
         }
 
@@ -170,7 +163,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
 
     /// Send an error and mark as completed
     pub fn send_err(&mut self, err: CondowError) {
-        let _ = self.results_sender.unbounded_send(Err(err));
+        let _ = self.results_sender.send(Err(err));
         self.completed = true;
         self.kill_switch.push_the_button();
     }
@@ -201,7 +194,7 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
             } else {
                 CondowError::new_other("download ended unexpectetly")
             };
-            let _ = self.results_sender.unbounded_send(Err(err));
+            let _ = self.results_sender.send(Err(err));
         }
 
         let remaining_contexts = self.counter.fetch_sub(1, Ordering::SeqCst);
@@ -238,7 +231,6 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     let mut bytes_received = 0;
     let bytes_expected = range_request.blob_range.len();
     let part_start = Instant::now();
-    let mut chunk_start = Instant::now();
 
     context
         .probe
@@ -247,8 +239,6 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
     while let Some(bytes_res) = bytes_stream.next().await {
         match bytes_res {
             Ok(bytes) => {
-                let t_chunk = chunk_start.elapsed();
-                chunk_start = Instant::now();
                 let n_bytes = bytes.len();
                 bytes_received += bytes.len() as u64;
 
@@ -272,12 +262,9 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
                     return Err(());
                 }
 
-                context.probe.chunk_completed(
-                    range_request.part_index,
-                    chunk_index,
-                    n_bytes,
-                    t_chunk,
-                );
+                context
+                    .probe
+                    .chunk_received(range_request.part_index, chunk_index, n_bytes);
 
                 context.send_chunk(Chunk {
                     part_index: range_request.part_index,
@@ -345,8 +332,8 @@ mod tests {
         config::Config,
         errors::{CondowError, CondowErrorKind},
         machinery::{
-            download::{
-                concurrent::worker::{DownloaderContext, SequentialDownloader},
+            download::concurrent::{
+                worker::{DownloaderContext, SequentialDownloader},
                 KillSwitch,
             },
             part_request::PartRequestIterator,
@@ -399,7 +386,7 @@ mod tests {
         let mut ranges_stream =
             PartRequestIterator::new(range, config.part_size_bytes.into()).into_stream();
 
-        let (result_stream, results_sender) = ChunkStream::new(bytes_hint);
+        let (result_stream, results_sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
         let mut downloader = SequentialDownloader::new(
             client.into(),

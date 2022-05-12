@@ -101,6 +101,7 @@ mod range {
                     max_jitter_ms: 0,
                     include_size_hint: true,
                     max_chunk_size: chunk_size,
+                    ..TestCondowClient::default()
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
@@ -148,6 +149,7 @@ mod range {
                     max_jitter_ms: 0,
                     include_size_hint: true,
                     max_chunk_size: chunk_size,
+                    ..TestCondowClient::default()
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
@@ -196,6 +198,7 @@ mod range {
                     max_jitter_ms: 0,
                     include_size_hint: true,
                     max_chunk_size: chunk_size,
+                    ..TestCondowClient::default()
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
@@ -242,6 +245,7 @@ mod range {
                     max_jitter_ms: 0,
                     include_size_hint: true,
                     max_chunk_size: chunk_size,
+                    ..TestCondowClient::default()
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
@@ -296,6 +300,7 @@ mod range {
                             max_jitter_ms: 0,
                             include_size_hint: true,
                             max_chunk_size: chunk_size,
+                            ..TestCondowClient::default()
                         };
 
                         for part_size in [1u64, 3, 50, 1_000] {
@@ -343,6 +348,7 @@ mod range {
                             max_jitter_ms: 0,
                             include_size_hint: true,
                             max_chunk_size: chunk_size,
+                            ..TestCondowClient::default()
                         };
 
                         for part_size in [1u64, 3, 50, 1_000] {
@@ -397,6 +403,7 @@ mod range {
                             max_jitter_ms: 0,
                             include_size_hint: true,
                             max_chunk_size: chunk_size,
+                            ..TestCondowClient::default()
                         };
 
                         for part_size in [1u64, 33] {
@@ -450,6 +457,7 @@ mod range {
                             max_jitter_ms: 0,
                             include_size_hint: true,
                             max_chunk_size: chunk_size,
+                            ..TestCondowClient::default()
                         };
 
                         for part_size in [1u64, 33] {

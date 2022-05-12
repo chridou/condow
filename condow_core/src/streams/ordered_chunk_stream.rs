@@ -1,14 +1,11 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     convert::TryFrom,
     task::{Context, Poll},
 };
 
 use bytes::Bytes;
-use futures::{
-    channel::mpsc::{self, UnboundedReceiver},
-    future, ready, Stream, StreamExt, TryStreamExt,
-};
+use futures::{future, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
@@ -20,11 +17,19 @@ pin_project! {
     ///
     /// All chunks are ordered as they would
     /// have appeared in a sequential download of a range/BLOB
+    ///
+    /// This stream is fused. If it ever yields `None` it will always
+    /// yield `None` afterwards. The stream will only ever return
+    /// one error which is always followed by a `None`.
     pub struct OrderedChunkStream {
-        bytes_hint: BytesHint,
         #[pin]
-        inner_receiver: UnboundedReceiver<ChunkStreamItem>,
+        chunk_stream: BoxStream<'static, Result<Chunk, CondowError>>,
+        current_part_index: u64,
+        current_chunk_index: usize,
+        collected: HashMap<u64, VecDeque<Chunk>>,
         is_closed: bool,
+        bytes_hint: BytesHint,
+        reservoir: BufferReservoir,
     }
 }
 
@@ -39,12 +44,14 @@ impl OrderedChunkStream {
     where
         St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
     {
-        let inner_receiver = collect_n_dispatch(chunk_stream);
-
         Self {
-            bytes_hint,
-            inner_receiver,
+            chunk_stream: Box::pin(chunk_stream),
+            current_part_index: 0,
+            current_chunk_index: 0,
+            collected: HashMap::new(),
             is_closed: false,
+            bytes_hint,
+            reservoir: BufferReservoir::default(),
         }
     }
 
@@ -127,18 +134,16 @@ impl OrderedChunkStream {
         }
     }
 
+    pub fn bytes_stream(self) -> impl Stream<Item = Result<Bytes, CondowError>> + Send + 'static {
+        self.map_ok(|chunk| chunk.bytes)
+    }
+
     /// Counts the number of bytes downloaded
     ///
     /// Provided mainly for testing.
     pub async fn count_bytes(self) -> Result<u64, CondowError> {
         self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
             .await
-    }
-
-    pub fn bytes_stream(
-        self,
-    ) -> impl Stream<Item = Result<Bytes, CondowError>> + Send + Sync + 'static {
-        self.map_ok(|chunk| chunk.bytes)
     }
 }
 
@@ -152,27 +157,123 @@ impl Stream for OrderedChunkStream {
 
         let this = self.project();
 
-        let next = ready!(this.inner_receiver.poll_next(cx));
-        match next {
-            Some(Ok(chunk)) => {
-                this.bytes_hint.reduce_by(chunk.len() as u64);
-                Poll::Ready(Some(Ok(chunk)))
-            }
-            Some(Err(err)) => {
-                *this.is_closed = true;
-                *this.bytes_hint = BytesHint::new_exact(0);
-                Poll::Ready(Some(Err(err)))
-            }
-            None => {
-                *this.is_closed = true;
-                *this.bytes_hint = BytesHint::new_exact(0);
-                Poll::Ready(None)
+        match this.chunk_stream.poll_next(cx) {
+            Poll::Ready(next) => match next {
+                Some(Ok(chunk)) => {
+                    if chunk.part_index == *this.current_part_index {
+                        let chunk_to_send = if chunk.chunk_index == *this.current_chunk_index {
+                            chunk
+                        } else {
+                            let chunks = this.collected.get_mut(this.current_part_index).unwrap();
+                            chunks.push_back(chunk);
+                            chunks.pop_front().unwrap()
+                        };
+
+                        if chunk_to_send.is_last() {
+                            this.collected.remove(this.current_part_index);
+                            *this.current_part_index += 1;
+                            *this.current_chunk_index = 0;
+                        } else {
+                            *this.current_chunk_index += 1;
+                        }
+
+                        this.bytes_hint.reduce_by(chunk_to_send.len() as u64);
+                        Poll::Ready(Some(Ok(chunk_to_send)))
+                    } else {
+                        let entry = this
+                            .collected
+                            .entry(chunk.part_index)
+                            .or_insert_with(|| this.reservoir.get_queue());
+                        entry.push_back(chunk);
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                }
+                Some(Err(err)) => {
+                    *this.is_closed = true;
+                    *this.bytes_hint = BytesHint::new_exact(0);
+                    Poll::Ready(Some(Err(err)))
+                }
+                None => {
+                    if let Some(chunks) = this.collected.get_mut(this.current_part_index) {
+                        let chunk = chunks.pop_front().expect("chunks on flush not empty");
+                        if chunk.is_last() {
+                            this.reservoir.return_queue(
+                                this.collected.remove(this.current_part_index).unwrap(),
+                            );
+                            *this.current_part_index += 1;
+                            *this.current_chunk_index = 0;
+                        } else {
+                            *this.current_chunk_index += 1;
+                        }
+                        *this.bytes_hint = BytesHint::new_exact(0);
+                        cx.waker().wake_by_ref(); // inner stream is empty so it will never cause a wake up again
+                        Poll::Ready(Some(Ok(chunk)))
+                    } else {
+                        *this.is_closed = true;
+                        Poll::Ready(None)
+                    }
+                }
+            },
+            Poll::Pending => {
+                if let Some(chunks) = this.collected.get_mut(this.current_part_index) {
+                    let chunk = if let Some(chunk) = chunks.pop_front() {
+                        chunk
+                    } else {
+                        // We need to wait until another one arrives.
+                        // The inner stream will wake us up.
+                        return Poll::Pending;
+                    };
+                    if chunk.is_last() {
+                        this.reservoir
+                            .return_queue(this.collected.remove(this.current_part_index).unwrap());
+                        *this.current_part_index += 1;
+                        *this.current_chunk_index = 0;
+                    } else {
+                        *this.current_chunk_index += 1;
+                    }
+                    Poll::Ready(Some(Ok(chunk)))
+                } else {
+                    // no need to wake up since inner stream will trigger a wake up
+                    Poll::Pending
+                }
             }
         }
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         (0, None)
+    }
+}
+
+const MAX_BUFFER_RESERVOIR_SIZE: usize = 128;
+const INITIAL_BUFFER_CAPACITY: usize = 32;
+
+struct BufferReservoir {
+    queues: Vec<VecDeque<Chunk>>,
+}
+
+impl BufferReservoir {
+    #[inline]
+    fn get_queue(&mut self) -> VecDeque<Chunk> {
+        if let Some(next) = self.queues.pop() {
+            next
+        } else {
+            VecDeque::with_capacity(INITIAL_BUFFER_CAPACITY)
+        }
+    }
+
+    #[inline]
+    fn return_queue(&mut self, queue: VecDeque<Chunk>) {
+        if self.queues.len() < MAX_BUFFER_RESERVOIR_SIZE {
+            self.queues.push(queue)
+        }
+    }
+}
+
+impl Default for BufferReservoir {
+    fn default() -> Self {
+        Self { queues: Vec::new() }
     }
 }
 
@@ -183,215 +284,1216 @@ impl TryFrom<ChunkStream> for OrderedChunkStream {
         OrderedChunkStream::from_chunk_stream(chunk_stream)
     }
 }
-
-fn collect_n_dispatch<St>(chunk_stream: St) -> UnboundedReceiver<ChunkStreamItem>
-where
-    St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
-{
-    let (tx, rx) = mpsc::unbounded();
-
-    tokio::spawn(collect_n_dispatch_loop(chunk_stream, tx));
-
-    rx
-}
-
-async fn collect_n_dispatch_loop<StIn>(
-    mut chunk_stream: StIn,
-    send_item: mpsc::UnboundedSender<ChunkStreamItem>,
-) where
-    StIn: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
-{
-    // Max number of Vecs to keep for reusage in `buffer_reservoir`
-    const MAX_RESERVOIR_SIZE: usize = 64;
-
-    // This is always the index of the part which is to be published.
-    // All previous parts have already been published since this value
-    // is only incremented if a chunk was published which
-    // was the last chunk of a part.
-    let mut current_part_idx = 0;
-    let mut collected_chunks: HashMap<u64, Vec<Chunk>> = HashMap::new();
-    // Vecs to be reused.
-    let mut buffer_reservoir = Vec::new();
-
-    while let Some(next) = chunk_stream.next().await {
-        let chunk = match next {
-            Ok(chunk) => chunk,
-            Err(err) => {
-                let _ = send_item.unbounded_send(Err(err));
-                return;
-            }
-        };
-
-        if chunk.part_index == current_part_idx {
-            if chunk.is_last() {
-                current_part_idx += 1;
-            }
-
-            if send_item.unbounded_send(Ok(chunk)).is_err() {
-                return;
-            }
-        } else {
-            let entry = collected_chunks.entry(chunk.part_index).or_insert_with(|| {
-                buffer_reservoir
-                    .pop()
-                    .unwrap_or_else(|| Vec::with_capacity(16))
-            });
-            entry.push(chunk);
-
-            continue;
-        }
-
-        while let Some(mut chunks_to_flush) = collected_chunks.remove(&current_part_idx) {
-            for chunk in chunks_to_flush.drain(..) {
-                if chunk.is_last() {
-                    current_part_idx += 1;
-                }
-
-                if send_item.unbounded_send(Ok(chunk)).is_err() {
-                    return;
-                }
-            }
-
-            if buffer_reservoir.len() < MAX_RESERVOIR_SIZE {
-                // Vec is already empty since it was completely drained.
-                buffer_reservoir.push(chunks_to_flush);
-            }
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use futures::StreamExt;
 
-    use crate::test_utils::create_part_stream;
+    mod basic_streams {
+        mod without_pending {
+            //! The `OrderedChunkStream` will never receive a "pending"
 
-    #[tokio::test]
-    async fn check_iter_one_part_one_chunk() {
-        let (mut stream, expected) = create_part_stream(1, 1, true, Some(10));
+            use bytes::Bytes;
+            use futures::StreamExt;
 
-        let mut collected = Vec::new();
+            use crate::streams::{BytesHint, Chunk, ChunkStream};
 
-        while let Some(next) = stream.next().await {
-            let chunk = next.unwrap();
+            #[tokio::test]
+            async fn parts_0_chunks_1() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
 
-            chunk.bytes.iter().for_each(|&v| {
-                collected.push(v);
-            });
-        }
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
 
-        assert_eq!(collected, expected);
-    }
-
-    #[tokio::test]
-    async fn check_iter_one_part_two_chunks() {
-        let (mut stream, expected) = create_part_stream(1, 2, true, Some(10));
-
-        let mut collected = Vec::new();
-
-        while let Some(next) = stream.next().await {
-            let chunk = next.unwrap();
-
-            chunk.bytes.iter().for_each(|&v| {
-                collected.push(v);
-            });
-        }
-
-        assert_eq!(collected, expected);
-    }
-
-    #[tokio::test]
-    async fn check_iter_two_parts_one_chunk() {
-        for run in 1..100 {
-            let (mut stream, expected) = create_part_stream(2, 1, true, Some(10));
-
-            let mut collected = Vec::new();
-
-            while let Some(next) = stream.next().await {
-                let chunk = next.unwrap();
-
-                chunk.bytes.iter().for_each(|&v| {
-                    collected.push(v);
-                });
-            }
-
-            assert_eq!(collected, expected, "run: {run}");
-        }
-    }
-
-    #[tokio::test]
-    async fn check_iter_two_parts_two_chunk() {
-        for run in 1..100 {
-            let (mut stream, expected) = create_part_stream(2, 2, true, Some(10));
-
-            let mut collected = Vec::new();
-
-            while let Some(next) = stream.next().await {
-                let chunk = next.unwrap();
-
-                chunk.bytes.iter().for_each(|&v| {
-                    collected.push(v);
-                });
-            }
-
-            assert_eq!(collected, expected, "run: {run}");
-        }
-    }
-
-    #[tokio::test]
-    async fn check_iter_three_parts_two_chunk() {
-        for run in 1..100 {
-            let (mut stream, expected) = create_part_stream(3, 2, true, Some(10));
-
-            let mut collected = Vec::new();
-
-            while let Some(next) = stream.next().await {
-                let chunk = next.unwrap();
-
-                chunk.bytes.iter().for_each(|&v| {
-                    collected.push(v);
-                });
-            }
-
-            assert_eq!(collected, expected, "run: {run}");
-        }
-    }
-
-    #[tokio::test]
-    async fn check_iter_many_parts_many_chunk() {
-        for run in 1..100 {
-            let (mut stream, expected) = create_part_stream(10, 10, true, Some(10));
-
-            let mut collected = Vec::new();
-
-            while let Some(next) = stream.next().await {
-                let chunk = next.unwrap();
-
-                chunk.bytes.iter().for_each(|&v| {
-                    collected.push(v);
-                });
-            }
-
-            assert_eq!(collected, expected, "run: {run}");
-        }
-    }
-    #[tokio::test]
-    async fn check_iter_multiple() {
-        for parts in 1..10 {
-            for chunks in 1..10 {
-                let (mut stream, expected) = create_part_stream(parts, chunks, true, Some(10));
+                drop(tx); // Close the channel! Otherwise the stream does not end!
 
                 let mut collected = Vec::new();
 
-                while let Some(next) = stream.next().await {
-                    let next = next.unwrap();
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
 
-                    next.bytes.iter().for_each(|&v| {
+                    chunk.bytes.iter().for_each(|&v| {
                         collected.push(v);
                     });
                 }
 
-                assert_eq!(collected, expected, "parts: {parts} - chunks: {chunks}");
+                let expected = &[1];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_0_chunks_2() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_1() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_non_interleaved() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_interleaved_0101() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_interleaved_0110() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_1() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_non_interleaved() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_interleaved_1010() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_interleaved_1001() {
+                let (chunk_stream, tx) =
+                    ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
+                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 0,
+                    blob_offset: 2,
+                    range_offset: 2,
+                    bytes: Bytes::from_static(&[3]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 0,
+                    blob_offset: 0,
+                    range_offset: 0,
+                    bytes: Bytes::from_static(&[1]),
+                    bytes_left: 1,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 0,
+                    chunk_index: 1,
+                    blob_offset: 1,
+                    range_offset: 1,
+                    bytes: Bytes::from_static(&[2]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+                let chunk = Chunk {
+                    part_index: 1,
+                    chunk_index: 1,
+                    blob_offset: 3,
+                    range_offset: 3,
+                    bytes: Bytes::from_static(&[4]),
+                    bytes_left: 0,
+                };
+                tx.send(Ok(chunk)).unwrap();
+
+                drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = ordered_chunk_stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                let expected = &[1, 2, 3, 4];
+                assert_eq!(collected, expected);
+            }
+        }
+
+        mod with_pending {
+            //! The `OrderedChunkStream` will receive "pendings"
+
+            use bytes::Bytes;
+            use futures::{channel::mpsc, StreamExt};
+
+            use crate::{
+                streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
+                test_utils::stream_penderizer::{Penderizer, PenderizerModule},
+            };
+
+            #[tokio::test]
+            async fn parts_0_chunks_1() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_0_chunks_2() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_1() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_non_interleaved() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_interleaved_0101() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_0_1_chunks_2_interleaved_0110() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_1() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_non_interleaved() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_interleaved_1010() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            #[tokio::test]
+            async fn parts_1_0_chunks_2_interleaved_1001() {
+                for pending_module in penderizer_variants() {
+                    let (mut ordered_chunk_stream, tx) =
+                        gen_pending_stream(pending_module, BytesHint::new_no_hint());
+
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 0,
+                        blob_offset: 2,
+                        range_offset: 2,
+                        bytes: Bytes::from_static(&[3]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 0,
+                        blob_offset: 0,
+                        range_offset: 0,
+                        bytes: Bytes::from_static(&[1]),
+                        bytes_left: 1,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 0,
+                        chunk_index: 1,
+                        blob_offset: 1,
+                        range_offset: 1,
+                        bytes: Bytes::from_static(&[2]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+                    let chunk = Chunk {
+                        part_index: 1,
+                        chunk_index: 1,
+                        blob_offset: 3,
+                        range_offset: 3,
+                        bytes: Bytes::from_static(&[4]),
+                        bytes_left: 0,
+                    };
+                    tx.unbounded_send(Ok(chunk)).unwrap();
+
+                    drop(tx); // Close the channel! Otherwise the stream does not end!
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = ordered_chunk_stream.next().await {
+                        let chunk = next.unwrap();
+
+                        chunk.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    let expected = &[1, 2, 3, 4];
+                    assert_eq!(collected, expected, "{}", pending_module);
+                }
+            }
+
+            fn gen_pending_stream(
+                pending_module: PenderizerModule,
+                bytes_hint: BytesHint,
+            ) -> (OrderedChunkStream, mpsc::UnboundedSender<ChunkStreamItem>) {
+                let (tx, rx) = mpsc::unbounded();
+
+                let pending_stream = Penderizer::new(rx, pending_module);
+
+                let ordered_chunk_stream = OrderedChunkStream::new(pending_stream, bytes_hint);
+
+                (ordered_chunk_stream, tx)
+            }
+
+            fn penderizer_variants() -> [PenderizerModule; 4] {
+                [
+                    PenderizerModule::new(1),
+                    PenderizerModule::new(2),
+                    PenderizerModule::new(3),
+                    PenderizerModule::new(4),
+                ]
+            }
+        }
+    }
+
+    mod generated_streams {
+        use futures::StreamExt;
+
+        use crate::test_utils::create_part_stream;
+        #[tokio::test]
+        async fn check_iter_one_part_one_chunk() {
+            let (mut stream, expected) = create_part_stream(1, 1, true, Some(10));
+
+            let mut collected = Vec::new();
+
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
+
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected);
+        }
+
+        #[tokio::test]
+        async fn check_iter_one_part_two_chunks() {
+            let (mut stream, expected) = create_part_stream(1, 2, true, Some(10));
+
+            let mut collected = Vec::new();
+
+            while let Some(next) = stream.next().await {
+                let chunk = next.unwrap();
+
+                chunk.bytes.iter().for_each(|&v| {
+                    collected.push(v);
+                });
+            }
+
+            assert_eq!(collected, expected);
+        }
+
+        #[tokio::test]
+        async fn check_iter_two_parts_one_chunk() {
+            for run in 1..100 {
+                let (mut stream, expected) = create_part_stream(2, 1, true, Some(10));
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                assert_eq!(collected, expected, "run: {run}");
+            }
+        }
+
+        #[tokio::test]
+        async fn check_iter_two_parts_two_chunk() {
+            for run in 1..100 {
+                let (mut stream, expected) = create_part_stream(2, 2, true, Some(10));
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                assert_eq!(collected, expected, "run: {run}");
+            }
+        }
+
+        #[tokio::test]
+        async fn check_iter_three_parts_two_chunk() {
+            for run in 1..100 {
+                let (mut stream, expected) = create_part_stream(3, 2, true, Some(10));
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                assert_eq!(collected, expected, "run: {run}");
+            }
+        }
+
+        #[tokio::test]
+        async fn check_iter_many_parts_many_chunk() {
+            for run in 1..100 {
+                let (mut stream, expected) = create_part_stream(10, 10, true, Some(10));
+
+                let mut collected = Vec::new();
+
+                while let Some(next) = stream.next().await {
+                    let chunk = next.unwrap();
+
+                    chunk.bytes.iter().for_each(|&v| {
+                        collected.push(v);
+                    });
+                }
+
+                assert_eq!(collected, expected, "run: {run}");
+            }
+        }
+
+        #[tokio::test]
+        async fn check_iter_multiple() {
+            for parts in 1..10 {
+                for chunks in 1..10 {
+                    let (mut stream, expected) = create_part_stream(parts, chunks, true, Some(10));
+
+                    let mut collected = Vec::new();
+
+                    while let Some(next) = stream.next().await {
+                        let next = next.unwrap();
+
+                        next.bytes.iter().for_each(|&v| {
+                            collected.push(v);
+                        });
+                    }
+
+                    assert_eq!(collected, expected, "parts: {parts} - chunks: {chunks}");
+                }
             }
         }
     }
