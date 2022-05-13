@@ -6,7 +6,7 @@ use std::time::Duration;
 use tracing::{debug, info_span, Instrument, Span};
 
 use crate::condow_client::CondowClient;
-use crate::config::{ClientRetryWrapper, Config};
+use crate::config::{ClientRetryWrapper, Config, SequentialDownloadMode};
 use crate::errors::{CondowError, IoError};
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Probe;
@@ -50,7 +50,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
                 .get_size(location.clone(), &probe)
                 .instrument(configure_stream_span.clone())
                 .await?;
-            if let Somedownload_part(range) = or.incl_range_from_size(size) {
+            if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
                 return Ok(ChunkStream::empty());
@@ -77,7 +77,10 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         }
     };
 
-    let part_requests = PartRequestIterator::new(effective_range, config.part_size_bytes.into());
+    probe.effective_range(effective_range);
+
+    let mut part_requests =
+        PartRequestIterator::new(effective_range, config.part_size_bytes.into());
 
     debug!(
         parent: &configure_stream_span,
@@ -96,14 +99,22 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         &configure_stream_span,
     );
 
+    // If we have a sequential download, we might need to reconfigure the parts
+    if *config.max_concurrency == 1 {
+        part_requests = reconfigure_parts_for_sequential(
+            effective_range,
+            part_requests,
+            &config,
+            &configure_stream_span,
+        );
+    }
+
     config.log_download_messages_as_debug.log(format!(
         "download started ({} bytes) with effective concurrency {} and {} parts",
         effective_range.len(),
         config.max_concurrency,
         part_requests.exact_size_hint()
     ));
-
-    probe.effective_range(effective_range);
 
     drop(configure_stream_span);
 
@@ -189,6 +200,41 @@ fn determine_effective_concurrency(
             .min(*config.min_parts_for_concurrent_download as usize)
             .into()
     };
+}
+
+fn reconfigure_parts_for_sequential(
+    effective_range: InclusiveRange,
+    part_requests: PartRequestIterator,
+    config: &Config,
+    span: &Span,
+) -> PartRequestIterator {
+    match config.sequential_download_mode {
+        SequentialDownloadMode::KeepParts => part_requests,
+        SequentialDownloadMode::SingleDownload => {
+            if part_requests.exact_size_hint() > 1 {
+                debug!(parent: span, "switching to single part download");
+                PartRequestIterator::new(effective_range, effective_range.len())
+            } else {
+                part_requests
+            }
+        }
+        SequentialDownloadMode::Repartition { part_size } => {
+            if part_size != config.part_size_bytes {
+                let part_requests =
+                    PartRequestIterator::new(effective_range, part_size.into_inner());
+                debug!(
+                    parent: span,
+                    "repartition to {} parts with approx {} bytes",
+                    part_requests.exact_size_hint(),
+                    part_size
+                );
+
+                part_requests
+            } else {
+                part_requests
+            }
+        }
+    }
 }
 
 /// This struct contains a span which must be kept alive until whole download is completed

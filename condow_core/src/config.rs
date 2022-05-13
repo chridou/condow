@@ -5,7 +5,7 @@
 //! This is mainly to allow them to be
 //! initialized from the environment.
 use std::{
-    ops,
+    fmt, ops,
     str::{from_utf8, FromStr},
     time::Duration,
 };
@@ -42,6 +42,14 @@ pub struct Config {
     ///
     /// The default is 0.
     pub min_bytes_for_concurrent_download: MinBytesForConcurrentDownload,
+    /// Define how parts for a sequential download should be treated.
+    ///
+    /// A sequential download can not only be triggered by just one part being
+    /// requested but also by the [MinBytesForConcurrentDownload] and [MinPartsForConcurrentDownload]
+    /// configuration values.
+    ///
+    /// The default is [SequentialDownloadMode::SingleDownload].
+    pub sequential_download_mode: SequentialDownloadMode,
     /// Size of the buffer for each download task.
     ///
     /// If set to 0 (not advised) there will be now buffer at all.
@@ -102,6 +110,7 @@ impl Config {
         self.min_parts_for_concurrent_download = min_parts_for_concurrent_download.into();
         self
     }
+
     /// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
     /// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
     ///
@@ -113,6 +122,20 @@ impl Config {
         min_bytes_for_concurrent_download: T,
     ) -> Self {
         self.min_bytes_for_concurrent_download = min_bytes_for_concurrent_download.into();
+        self
+    }
+
+    /// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
+    /// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
+    ///
+    /// This setting plays together with `MinPartsForConcurrentDownload`.
+    ///
+    /// The default is 0.
+    pub fn sequential_download_mode<T: Into<SequentialDownloadMode>>(
+        mut self,
+        sequential_download_mode: T,
+    ) -> Self {
+        self.sequential_download_mode = sequential_download_mode.into();
         self
     }
 
@@ -188,6 +211,12 @@ impl Config {
 
     /// Validate this [Config]
     pub fn validated(self) -> Result<Self, AnyError> {
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// Validate this [Config]
+    pub fn validate(&self) -> Result<(), AnyError> {
         if self.max_concurrency.0 == 0 {
             bail!("'max_concurrency' must not be 0");
         }
@@ -200,7 +229,7 @@ impl Config {
             retries.validate()?;
         }
 
-        Ok(self)
+        Ok(())
     }
 
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
@@ -228,6 +257,12 @@ impl Config {
         {
             found_any = true;
             self.min_bytes_for_concurrent_download = min_bytes_for_concurrent_download;
+        }
+        if let Some(sequential_download_mode) =
+            SequentialDownloadMode::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.sequential_download_mode = sequential_download_mode;
         }
         if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
             found_any = true;
@@ -267,6 +302,7 @@ impl Default for Config {
             max_concurrency: Default::default(),
             min_bytes_for_concurrent_download: Default::default(),
             min_parts_for_concurrent_download: Default::default(),
+            sequential_download_mode: Default::default(),
             buffer_size: Default::default(),
             max_buffers_full_delay_ms: Default::default(),
             always_get_size: Default::default(),
@@ -335,6 +371,12 @@ impl PartSizeBytes {
     }
 
     env_funs!("PART_SIZE_BYTES");
+}
+
+impl fmt::Display for PartSizeBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl ops::Deref for PartSizeBytes {
@@ -409,36 +451,9 @@ impl FromStr for PartSizeBytes {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_dimension(s).map(PartSizeBytes)
+        s.parse::<UnitPrefix>().map(|up| PartSizeBytes(up.value()))
     }
 }
-
-fn parse_dimension(s: &str) -> Result<u64, anyhow::Error> {
-    let s = s.trim();
-    if let Some(idx) = s.find(|c: char| c.is_alphabetic()) {
-        if idx == 0 {
-            bail!("'{}' needs digits", s)
-        }
-
-        let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
-        let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
-
-        let bytes = digits.parse::<u64>()?;
-
-        match unit {
-            "k" => Ok(Kilo(bytes).into()),
-            "M" => Ok(Mega(bytes).into()),
-            "G" => Ok(Giga(bytes).into()),
-            "Ki" => Ok(Kibi(bytes).into()),
-            "Mi" => Ok(Mebi(bytes).into()),
-            "Gi" => Ok(Gibi(bytes).into()),
-            s => bail!("invalid unit: '{}'", s),
-        }
-    } else {
-        Ok(s.parse::<u64>()?)
-    }
-}
-
 new_type! {
     #[doc="Maximum concurrency of a single download"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -623,7 +638,8 @@ impl FromStr for MinBytesForConcurrentDownload {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_dimension(s).map(MinBytesForConcurrentDownload)
+        s.parse::<UnitPrefix>()
+            .map(|up| MinBytesForConcurrentDownload(up.value()))
     }
 }
 
@@ -685,6 +701,89 @@ impl Default for LogDownloadMessagesAsDebug {
     }
 }
 
+/// Define how parts for a sequential download should be treated.
+///
+/// A sequential download can not only be triggered by just one part being
+/// requested but also by the [MinBytesForConcurrentDownload] and [MinPartsForConcurrentDownload]
+/// configuration values.
+///
+/// The default is [SequentialDownloadMode::SingleDownload].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequentialDownloadMode {
+    /// Keep it as it is
+    KeepParts,
+    /// Merge all potential parts into a single one.
+    ///
+    /// For sequential downloads this is probably the most efficient
+    /// since for remote request no new connections
+    /// have to be made.
+    ///
+    /// This is the default
+    SingleDownload,
+    /// Repartition the download into parts with
+    /// mostly the given size
+    Repartition { part_size: PartSizeBytes },
+}
+
+impl SequentialDownloadMode {
+    pub fn new<T: Into<SequentialDownloadMode>>(mode: T) -> Self {
+        mode.into()
+    }
+
+    env_funs!("SEQUENTIAL_DOWNLOAD_MODE");
+}
+
+impl Default for SequentialDownloadMode {
+    fn default() -> Self {
+        Self::SingleDownload
+    }
+}
+
+impl From<PartSizeBytes> for SequentialDownloadMode {
+    fn from(part_size: PartSizeBytes) -> Self {
+        Self::Repartition { part_size }
+    }
+}
+
+impl FromStr for SequentialDownloadMode {
+    type Err = AnyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        match s {
+            "KEEP_PARTS" => Ok(Self::KeepParts),
+            "SINGLE_DOWNLOAD" => Ok(Self::SingleDownload),
+            probably_a_number => {
+                let part_size = probably_a_number.parse()?;
+                Ok(Self::Repartition { part_size })
+            }
+        }
+    }
+}
+
+/// Multiplies by 1 when converted to a u64
+///
+// # Examples
+///
+/// ```rust
+/// # use condow_core::config::Unit;
+/// assert_eq!(u64::from(Unit(2)), 2);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unit(pub u64);
+
+impl Unit {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<Unit> for u64 {
+    fn from(m: Unit) -> Self {
+        m.value()
+    }
+}
 /// Multiplies by 1_000 when converted to a u64
 ///
 // # Examples
@@ -693,7 +792,7 @@ impl Default for LogDownloadMessagesAsDebug {
 /// # use condow_core::config::Kilo;
 /// assert_eq!(u64::from(Kilo(2)), 2*1_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kilo(pub u64);
 
 impl Kilo {
@@ -717,7 +816,7 @@ impl From<Kilo> for u64 {
 /// # use condow_core::config::Mega;
 /// assert_eq!(u64::from(Mega(2)), 2*1_000_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mega(pub u64);
 
 impl Mega {
@@ -741,7 +840,7 @@ impl From<Mega> for u64 {
 /// # use condow_core::config::Giga;
 /// assert_eq!(u64::from(Giga(2)), 2*1_000_000_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Giga(pub u64);
 
 impl Giga {
@@ -765,7 +864,7 @@ impl From<Giga> for u64 {
 /// # use condow_core::config::Kibi;
 /// assert_eq!(u64::from(Kibi(2)), 2*1_024);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kibi(pub u64);
 
 impl Kibi {
@@ -789,7 +888,7 @@ impl From<Kibi> for u64 {
 /// # use condow_core::config::Mebi;
 /// assert_eq!(u64::from(Mebi(2)), 2*1_048_576);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mebi(pub u64);
 
 impl Mebi {
@@ -813,7 +912,7 @@ impl From<Mebi> for u64 {
 /// # use condow_core::config::Gibi;
 /// assert_eq!(u64::from(Gibi(2)), 2*1_073_741_824);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Gibi(pub u64);
 
 impl Gibi {
@@ -826,5 +925,137 @@ impl Gibi {
 impl From<Gibi> for u64 {
     fn from(m: Gibi) -> Self {
         m.value()
+    }
+}
+
+/// A value with a unit prefix.
+///
+/// # Examples
+///
+/// ### Parsing
+/// ```rust
+/// # use condow_core::config::UnitPrefix;
+///
+/// let value: UnitPrefix = "34".parse().unwrap();
+/// assert_eq!(value, 34.into());
+///
+/// let value: UnitPrefix = "1k".parse().unwrap();
+/// assert_eq!(value, 1_000.into());
+///
+/// let value: UnitPrefix = "1 k".parse().unwrap();
+/// assert_eq!(value, 1_000.into());
+///
+/// let value: UnitPrefix = "1M".parse().unwrap();
+/// assert_eq!(value, 1_000_000.into());
+///
+/// let value: UnitPrefix = "1G".parse().unwrap();
+/// assert_eq!(value, 1_000_000_000.into());
+///
+/// let value: UnitPrefix = "1Ki".parse().unwrap();
+/// assert_eq!(value, 1_024.into());
+///
+/// let value: UnitPrefix = "1Mi".parse().unwrap();
+/// assert_eq!(value, 1_048_576.into());
+///
+/// let value: UnitPrefix = "1Gi".parse().unwrap();
+/// assert_eq!(value, 1_073_741_824.into());
+///
+/// // Case sensitive
+/// let res = "1K".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+///
+/// let res = "x".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+///
+/// let res = "".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+/// ```
+#[derive(Debug, Clone, Copy, Eq, Ord)]
+pub enum UnitPrefix {
+    Unit(u64),
+    Kilo(u64),
+    Mega(u64),
+    Giga(u64),
+    Kibi(u64),
+    Mebi(u64),
+    Gibi(u64),
+}
+
+impl UnitPrefix {
+    /// Returns the actual value with the prefix evaluated.
+    ///
+    /// ```rust
+    /// # use condow_core::config::{UnitPrefix, Unit, Kilo};
+    ///
+    /// let value = UnitPrefix::Kilo(93).value();
+    /// assert_eq!(value, 93_000);
+    ///
+    /// let value = UnitPrefix::Unit(93).value();
+    /// assert_eq!(value, 93);
+    /// ```
+    pub fn value(self) -> u64 {
+        match self {
+            UnitPrefix::Unit(v) => v,
+            UnitPrefix::Kilo(v) => Kilo(v).value(),
+            UnitPrefix::Mega(v) => Mega(v).value(),
+            UnitPrefix::Giga(v) => Giga(v).value(),
+            UnitPrefix::Kibi(v) => Kibi(v).value(),
+            UnitPrefix::Mebi(v) => Mebi(v).value(),
+            UnitPrefix::Gibi(v) => Gibi(v).value(),
+        }
+    }
+}
+
+impl From<UnitPrefix> for u64 {
+    fn from(m: UnitPrefix) -> Self {
+        m.value()
+    }
+}
+
+impl From<u64> for UnitPrefix {
+    fn from(v: u64) -> Self {
+        UnitPrefix::Unit(v)
+    }
+}
+
+impl FromStr for UnitPrefix {
+    type Err = AnyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if let Some(idx) = s.find(|c: char| c.is_alphabetic()) {
+            if idx == 0 {
+                bail!("'{}' needs digits", s)
+            }
+
+            let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
+            let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
+
+            let bytes = digits.parse::<u64>()?;
+
+            match unit {
+                "k" => Ok(UnitPrefix::Kilo(bytes)),
+                "M" => Ok(UnitPrefix::Mega(bytes)),
+                "G" => Ok(UnitPrefix::Giga(bytes)),
+                "Ki" => Ok(UnitPrefix::Kibi(bytes)),
+                "Mi" => Ok(UnitPrefix::Mebi(bytes)),
+                "Gi" => Ok(UnitPrefix::Gibi(bytes)),
+                s => bail!("invalid unit: '{}'", s),
+            }
+        } else {
+            Ok(s.parse::<u64>().map( UnitPrefix::Unit)?)
+        }
+    }
+}
+
+impl PartialEq for UnitPrefix  {
+    fn eq(&self, other: &Self) -> bool {
+        self.value() == other.value()
+    }
+}
+
+impl PartialOrd for UnitPrefix {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value().partial_cmp(&other.value())
     }
 }
