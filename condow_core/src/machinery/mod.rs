@@ -3,7 +3,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tracing::{debug, info, info_span, Span};
+use tracing::{debug, info_span, Instrument, Span};
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
@@ -20,7 +20,7 @@ mod part_request;
 
 pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    config: Config,
+    mut config: Config,
     location: C::Location,
     range: DR,
     probe: P,
@@ -33,12 +33,6 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
     let download_span_enter_guard = download_span.enter();
     let download_guard = DownloadSpanGuard::new(download_span.clone());
 
-    info!("starting");
-
-    // This span will track how long it takes to create the stream of chunks
-    let get_stream_span = info_span!(parent: &download_span, "create_stream");
-    let get_stream_guard = get_stream_span.enter();
-
     range.validate()?;
 
     let range = if let Some(range) = range.sanitized() {
@@ -47,21 +41,29 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         return Ok(ChunkStream::empty());
     };
 
-    let (inclusive_range, bytes_hint) = match range {
+    let configure_stream_span = info_span!(parent: &download_span, "configure_stream");
+
+    let (effective_range, bytes_hint) = match range {
         DownloadRange::Open(or) => {
-            debug!(parent: &get_stream_span, "open range");
-            let size = client.get_size(location.clone(), &probe).await?;
-            if let Some(range) = or.incl_range_from_size(size) {
+            debug!(parent: &configure_stream_span, "open range");
+            let size = client
+                .get_size(location.clone(), &probe)
+                .instrument(configure_stream_span.clone())
+                .await?;
+            if let Somedownload_part(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
                 return Ok(ChunkStream::empty());
             }
         }
         DownloadRange::Closed(cl) => {
-            debug!(parent: &get_stream_span, "closed range");
+            debug!(parent: &configure_stream_span, "closed range");
             if config.always_get_size.into_inner() {
-                debug!(parent: &get_stream_span, "get size enforced");
-                let size = client.get_size(location.clone(), &probe).await?;
+                debug!(parent: &configure_stream_span, "get size enforced");
+                let size = client
+                    .get_size(location.clone(), &probe)
+                    .instrument(configure_stream_span.clone())
+                    .await?;
                 if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
@@ -75,10 +77,40 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         }
     };
 
+    let part_requests = PartRequestIterator::new(effective_range, config.part_size_bytes.into());
+
+    debug!(
+        parent: &configure_stream_span,
+        "download {} parts",
+        part_requests.exact_size_hint()
+    );
+
+    if part_requests.exact_size_hint() == 0 {
+        panic!("n_parts must not be 0. This is a bug");
+    }
+
+    determine_effective_concurrency(
+        &mut config,
+        effective_range,
+        part_requests.exact_size_hint(),
+        &configure_stream_span,
+    );
+
+    config.log_download_messages_as_debug.log(format!(
+        "download started ({} bytes) with effective concurrency {} and {} parts",
+        effective_range.len(),
+        config.max_concurrency,
+        part_requests.exact_size_hint()
+    ));
+
+    probe.effective_range(effective_range);
+
+    drop(configure_stream_span);
+
     let stream = download_chunks(
         client.clone(),
         location,
-        inclusive_range,
+        part_requests,
         bytes_hint,
         config.clone(),
         probe.clone(),
@@ -87,7 +119,6 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
     .await?;
 
     // Explicit drops for scope visualization
-    drop(get_stream_guard);
     drop(download_span_enter_guard);
 
     Ok(stream)
@@ -96,34 +127,20 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
 async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     location: C::Location,
-    range: InclusiveRange,
+    part_requests: PartRequestIterator,
     bytes_hint: BytesHint,
     config: Config,
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> Result<ChunkStream, CondowError> {
-    probe.effective_range(range);
-
-    let part_requests = PartRequestIterator::new(range, config.part_size_bytes.into());
-
-    debug!(parent: download_span_guard.span(), "downloading {} parts", part_requests.exact_size_hint());
-
-    if part_requests.exact_size_hint() == 0 {
-        panic!("n_parts must not be 0. This is a bug");
-    }
-
-    let effective_concurrency = config
-        .max_concurrency
-        .into_inner()
-        .min(part_requests.exact_size_hint() as usize);
-    if effective_concurrency == 1 {
-        download::download_chunks_sequentially(part_requests, client, location, probe).await
+    if *config.max_concurrency <= 1 {
+        download::download_chunks_sequentially(part_requests, client, location, probe, config).await
     } else {
         let (chunk_stream, sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
         tokio::spawn(async move {
             let result = download::download_concurrently(
                 part_requests,
-                effective_concurrency,
+                *config.max_concurrency,
                 sender,
                 client,
                 config,
@@ -136,6 +153,42 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
         });
         Ok(chunk_stream)
     }
+}
+
+fn determine_effective_concurrency(
+    config: &mut Config,
+    effective_range: InclusiveRange,
+    n_parts: u64,
+    log_span: &Span,
+) {
+    config.max_concurrency = if *config.max_concurrency <= 1 {
+        config.max_concurrency
+    } else {
+        let n_conc_1 = if effective_range.len() < *config.min_bytes_for_concurrent_download {
+            debug!(
+                parent: log_span,
+                "sequential download forced by 'min_bytes_for_concurrent_download'"
+            );
+            1
+        } else {
+            *config.max_concurrency
+        };
+        let n_conc_2 = if n_parts < *config.min_parts_for_concurrent_download {
+            debug!(
+                parent: log_span,
+                "sequential download forced by 'min_parts_for_concurrent_download'"
+            );
+            1
+        } else {
+            *config.max_concurrency
+        };
+
+        (*config.max_concurrency)
+            .min(n_conc_1)
+            .min(n_conc_2)
+            .min(*config.min_parts_for_concurrent_download as usize)
+            .into()
+    };
 }
 
 /// This struct contains a span which must be kept alive until whole download is completed
