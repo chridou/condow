@@ -51,9 +51,14 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
+    config: Config,
 ) -> Result<ChunkStream, CondowError> {
-    Ok(
-        self::sequential::download_chunks_sequentially(part_requests, client, location, probe)
-            .await,
+    Ok(self::sequential::download_chunks_sequentially(
+        part_requests,
+        client,
+        location,
+        probe,
+        config,
     )
+    .await)
 }

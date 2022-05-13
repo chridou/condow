@@ -70,6 +70,9 @@ impl From<RangeInclusive<u64>> for DownloadSpec {
 /// partial downloads
 ///
 /// This is an adapter trait
+///
+/// Implementors of this trait may not panic on calling any of the methods nor
+/// within any of the futures returned.
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 

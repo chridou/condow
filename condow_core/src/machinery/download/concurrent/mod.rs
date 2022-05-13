@@ -51,7 +51,7 @@ pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
     downloaders: Vec<SequentialDownloader>,
     counter: usize,
     kill_switch: KillSwitch,
-    config: Config,
+    config: Arc<Config>,
     probe: P,
 }
 
@@ -68,6 +68,7 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
         let started_at = Instant::now();
         let kill_switch = KillSwitch::new();
         let counter = Arc::new(AtomicUsize::new(0));
+        let config = Arc::new(config.clone());
         let downloaders: Vec<_> = (0..n_concurrent)
             .map(|_| {
                 SequentialDownloader::new(
@@ -81,6 +82,7 @@ impl<P: Probe + Clone> ConcurrentDownloader<P> {
                         probe.clone(),
                         started_at,
                         download_span_guard.clone(),
+                        Arc::clone(&config),
                     ),
                 )
             })
