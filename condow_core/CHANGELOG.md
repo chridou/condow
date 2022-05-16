@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - config parameter `LogDownloadMessagesAsDebug` to configure log level of outer doenload events
 - config parameters `MinPartsForConcurrentDownload`, `MinBytesForConcurrentDownload` and `SequentialDownloadMode` to configure sequential downloads
+
 ## 0.17.1 - 2022-05-12
 
 ### CHANGED
