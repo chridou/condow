@@ -215,7 +215,7 @@ impl<L> Request<L> {
         self.params
             .config
             .validate()
-            .map_err(|err| CondowError::new_other("invalid configurant").with_source(err))?;
+            .map_err(|err| CondowError::new_other("invalid configuration").with_source(err))?;
         (self.download_fn)(self.location, self.params).await
     }
 
