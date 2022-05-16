@@ -5,7 +5,7 @@ use crate::{streams::BytesHint, InclusiveRange};
 /// A request to download a part.
 ///
 /// This is a part a download is split into.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct PartRequest {
     /// Index of the part
     pub part_index: u64,
@@ -64,6 +64,19 @@ impl PartRequestIterator {
     /// Turns this iterator into a [Stream]
     pub fn into_stream(self) -> impl Stream<Item = PartRequest> {
         futures::stream::iter(self)
+    }
+
+    #[cfg(test)]
+    pub fn clone_continue(&self) -> Self {
+        Self {
+            start: self.start,
+            part_size: self.part_size,
+            next_range_offset: self.next_range_offset,
+            next_part_index: self.next_part_index,
+            parts_left: self.parts_left,
+            end_incl: self.end_incl,
+            bytes_left: self.bytes_left,
+        }
     }
 }
 

@@ -719,7 +719,7 @@ pub enum SequentialDownloadMode {
     /// have to be made.
     ///
     /// This is the default
-    SingleDownload,
+    MergeParts,
     /// Repartition the download into parts with
     /// mostly the given size
     Repartition { part_size: PartSizeBytes },
@@ -735,7 +735,7 @@ impl SequentialDownloadMode {
 
 impl Default for SequentialDownloadMode {
     fn default() -> Self {
-        Self::SingleDownload
+        Self::MergeParts
     }
 }
 
@@ -752,7 +752,7 @@ impl FromStr for SequentialDownloadMode {
         let s = s.trim();
         match s {
             "KEEP_PARTS" => Ok(Self::KeepParts),
-            "SINGLE_DOWNLOAD" => Ok(Self::SingleDownload),
+            "SINGLE_DOWNLOAD" => Ok(Self::MergeParts),
             probably_a_number => {
                 let part_size = probably_a_number.parse()?;
                 Ok(Self::Repartition { part_size })
@@ -1043,12 +1043,12 @@ impl FromStr for UnitPrefix {
                 s => bail!("invalid unit: '{}'", s),
             }
         } else {
-            Ok(s.parse::<u64>().map( UnitPrefix::Unit)?)
+            Ok(s.parse::<u64>().map(UnitPrefix::Unit)?)
         }
     }
 }
 
-impl PartialEq for UnitPrefix  {
+impl PartialEq for UnitPrefix {
     fn eq(&self, other: &Self) -> bool {
         self.value() == other.value()
     }
