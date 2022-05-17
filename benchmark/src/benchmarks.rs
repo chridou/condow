@@ -154,11 +154,14 @@ mod scenarios {
         PartSizeBytes::from_u64(BLOB_SIZE / 2),
         PartSizeBytes::from_u64(BLOB_SIZE / 16),
         PartSizeBytes::from_u64(BLOB_SIZE / 64),
+        PartSizeBytes::from_u64(BLOB_SIZE / 128),
     ];
     const MAX_CONCURRENCIES: &[MaxConcurrency] = &[
         MaxConcurrency::from_usize(1),
-        MaxConcurrency::from_usize(2),
+        MaxConcurrency::from_usize(4),
+        MaxConcurrency::from_usize(8),
         MaxConcurrency::from_usize(16),
+        MaxConcurrency::from_usize(32),
         MaxConcurrency::from_usize(64),
     ];
     const CHUNK_SIZES: &[u64] = &[/*512,*/ 1_024 /*65535*/];
@@ -249,7 +252,6 @@ mod chunk_stream_unordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         count_bytes(scenario, num_iterations, benchmarks_collected).await?;
-        fill_buffer(scenario, num_iterations, benchmarks_collected).await?;
         Ok(())
     }
 
@@ -283,48 +285,13 @@ mod chunk_stream_unordered {
 
         Ok(())
     }
-
-    async fn fill_buffer(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        let mut measurements = Benchmark::new("chunk_stream_fill_buffer", scenario);
-
-        let downloader = scenario.gen_downloader();
-
-        let expected_byte_count = scenario.blob_size;
-        let mut bytes_buffer: Vec<u8> = vec![0u8; scenario.blob_size as usize];
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let bytes_read = downloader
-                .blob()
-                .download_chunks()
-                .await?
-                .write_buffer(&mut bytes_buffer)
-                .await?;
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read as u64, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
 }
 
 mod chunk_stream_ordered {
     //! Benchmarks for [OrderedChunkStream](condow_core::streams::OrderedChumkStream)
     use std::time::Instant;
 
-    use condow_core::condow_client::IgnoreLocation;
-    use condow_core::reader::FetchAheadMode;
     use condow_core::Downloads;
-    use futures::AsyncReadExt;
 
     use super::scenarios::Scenario;
     use super::{Benchmark, Benchmarks};
@@ -335,8 +302,6 @@ mod chunk_stream_ordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         count_bytes(scenario, num_iterations, benchmarks_collected).await?;
-        fill_buffer(scenario, num_iterations, benchmarks_collected).await?;
-        random_access_reader(scenario, num_iterations, benchmarks_collected).await?;
         Ok(())
     }
 
@@ -359,78 +324,6 @@ mod chunk_stream_ordered {
             measurements.measured(start, Instant::now(), scenario.blob_size);
 
             assert_eq!(bytes_read, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
-
-    async fn fill_buffer(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        let mut measurements = Benchmark::new("chunk_stream_ordered_fill_buffer", scenario);
-
-        let downloader = scenario.gen_downloader();
-
-        let expected_byte_count = scenario.blob_size;
-        let mut bytes_buffer: Vec<u8> = vec![0u8; scenario.blob_size as usize];
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let bytes_read = downloader
-                .blob()
-                .download()
-                .await?
-                .write_buffer(&mut bytes_buffer)
-                .await?;
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read as u64, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
-
-    async fn random_access_reader(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        let mut measurements =
-            Benchmark::new("chunk_stream_ordered_random_access_reader", scenario);
-
-        let downloader = scenario.gen_downloader();
-
-        let expected_byte_count = scenario.blob_size;
-        let mut bytes_buffer: Vec<u8> = vec![0u8; 1_024];
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let mut reader = downloader.reader_with_length(IgnoreLocation, scenario.blob_size);
-            reader.set_fetch_ahead_mode(FetchAheadMode::ToEnd);
-
-            let mut bytes_read = 0;
-
-            loop {
-                let read_into_buf = reader.read(&mut bytes_buffer).await?;
-                bytes_read += read_into_buf;
-
-                if read_into_buf == 0 {
-                    break;
-                }
-            }
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read as u64, expected_byte_count);
         }
 
         benchmarks_collected.add_measurements(measurements);

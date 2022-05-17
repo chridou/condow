@@ -80,7 +80,17 @@ impl CondowClient for BenchmarkClient {
             }
         });
 
-        let stream = Box::pin(stream::iter(iter)).boxed();
+        let mut start = 0;
+        let stream = stream::iter(iter).then(move |chunk| async move {
+            start += 1;
+            if start % 3 == 0 {
+                // Cause some Poll::Pending
+                tokio::task::yield_now().await;
+            }
+
+            chunk
+        });
+        let stream = Box::pin(stream).boxed();
 
         futures::future::ok((stream, BytesHint::new_exact(bytes_to_send))).boxed()
     }
