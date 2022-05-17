@@ -212,6 +212,10 @@ impl<L> Request<L> {
 
     /// Download as a [ChunkStream]
     pub async fn download_chunks(self) -> Result<ChunkStream, CondowError> {
+        self.params
+            .config
+            .validate()
+            .map_err(|err| CondowError::new_other("invalid configuration").with_source(err))?;
         (self.download_fn)(self.location, self.params).await
     }
 

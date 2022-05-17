@@ -5,11 +5,13 @@
 //! This is mainly to allow them to be
 //! initialized from the environment.
 use std::{
+    fmt, ops,
     str::{from_utf8, FromStr},
     time::Duration,
 };
 
 use anyhow::{bail, Error as AnyError};
+use tracing::{debug, info};
 
 pub use crate::retry::*;
 
@@ -27,6 +29,27 @@ pub struct Config {
     /// than `max_concurrency` are to be
     /// downloaded
     pub max_concurrency: MaxConcurrency,
+    /// The minimum number of parts a download must consist of for the parts to be downloaded concurrently.
+    /// Depending on the part sizes it might be more efficient to set a number higer than 2. Downloading concurrently has an overhead.
+    /// This setting plays together with `MinBytesForConcurrentDownload`.
+    /// Setting this value to 0 or 1 makes no sense and has no effect.
+    /// The default is 2.
+    pub min_parts_for_concurrent_download: MinPartsForConcurrentDownload,
+    /// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
+    /// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
+    ///
+    /// This setting plays together with `MinPartsForConcurrentDownload`.
+    ///
+    /// The default is 0.
+    pub min_bytes_for_concurrent_download: MinBytesForConcurrentDownload,
+    /// Define how parts for a sequential download should be treated.
+    ///
+    /// A sequential download can not only be triggered by just one part being
+    /// requested but also by the [MinBytesForConcurrentDownload] and [MinPartsForConcurrentDownload]
+    /// configuration values.
+    ///
+    /// The default is [SequentialDownloadMode::SingleDownload].
+    pub sequential_download_mode: SequentialDownloadMode,
     /// Size of the buffer for each download task.
     ///
     /// If set to 0 (not advised) there will be now buffer at all.
@@ -45,6 +68,13 @@ pub struct Config {
     ///
     /// The default is `true`.
     pub always_get_size: AlwaysGetSize,
+    /// If set to `true` download related messages are logged at `DEBUG` level. Otherwise at `INFO` level.
+    ///
+    /// The affectd messages are:
+    /// * `Download started`
+    /// * `Download completed`
+    /// * `Download failed`
+    pub log_download_messages_as_debug: LogDownloadMessagesAsDebug,
     /// Configures retries if there.
     ///
     /// Otherwise there won't be any retry attempts made
@@ -68,6 +98,47 @@ impl Config {
         self
     }
 
+    /// The minimum number of parts a download must consist of for the parts to be downloaded concurrently.
+    /// Depending on the part sizes it might be more efficient to set a number higer than 2. Downloading concurrently has an overhead.
+    /// This setting plays together with `MinBytesForConcurrentDownload`.
+    /// Setting this value to 0 or 1 makes no sense and has no effect.
+    /// The default is 2.
+    pub fn min_parts_for_concurrent_download<T: Into<MinPartsForConcurrentDownload>>(
+        mut self,
+        min_parts_for_concurrent_download: T,
+    ) -> Self {
+        self.min_parts_for_concurrent_download = min_parts_for_concurrent_download.into();
+        self
+    }
+
+    /// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
+    /// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
+    ///
+    /// This setting plays together with `MinPartsForConcurrentDownload`.
+    ///
+    /// The default is 0.
+    pub fn min_bytes_for_concurrent_download<T: Into<MinBytesForConcurrentDownload>>(
+        mut self,
+        min_bytes_for_concurrent_download: T,
+    ) -> Self {
+        self.min_bytes_for_concurrent_download = min_bytes_for_concurrent_download.into();
+        self
+    }
+
+    /// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
+    /// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
+    ///
+    /// This setting plays together with `MinPartsForConcurrentDownload`.
+    ///
+    /// The default is 0.
+    pub fn sequential_download_mode<T: Into<SequentialDownloadMode>>(
+        mut self,
+        sequential_download_mode: T,
+    ) -> Self {
+        self.sequential_download_mode = sequential_download_mode.into();
+        self
+    }
+
     /// Set the size of the buffer for each download task.
     pub fn buffer_size<T: Into<BufferSize>>(mut self, buffer_size: T) -> Self {
         self.buffer_size = buffer_size.into();
@@ -87,6 +158,20 @@ impl Config {
     /// Set whether a size request should always be made
     pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, always_get_size: T) -> Self {
         self.always_get_size = always_get_size.into();
+        self
+    }
+
+    /// If set to `true` download related messages are logged at `DEBUG` level. Otherwise at `INFO` level.
+    ///
+    /// The affectd messages are:
+    /// * `download started`
+    /// * `download completed`
+    /// * `download failed`
+    pub fn log_download_messages_as_debug<T: Into<LogDownloadMessagesAsDebug>>(
+        mut self,
+        log_download_messages_as_debug: T,
+    ) -> Self {
+        self.log_download_messages_as_debug = log_download_messages_as_debug.into();
         self
     }
 
@@ -126,6 +211,12 @@ impl Config {
 
     /// Validate this [Config]
     pub fn validated(self) -> Result<Self, AnyError> {
+        self.validate()?;
+        Ok(self)
+    }
+
+    /// Validate this [Config]
+    pub fn validate(&self) -> Result<(), AnyError> {
         if self.max_concurrency.0 == 0 {
             bail!("'max_concurrency' must not be 0");
         }
@@ -138,7 +229,7 @@ impl Config {
             retries.validate()?;
         }
 
-        Ok(self)
+        Ok(())
     }
 
     fn fill_from_env_prefixed_internal<T: AsRef<str>>(
@@ -155,6 +246,24 @@ impl Config {
             found_any = true;
             self.max_concurrency = max_concurrency;
         }
+        if let Some(min_parts_for_concurrent_download) =
+            MinPartsForConcurrentDownload::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.min_parts_for_concurrent_download = min_parts_for_concurrent_download;
+        }
+        if let Some(min_bytes_for_concurrent_download) =
+            MinBytesForConcurrentDownload::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.min_bytes_for_concurrent_download = min_bytes_for_concurrent_download;
+        }
+        if let Some(sequential_download_mode) =
+            SequentialDownloadMode::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.sequential_download_mode = sequential_download_mode;
+        }
         if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
             found_any = true;
             self.buffer_size = buffer_size;
@@ -168,6 +277,13 @@ impl Config {
         if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
             found_any = true;
             self.always_get_size = always_get_size;
+        }
+
+        if let Some(log_download_messages_as_debug) =
+            LogDownloadMessagesAsDebug::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.log_download_messages_as_debug = log_download_messages_as_debug;
         }
 
         if let Some(retries) = RetryConfig::from_env_prefixed(prefix.as_ref())? {
@@ -184,9 +300,13 @@ impl Default for Config {
         Self {
             part_size_bytes: Default::default(),
             max_concurrency: Default::default(),
+            min_bytes_for_concurrent_download: Default::default(),
+            min_parts_for_concurrent_download: Default::default(),
+            sequential_download_mode: Default::default(),
             buffer_size: Default::default(),
             max_buffers_full_delay_ms: Default::default(),
             always_get_size: Default::default(),
+            log_download_messages_as_debug: Default::default(),
             retries: Some(Default::default()),
         }
     }
@@ -253,6 +373,26 @@ impl PartSizeBytes {
     env_funs!("PART_SIZE_BYTES");
 }
 
+impl fmt::Display for PartSizeBytes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl ops::Deref for PartSizeBytes {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ops::DerefMut for PartSizeBytes {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl Default for PartSizeBytes {
     fn default() -> Self {
         PartSizeBytes::new(Mebi(4))
@@ -311,32 +451,9 @@ impl FromStr for PartSizeBytes {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-        if let Some(idx) = s.find(|c: char| c.is_alphabetic()) {
-            if idx == 0 {
-                bail!("'{}' needs digits", s)
-            }
-
-            let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
-            let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
-
-            let bytes = digits.parse::<u64>()?;
-
-            match unit {
-                "k" => Ok(Kilo(bytes).into()),
-                "M" => Ok(Mega(bytes).into()),
-                "G" => Ok(Giga(bytes).into()),
-                "Ki" => Ok(Kibi(bytes).into()),
-                "Mi" => Ok(Mebi(bytes).into()),
-                "Gi" => Ok(Gibi(bytes).into()),
-                s => bail!("invalid unit: '{}'", s),
-            }
-        } else {
-            Ok(Self::new(s.parse::<u64>()?))
-        }
+        s.parse::<UnitPrefix>().map(|up| PartSizeBytes(up.value()))
     }
 }
-
 new_type! {
     #[doc="Maximum concurrency of a single download"]
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -364,6 +481,165 @@ new_type! {
 impl Default for BufferSize {
     fn default() -> Self {
         BufferSize(2)
+    }
+}
+
+new_type! {
+    #[doc="The minimum number of parts a download must consist of for the parts to be downloaded concurrently"]
+    #[doc="Depending on the part sizes it might be more efficient to set a number higer than 2. Downloading concurrently has an overhead."]
+    #[doc="This setting plays together with `MinBytesForConcurrentDownload`."]
+    #[doc="Setting this value to 0 or 1 makes no sense and has no effect."]
+    #[doc="The default is 2."]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub copy struct MinPartsForConcurrentDownload(u64, env="MIN_PARTS_FOR_CONCURRENT_DOWNLOAD");
+}
+
+impl Default for MinPartsForConcurrentDownload {
+    fn default() -> Self {
+        MinPartsForConcurrentDownload(2)
+    }
+}
+
+/// The minimum number of bytes a download must consist of for the parts to be downloaded concurrently.
+/// Downloading concurrently has an overhead so it can make sens to set this value greater that `PART_SIZE_BYTES`.
+///
+/// This setting plays together with `MinPartsForConcurrentDownload`.
+///
+/// The default is 0.
+///
+/// # Examples
+///
+/// ### Parsing
+/// ```rust
+/// # use condow_core::config::MinBytesForConcurrentDownload;
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "34".parse().unwrap();
+/// assert_eq!(n_bytes, 34.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1k".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1 k".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1M".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000_000.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1G".parse().unwrap();
+/// assert_eq!(n_bytes, 1_000_000_000.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1Ki".parse().unwrap();
+/// assert_eq!(n_bytes, 1_024.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1Mi".parse().unwrap();
+/// assert_eq!(n_bytes, 1_048_576.into());
+///
+/// let n_bytes: MinBytesForConcurrentDownload = "1Gi".parse().unwrap();
+/// assert_eq!(n_bytes, 1_073_741_824.into());
+///
+/// // Case sensitive
+/// let res = "1K".parse::<MinBytesForConcurrentDownload>();
+/// assert!(res.is_err());
+///
+/// let res = "x".parse::<MinBytesForConcurrentDownload>();
+/// assert!(res.is_err());
+///
+/// let res = "".parse::<MinBytesForConcurrentDownload>();
+/// assert!(res.is_err());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct MinBytesForConcurrentDownload(u64);
+
+impl MinBytesForConcurrentDownload {
+    pub fn new<T: Into<u64>>(part_size_bytes: T) -> Self {
+        Self(part_size_bytes.into())
+    }
+
+    pub const fn from_u64(part_size_bytes: u64) -> Self {
+        Self(part_size_bytes)
+    }
+
+    pub const fn into_inner(self) -> u64 {
+        self.0
+    }
+
+    env_funs!("MIN_BYTES_FOR_CONCURRENT_DOWNLOAD");
+}
+
+impl ops::Deref for MinBytesForConcurrentDownload {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl ops::DerefMut for MinBytesForConcurrentDownload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Default for MinBytesForConcurrentDownload {
+    fn default() -> Self {
+        MinBytesForConcurrentDownload::new(0u64)
+    }
+}
+
+impl From<u64> for MinBytesForConcurrentDownload {
+    fn from(v: u64) -> Self {
+        MinBytesForConcurrentDownload(v)
+    }
+}
+
+impl From<MinBytesForConcurrentDownload> for u64 {
+    fn from(v: MinBytesForConcurrentDownload) -> Self {
+        v.0
+    }
+}
+
+impl From<Kilo> for MinBytesForConcurrentDownload {
+    fn from(v: Kilo) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl From<Mega> for MinBytesForConcurrentDownload {
+    fn from(v: Mega) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl From<Giga> for MinBytesForConcurrentDownload {
+    fn from(v: Giga) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl From<Kibi> for MinBytesForConcurrentDownload {
+    fn from(v: Kibi) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl From<Mebi> for MinBytesForConcurrentDownload {
+    fn from(v: Mebi) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl From<Gibi> for MinBytesForConcurrentDownload {
+    fn from(v: Gibi) -> Self {
+        MinBytesForConcurrentDownload::new(v)
+    }
+}
+
+impl FromStr for MinBytesForConcurrentDownload {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<UnitPrefix>()
+            .map(|up| MinBytesForConcurrentDownload(up.value()))
     }
 }
 
@@ -397,6 +673,117 @@ impl From<MaxBuffersFullDelayMs> for Duration {
     }
 }
 
+new_type! {
+    #[doc="If set to `true` download related messages are logged at `DEBUG` level. Otherwise at `INFO` level."]
+    #[doc="The default is `true` (log on `DEBUG` level)."]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub copy struct LogDownloadMessagesAsDebug(bool, env="LOG_DOWNLOAD_MESSAGES_AS_DEBUG");
+}
+
+impl LogDownloadMessagesAsDebug {
+    pub(crate) fn log<T: AsRef<str>>(self, msg: T) {
+        if *self {
+            debug!("{}", msg.as_ref());
+        } else {
+            info!("{}", msg.as_ref());
+        }
+    }
+
+    /// Returns the inner value
+    pub fn value(self) -> bool {
+        self.0
+    }
+}
+
+impl Default for LogDownloadMessagesAsDebug {
+    fn default() -> Self {
+        LogDownloadMessagesAsDebug(true)
+    }
+}
+
+/// Define how parts for a sequential download should be treated.
+///
+/// A sequential download can not only be triggered by just one part being
+/// requested but also by the [MinBytesForConcurrentDownload] and [MinPartsForConcurrentDownload]
+/// configuration values.
+///
+/// The default is [SequentialDownloadMode::SingleDownload].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SequentialDownloadMode {
+    /// Keep it as it is
+    KeepParts,
+    /// Merge all potential parts into a single one.
+    ///
+    /// For sequential downloads this is probably the most efficient
+    /// since for remote request no new connections
+    /// have to be made.
+    ///
+    /// This is the default
+    MergeParts,
+    /// Repartition the download into parts with
+    /// mostly the given size
+    Repartition { part_size: PartSizeBytes },
+}
+
+impl SequentialDownloadMode {
+    pub fn new<T: Into<SequentialDownloadMode>>(mode: T) -> Self {
+        mode.into()
+    }
+
+    env_funs!("SEQUENTIAL_DOWNLOAD_MODE");
+}
+
+impl Default for SequentialDownloadMode {
+    fn default() -> Self {
+        Self::MergeParts
+    }
+}
+
+impl From<PartSizeBytes> for SequentialDownloadMode {
+    fn from(part_size: PartSizeBytes) -> Self {
+        Self::Repartition { part_size }
+    }
+}
+
+impl FromStr for SequentialDownloadMode {
+    type Err = AnyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        match s {
+            "KEEP_PARTS" => Ok(Self::KeepParts),
+            "SINGLE_DOWNLOAD" => Ok(Self::MergeParts),
+            probably_a_number => {
+                let part_size = probably_a_number.parse()?;
+                Ok(Self::Repartition { part_size })
+            }
+        }
+    }
+}
+
+/// Multiplies by 1 when converted to a u64
+///
+// # Examples
+///
+/// ```rust
+/// # use condow_core::config::Unit;
+/// assert_eq!(u64::from(Unit(2)), 2);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Unit(pub u64);
+
+impl Unit {
+    /// Returns the value
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl From<Unit> for u64 {
+    fn from(m: Unit) -> Self {
+        m.value()
+    }
+}
 /// Multiplies by 1_000 when converted to a u64
 ///
 // # Examples
@@ -405,7 +792,7 @@ impl From<MaxBuffersFullDelayMs> for Duration {
 /// # use condow_core::config::Kilo;
 /// assert_eq!(u64::from(Kilo(2)), 2*1_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kilo(pub u64);
 
 impl Kilo {
@@ -429,7 +816,7 @@ impl From<Kilo> for u64 {
 /// # use condow_core::config::Mega;
 /// assert_eq!(u64::from(Mega(2)), 2*1_000_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mega(pub u64);
 
 impl Mega {
@@ -453,7 +840,7 @@ impl From<Mega> for u64 {
 /// # use condow_core::config::Giga;
 /// assert_eq!(u64::from(Giga(2)), 2*1_000_000_000);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Giga(pub u64);
 
 impl Giga {
@@ -477,7 +864,7 @@ impl From<Giga> for u64 {
 /// # use condow_core::config::Kibi;
 /// assert_eq!(u64::from(Kibi(2)), 2*1_024);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Kibi(pub u64);
 
 impl Kibi {
@@ -501,7 +888,7 @@ impl From<Kibi> for u64 {
 /// # use condow_core::config::Mebi;
 /// assert_eq!(u64::from(Mebi(2)), 2*1_048_576);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Mebi(pub u64);
 
 impl Mebi {
@@ -525,7 +912,7 @@ impl From<Mebi> for u64 {
 /// # use condow_core::config::Gibi;
 /// assert_eq!(u64::from(Gibi(2)), 2*1_073_741_824);
 /// ```
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Gibi(pub u64);
 
 impl Gibi {
@@ -538,5 +925,137 @@ impl Gibi {
 impl From<Gibi> for u64 {
     fn from(m: Gibi) -> Self {
         m.value()
+    }
+}
+
+/// A value with a unit prefix.
+///
+/// # Examples
+///
+/// ### Parsing
+/// ```rust
+/// # use condow_core::config::UnitPrefix;
+///
+/// let value: UnitPrefix = "34".parse().unwrap();
+/// assert_eq!(value, 34.into());
+///
+/// let value: UnitPrefix = "1k".parse().unwrap();
+/// assert_eq!(value, 1_000.into());
+///
+/// let value: UnitPrefix = "1 k".parse().unwrap();
+/// assert_eq!(value, 1_000.into());
+///
+/// let value: UnitPrefix = "1M".parse().unwrap();
+/// assert_eq!(value, 1_000_000.into());
+///
+/// let value: UnitPrefix = "1G".parse().unwrap();
+/// assert_eq!(value, 1_000_000_000.into());
+///
+/// let value: UnitPrefix = "1Ki".parse().unwrap();
+/// assert_eq!(value, 1_024.into());
+///
+/// let value: UnitPrefix = "1Mi".parse().unwrap();
+/// assert_eq!(value, 1_048_576.into());
+///
+/// let value: UnitPrefix = "1Gi".parse().unwrap();
+/// assert_eq!(value, 1_073_741_824.into());
+///
+/// // Case sensitive
+/// let res = "1K".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+///
+/// let res = "x".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+///
+/// let res = "".parse::<UnitPrefix>();
+/// assert!(res.is_err());
+/// ```
+#[derive(Debug, Clone, Copy, Eq, Ord)]
+pub enum UnitPrefix {
+    Unit(u64),
+    Kilo(u64),
+    Mega(u64),
+    Giga(u64),
+    Kibi(u64),
+    Mebi(u64),
+    Gibi(u64),
+}
+
+impl UnitPrefix {
+    /// Returns the actual value with the prefix evaluated.
+    ///
+    /// ```rust
+    /// # use condow_core::config::{UnitPrefix, Unit, Kilo};
+    ///
+    /// let value = UnitPrefix::Kilo(93).value();
+    /// assert_eq!(value, 93_000);
+    ///
+    /// let value = UnitPrefix::Unit(93).value();
+    /// assert_eq!(value, 93);
+    /// ```
+    pub fn value(self) -> u64 {
+        match self {
+            UnitPrefix::Unit(v) => v,
+            UnitPrefix::Kilo(v) => Kilo(v).value(),
+            UnitPrefix::Mega(v) => Mega(v).value(),
+            UnitPrefix::Giga(v) => Giga(v).value(),
+            UnitPrefix::Kibi(v) => Kibi(v).value(),
+            UnitPrefix::Mebi(v) => Mebi(v).value(),
+            UnitPrefix::Gibi(v) => Gibi(v).value(),
+        }
+    }
+}
+
+impl From<UnitPrefix> for u64 {
+    fn from(m: UnitPrefix) -> Self {
+        m.value()
+    }
+}
+
+impl From<u64> for UnitPrefix {
+    fn from(v: u64) -> Self {
+        UnitPrefix::Unit(v)
+    }
+}
+
+impl FromStr for UnitPrefix {
+    type Err = AnyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
+        if let Some(idx) = s.find(|c: char| c.is_alphabetic()) {
+            if idx == 0 {
+                bail!("'{}' needs digits", s)
+            }
+
+            let digits = from_utf8(&s.as_bytes()[..idx])?.trim();
+            let unit = from_utf8(&s.as_bytes()[idx..])?.trim();
+
+            let bytes = digits.parse::<u64>()?;
+
+            match unit {
+                "k" => Ok(UnitPrefix::Kilo(bytes)),
+                "M" => Ok(UnitPrefix::Mega(bytes)),
+                "G" => Ok(UnitPrefix::Giga(bytes)),
+                "Ki" => Ok(UnitPrefix::Kibi(bytes)),
+                "Mi" => Ok(UnitPrefix::Mebi(bytes)),
+                "Gi" => Ok(UnitPrefix::Gibi(bytes)),
+                s => bail!("invalid unit: '{}'", s),
+            }
+        } else {
+            Ok(s.parse::<u64>().map(UnitPrefix::Unit)?)
+        }
+    }
+}
+
+impl PartialEq for UnitPrefix {
+    fn eq(&self, other: &Self) -> bool {
+        self.value() == other.value()
+    }
+}
+
+impl PartialOrd for UnitPrefix {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.value().partial_cmp(&other.value())
     }
 }

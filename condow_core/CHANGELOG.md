@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## unreleased
+
+### ADDED
+
+- config parameter `LogDownloadMessagesAsDebug` to configure log level of outer doenload events
+- config parameters `MinPartsForConcurrentDownload`, `MinBytesForConcurrentDownload` and `SequentialDownloadMode` to configure sequential downloads
+
 ## 0.17.1 - 2022-05-12
 
 ### CHANGED

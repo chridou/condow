@@ -5,10 +5,11 @@ use pin_project_lite::pin_project;
 
 use crate::{
     condow_client::CondowClient,
-    config::ClientRetryWrapper,
+    config::{Config, LogDownloadMessagesAsDebug},
     errors::CondowError,
     machinery::part_request::{PartRequest, PartRequestIterator},
     probe::Probe,
+    retry::ClientRetryWrapper,
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem},
     InclusiveRange,
 };
@@ -23,10 +24,17 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
+    config: Config,
 ) -> ChunkStream {
     probe.download_started();
     let bytes_hint = part_requests.bytes_hint();
-    let poll_parts = PollPartsSeq::new(client, location, part_requests, probe);
+    let poll_parts = PollPartsSeq::new(
+        client,
+        location,
+        part_requests,
+        probe,
+        config.log_download_messages_as_debug,
+    );
 
     let chunk_stream = ChunkStream::from_stream(poll_parts.boxed(), bytes_hint);
 
@@ -65,6 +73,7 @@ struct PollPartsSeq<P> {
     state: State,
     probe: P,
     download_started_at: Instant,
+    log_dl_msg_dbg: LogDownloadMessagesAsDebug,
 }
 }
 
@@ -72,15 +81,17 @@ impl<P> PollPartsSeq<P>
 where
     P: Probe + Clone,
 {
-    fn new<I, C>(
+    fn new<I, C, L>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         part_requests: I,
         probe: P,
+        log_dl_msg_dbg: L,
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
         C: CondowClient,
+        L: Into<LogDownloadMessagesAsDebug>,
     {
         let bytes_streams = yield_bytes_streams::YieldBytesStreams::new(
             client,
@@ -95,6 +106,7 @@ where
             },
             probe,
             download_started_at: Instant::now(),
+            log_dl_msg_dbg: log_dl_msg_dbg.into(),
         }
     }
 }
@@ -140,10 +152,14 @@ where
                     Poll::Ready(Some(Err(err))) => {
                         this.probe
                             .download_failed(Some(this.download_started_at.elapsed()));
+                        this.log_dl_msg_dbg.log(format!("download failed: {err}"));
                         *this.state = State::Finished;
                         Poll::Ready(Some(Err(err)))
                     }
                     Poll::Ready(None) => {
+                        this.log_dl_msg_dbg.log("download completed");
+                        this.probe
+                            .download_completed(this.download_started_at.elapsed());
                         *this.state = State::Finished;
                         Poll::Ready(None)
                     }
@@ -188,6 +204,7 @@ where
                         );
                         this.probe
                             .download_failed(Some(this.download_started_at.elapsed()));
+                        this.log_dl_msg_dbg.log(format!("download failed: {err}"));
                         *this.state = State::Finished;
                         Poll::Ready(Some(Err(err)))
                     }
@@ -236,7 +253,8 @@ mod tests {
         for part_size in 1..100 {
             let part_requests = PartRequestIterator::new(0..=99, part_size);
 
-            let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+            let poll_parts =
+                PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
 
             let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -271,7 +289,7 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(0..=999, 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -290,7 +308,7 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -309,7 +327,7 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -330,7 +348,7 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, ());
+        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()

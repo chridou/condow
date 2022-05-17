@@ -10,11 +10,11 @@ use std::{
 
 use futures::StreamExt;
 use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
-use tracing::{debug, debug_span, trace, Instrument, Span};
+use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
-    config::ClientRetryWrapper,
+    config::{ClientRetryWrapper, Config},
     errors::{CondowError, IoError},
     machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
@@ -128,6 +128,7 @@ pub(crate) struct DownloaderContext<P: Probe + Clone> {
     completed: bool,
     /// This must exist for the whole download
     download_span_guard: DownloadSpanGuard,
+    config: Arc<Config>,
 }
 
 impl<P: Probe + Clone> DownloaderContext<P> {
@@ -138,6 +139,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
         probe: P,
         started_at: Instant,
         download_span_guard: DownloadSpanGuard,
+        config: Arc<Config>,
     ) -> Self {
         counter.fetch_add(1, Ordering::SeqCst);
         Self {
@@ -148,6 +150,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
             results_sender,
             completed: false,
             download_span_guard,
+            config,
         }
     }
 
@@ -189,6 +192,7 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
             self.kill_switch.push_the_button();
 
             let err = if std::thread::panicking() {
+                warn!(parent: self.download_span_guard.span(), "panic detected in downloader");
                 self.probe.panic_detected("panic detected in downloader");
                 CondowError::new_other("download ended unexpectedly due to a panic")
             } else {
@@ -202,10 +206,18 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
 
         if self.counter.load(Ordering::SeqCst) == 0 {
             if self.kill_switch.is_pushed() {
-                debug!(parent: self.download_span_guard.span(), "download failed");
+                if *self.config.log_download_messages_as_debug {
+                    debug!(parent: self.download_span_guard.span(), "download failed");
+                } else {
+                    info!(parent: self.download_span_guard.span(), "download failed");
+                }
                 self.probe.download_failed(Some(self.started_at.elapsed()))
             } else {
-                debug!(parent: self.download_span_guard.span(), "download succeeded");
+                if *self.config.log_download_messages_as_debug {
+                    debug!(parent: self.download_span_guard.span(), "download completed");
+                } else {
+                    info!(parent: self.download_span_guard.span(), "download completed");
+                }
                 self.probe.download_completed(self.started_at.elapsed())
             }
         }
@@ -399,6 +411,7 @@ mod tests {
                 (),
                 Instant::now(),
                 DownloadSpanGuard::new(Span::none()),
+                Default::default(),
             ),
         );
 

@@ -270,8 +270,8 @@ impl ClosedRange {
         }
     }
 
-    pub fn len(&self) -> u64 {
-        match *self {
+    pub fn len(self) -> u64 {
+        match self {
             Self::FromTo(a, b) => b - a,
             Self::FromToInclusive(a, b) => b - a + 1,
             Self::To(last_excl) => last_excl,
@@ -516,6 +516,14 @@ impl DownloadRange {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
             DownloadRange::Closed(r) => r.incl_range_from_size(size),
+        }
+    }
+
+    /// Returns the length in bytes for ranges where an end is defined
+    pub fn len(self) -> Option<u64> {
+        match self {
+            DownloadRange::Open(_) => None,
+            DownloadRange::Closed(r) => Some(r.len()),
         }
     }
 }

@@ -214,7 +214,7 @@ mod download_chunks {
     use crate::{
         condow_client::IgnoreLocation,
         config::Config,
-        machinery::{download_chunks, DownloadSpanGuard},
+        machinery::{download_chunks, part_request::PartRequestIterator, DownloadSpanGuard},
         streams::BytesHint,
         test_utils::*,
         InclusiveRange,
@@ -234,11 +234,12 @@ mod download_chunks {
 
         let range = InclusiveRange(0, 8);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
+        let part_requests = PartRequestIterator::new(range, 100);
 
         let result_stream = download_chunks(
             client.into(),
             IgnoreLocation,
-            range,
+            part_requests,
             bytes_hint,
             config,
             (),
@@ -253,7 +254,7 @@ mod download_chunks {
     }
 
     #[tokio::test]
-    async fn from_0_to_inclusive_range_equal_size_than_part_size() {
+    async fn from_0_to_inclusive_range_equal_size_as_part_size() {
         let buffer_size = 10;
         let client = TestCondowClient::new().max_chunk_size(3);
         let data = client.data();
@@ -266,11 +267,12 @@ mod download_chunks {
 
         let range = InclusiveRange(0, 9);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
+        let part_requests = PartRequestIterator::new(range, range.len());
 
         let result_stream = download_chunks(
             client.into(),
             IgnoreLocation,
-            range,
+            part_requests,
             bytes_hint,
             config,
             (),
@@ -298,11 +300,12 @@ mod download_chunks {
 
         let range = InclusiveRange(0, 10);
         let bytes_hint = BytesHint::new(range.len(), Some(range.len()));
+        let part_requests = PartRequestIterator::new(range, 3);
 
         let result_stream = download_chunks(
             client.into(),
             IgnoreLocation,
-            range,
+            part_requests,
             bytes_hint,
             config,
             (),
