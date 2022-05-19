@@ -10,6 +10,7 @@ homepage = "https://github.com/chridou/condow"
 repository = "https://github.com/chridou/condow"
 keywords = [ "download", "network", "parallel", "files"]
 edition = "2021"
+publish = false
 
 [dependencies]
 condow_core = { version = "0.17", path = "../condow_core"}
