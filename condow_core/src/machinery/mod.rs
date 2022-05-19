@@ -43,7 +43,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
 
     let configure_stream_span = info_span!(parent: &download_span, "configure_stream");
 
-    let (effective_range, bytes_hint) = match range {
+    let (effective_range, _bytes_hint) = match range {
         DownloadRange::Open(or) => {
             debug!(parent: &configure_stream_span, "open range");
             let size = client
@@ -122,12 +122,11 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         client.clone(),
         location,
         part_requests,
-        bytes_hint,
         config.clone(),
         probe.clone(),
         download_guard,
     )
-    .await?;
+    .await;
 
     // Explicit drops for scope visualization
     drop(download_span_enter_guard);
@@ -139,30 +138,22 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     location: C::Location,
     part_requests: PartRequestIterator,
-    bytes_hint: BytesHint,
     config: Config,
     probe: P,
     download_span_guard: DownloadSpanGuard,
-) -> Result<ChunkStream, CondowError> {
+) -> ChunkStream {
     if *config.max_concurrency <= 1 {
-        download::download_chunks_sequentially(part_requests, client, location, probe, config).await
+        download::download_sequentially(part_requests, client, location, probe, config).await
     } else {
-        let (chunk_stream, sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
-        tokio::spawn(async move {
-            let result = download::download_concurrently(
-                part_requests,
-                *config.max_concurrency,
-                sender,
-                client,
-                config,
-                location,
-                probe,
-                download_span_guard,
-            )
-            .await;
-            result
-        });
-        Ok(chunk_stream)
+        download::download_concurrently(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
+        .await
     }
 }
 

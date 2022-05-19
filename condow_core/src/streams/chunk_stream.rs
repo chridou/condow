@@ -32,16 +32,23 @@ impl ChunkStream {
     ) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
         let (tx, receiver) = mpsc::unbounded_channel();
 
+        let me = Self::from_receiver(receiver, bytes_hint);
+
+        (me, tx)
+    }
+
+    pub fn from_receiver(
+        receiver: mpsc::UnboundedReceiver<ChunkStreamItem>,
+        bytes_hint: BytesHint,
+    ) -> Self {
         let source = SourceFlavour::Channel { receiver };
 
-        let me = Self {
+        Self {
             bytes_hint,
             source,
             is_closed: false,
             is_fresh: true,
-        };
-
-        (me, tx)
+        }
     }
 
     pub fn from_stream(stream: BoxStream<'static, ChunkStreamItem>, bytes_hint: BytesHint) -> Self {

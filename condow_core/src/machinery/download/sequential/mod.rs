@@ -20,10 +20,12 @@ use crate::{
     InclusiveRange,
 };
 
+use super::active_pull;
+
 /// Download the parts sequentially.
 ///
 /// The download is driven by the returned stream.
-pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
+pub(crate) async fn download_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
@@ -36,13 +38,16 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
         client,
         location,
         part_requests,
-        probe,
+        probe.clone(),
         config.log_download_messages_as_debug,
     );
 
-    let chunk_stream = ChunkStream::from_stream(poll_parts.boxed(), bytes_hint);
-
-    chunk_stream
+    if *config.ensure_active_pull {
+        let active_stream = active_pull(poll_parts, probe, config);
+        ChunkStream::from_receiver(active_stream, bytes_hint)
+    } else {
+        ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)
+    }
 }
 
 /// Internal state of the stream.

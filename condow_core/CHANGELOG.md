@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ADDED
 
+- config parameter `EnsureActivePull` to allow the stream to always be pulled by a dedicated task. This also gives some panic protection.
 - config parameter `LogDownloadMessagesAsDebug` to configure log level of outer doenload events
 - config parameters `MinPartsForConcurrentDownload`, `MinBytesForConcurrentDownload` and `SequentialDownloadMode` to configure sequential downloads
 

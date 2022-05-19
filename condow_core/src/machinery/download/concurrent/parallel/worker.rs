@@ -344,7 +344,7 @@ mod tests {
         config::Config,
         errors::{CondowError, CondowErrorKind},
         machinery::{
-            download::concurrent::{
+            download::concurrent::parallel::{
                 worker::{DownloaderContext, SequentialDownloader},
                 KillSwitch,
             },

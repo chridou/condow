@@ -1,163 +1,122 @@
 //! Spawns multiple [SequentialDownloader]s to download parts
 
-use std::{
-    sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
-};
-
 use futures::StreamExt;
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
     machinery::{part_request::PartRequestIterator, DownloadSpanGuard},
     probe::Probe,
-    streams::ChunkStreamItem,
+    streams::ChunkStream,
 };
 
-use self::worker::{DownloaderContext, SequentialDownloader};
+use self::parallel::ParallelDownloader;
 
-mod worker;
+use super::active_pull;
 
-/// Download the parst of a BLOB concurrently
+mod parallel;
+mod three_concurrently;
+mod two_concurrently;
+
+/// Download the chunks concurrently
+///
+/// This has more overhead than downloading sequentially.
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
-    ranges: PartRequestIterator,
-    n_concurrent: usize,
-    results_sender: UnboundedSender<ChunkStreamItem>,
+    part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
-    config: Config,
     location: C::Location,
     probe: P,
+    config: Config,
     download_span_guard: DownloadSpanGuard,
-) -> Result<(), ()> {
-    let mut downloader = ConcurrentDownloader::new(
-        n_concurrent,
-        results_sender,
+) -> ChunkStream {
+    if *config.max_concurrency <= 2 {
+        download_two_concurrently(part_requests, client, location, probe, config).await
+    } else if *config.max_concurrency == 3 {
+        download_three_concurrently(part_requests, client, location, probe, config).await
+    } else {
+        download_concurrently_parallel(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
+        .await
+    }
+}
+
+/// Download the parst of a BLOB concurrently spawning tasks to create parallelism
+async fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
+    part_requests: PartRequestIterator,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
+    probe: P,
+    config: Config,
+    download_span_guard: DownloadSpanGuard,
+) -> ChunkStream {
+    let bytes_hint = part_requests.bytes_hint();
+
+    let (chunk_stream, results_sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
+    tokio::spawn(async move {
+        let mut downloader = ParallelDownloader::new(
+            results_sender,
+            client,
+            config,
+            location,
+            probe,
+            download_span_guard,
+        );
+
+        downloader.download(part_requests).await
+    });
+    chunk_stream
+}
+
+async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
+    part_requests: PartRequestIterator,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
+    probe: P,
+    config: Config,
+) -> ChunkStream {
+    let bytes_hint = part_requests.bytes_hint();
+    let downloader = two_concurrently::TwoPartsConcurrently::from_client(
         client,
-        config.clone(),
         location,
-        probe,
-        download_span_guard,
+        part_requests,
+        probe.clone(),
+        config.log_download_messages_as_debug,
     );
 
-    downloader.download(ranges).await
+    if *config.ensure_active_pull {
+        let active_stream = active_pull(downloader, probe, config);
+        ChunkStream::from_receiver(active_stream, bytes_hint)
+    } else {
+        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
+    }
 }
 
-pub(crate) struct ConcurrentDownloader<P: Probe + Clone> {
-    downloaders: Vec<SequentialDownloader>,
-    counter: usize,
-    kill_switch: KillSwitch,
-    config: Arc<Config>,
+async fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
+    part_requests: PartRequestIterator,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
     probe: P,
-}
+    config: Config,
+) -> ChunkStream {
+    let bytes_hint = part_requests.bytes_hint();
+    let downloader = three_concurrently::ThreePartsConcurrently::from_client(
+        client,
+        location,
+        part_requests,
+        probe.clone(),
+        config.log_download_messages_as_debug,
+    );
 
-impl<P: Probe + Clone> ConcurrentDownloader<P> {
-    pub fn new<C: CondowClient>(
-        n_concurrent: usize,
-        results_sender: UnboundedSender<ChunkStreamItem>,
-        client: ClientRetryWrapper<C>,
-        config: Config,
-        location: C::Location,
-        probe: P,
-        download_span_guard: DownloadSpanGuard,
-    ) -> Self {
-        let started_at = Instant::now();
-        let kill_switch = KillSwitch::new();
-        let counter = Arc::new(AtomicUsize::new(0));
-        let config = Arc::new(config.clone());
-        let downloaders: Vec<_> = (0..n_concurrent)
-            .map(|_| {
-                SequentialDownloader::new(
-                    client.clone(),
-                    location.clone(),
-                    config.buffer_size.into(),
-                    DownloaderContext::new(
-                        results_sender.clone(),
-                        Arc::clone(&counter),
-                        kill_switch.clone(),
-                        probe.clone(),
-                        started_at,
-                        download_span_guard.clone(),
-                        Arc::clone(&config),
-                    ),
-                )
-            })
-            .collect();
-
-        Self {
-            downloaders,
-            counter: 0,
-            kill_switch,
-            config,
-            probe,
-        }
-    }
-
-    pub async fn download(&mut self, ranges: PartRequestIterator) -> Result<(), ()> {
-        self.probe.download_started();
-        let mut ranges_stream = ranges.into_stream();
-
-        let max_buffers_full_delay: Duration = self.config.max_buffers_full_delay_ms.into();
-        let n_downloaders = self.downloaders.len();
-
-        while let Some(mut range_request) = ranges_stream.next().await {
-            let mut attempt = 1;
-            let mut current_buffers_full_delay = Duration::from_secs(0);
-
-            loop {
-                if attempt % self.downloaders.len() == 0 {
-                    self.probe.queue_full();
-                    tokio::time::sleep(current_buffers_full_delay).await;
-                    current_buffers_full_delay = max_buffers_full_delay
-                        .min(current_buffers_full_delay + Duration::from_millis(1));
-                }
-                let idx = self.counter + attempt;
-                let downloader = &mut self.downloaders[idx % n_downloaders];
-
-                match downloader.enqueue(range_request) {
-                    Ok(None) => break,
-                    Ok(Some(msg)) => {
-                        range_request = msg;
-                    }
-                    Err(()) => {
-                        self.kill_switch.push_the_button();
-                        return Err(());
-                    }
-                }
-
-                attempt += 1;
-            }
-
-            self.counter += 1;
-        }
-        Ok(())
-    }
-}
-
-/// Shared state to control cancellation of a download
-#[derive(Clone)]
-pub(crate) struct KillSwitch {
-    is_pushed: Arc<AtomicBool>,
-}
-
-impl KillSwitch {
-    pub fn new() -> Self {
-        Self {
-            is_pushed: Arc::new(AtomicBool::new(false)),
-        }
-    }
-
-    /// Check whether cancellation of the download was requested
-    pub fn is_pushed(&self) -> bool {
-        self.is_pushed.load(Ordering::SeqCst)
-    }
-
-    /// Request cancellation of the download
-    pub fn push_the_button(&self) {
-        self.is_pushed.store(true, Ordering::SeqCst)
+    if *config.ensure_active_pull {
+        let active_stream = active_pull(downloader, probe, config);
+        ChunkStream::from_receiver(active_stream, bytes_hint)
+    } else {
+        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
     }
 }
