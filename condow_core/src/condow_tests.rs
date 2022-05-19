@@ -105,7 +105,7 @@ mod range {
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize,2,3,4, 10] {
+                    for n_concurrency in [1usize, 2, 3, 4, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
@@ -153,7 +153,7 @@ mod range {
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize,2,3,4, 10] {
+                    for n_concurrency in [1usize, 2, 3, 4, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
@@ -202,7 +202,7 @@ mod range {
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize,2,3,4, 10] {
+                    for n_concurrency in [1usize, 2, 3, 4, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
@@ -249,7 +249,7 @@ mod range {
                 };
 
                 for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize,2,3,4, 10] {
+                    for n_concurrency in [1usize, 2, 3, 4, 10] {
                         let config = Config::default()
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
@@ -304,7 +304,7 @@ mod range {
                         };
 
                         for part_size in [1u64, 3, 50, 1_000] {
-                            for n_concurrency in [1usize,2,3,4, 10] {
+                            for n_concurrency in [1usize, 2, 3, 4, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
                                     .max_buffers_full_delay_ms(0)
@@ -352,7 +352,7 @@ mod range {
                         };
 
                         for part_size in [1u64, 3, 50, 1_000] {
-                            for n_concurrency in [1usize,2,3,4, 10] {
+                            for n_concurrency in [1usize, 2, 3, 4, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
                                     .max_buffers_full_delay_ms(0)
@@ -407,7 +407,7 @@ mod range {
                         };
 
                         for part_size in [1u64, 33] {
-                            for n_concurrency in [1usize,2,3,4, 10] {
+                            for n_concurrency in [1usize, 2, 3, 4, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
                                     .max_buffers_full_delay_ms(0)
@@ -461,7 +461,7 @@ mod range {
                         };
 
                         for part_size in [1u64, 33] {
-                            for n_concurrency in [1usize,2,3,4, 10] {
+                            for n_concurrency in [1usize, 2, 3, 4, 10] {
                                 let config = Config::default()
                                     .buffer_size(buffer_size)
                                     .max_buffers_full_delay_ms(0)
@@ -504,40 +504,59 @@ mod range {
 }
 
 mod probe_events {
-    use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
 
-    use crate::{test_utils::TestCondowClient, config::Config, Condow, probe::Probe};
+    use crate::{config::Config, probe::Probe, test_utils::TestCondowClient, Condow};
 
     #[tokio::test]
     async fn test_open_close() {
-        let n_concurencies = [1usize, 2,3,4,5,6,7,8,9,10, 20];
+        let n_concurencies = [1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
 
         for n_concurrency in n_concurencies {
             let client = TestCondowClient::new().max_chunk_size(10);
-            let config = Config::default().part_size_bytes(5).max_concurrency(n_concurrency);
+            let config = Config::default()
+                .part_size_bytes(5)
+                .max_concurrency(n_concurrency);
             let condow = Condow::new(client.clone(), config).unwrap();
 
             let probe = TestProbe::new();
-            let result = condow.blob().probe(Arc::clone(&probe)).download_into_vec().await.unwrap();
+            let result = condow
+                .blob()
+                .probe(Arc::new(probe.clone()))
+                .download_into_vec()
+                .await
+                .unwrap();
 
             assert_eq!(result, client.data_slice());
 
-            assert_eq!(probe.downlo)
+            assert_eq!(
+                probe.downloads_open(),
+                0,
+                "downloads open - n_conc: {n_concurrency}"
+            );
+            assert_eq!(
+                probe.parts_open(),
+                0,
+                "parts open - n_conc: {n_concurrency}"
+            );
         }
     }
 
+    #[derive(Clone)]
     struct TestProbe {
-        downloads_open: AtomicUsize,
-        parts_open: AtomicUsize,
+        downloads_open: Arc<AtomicUsize>,
+        parts_open: Arc<AtomicUsize>,
     }
 
     impl TestProbe {
-        fn new() -> Arc<dyn Probe> {
-            Arc::new(Self {
+        fn new() -> Self {
+            Self {
                 downloads_open: Default::default(),
                 parts_open: Default::default(),
-        
-            })
+            }
         }
 
         fn downloads_open(&self) -> usize {
@@ -556,17 +575,28 @@ mod probe_events {
             self.downloads_open.fetch_sub(1, Ordering::SeqCst);
         }
         fn download_failed(&self, _time: Option<std::time::Duration>) {
-            self.downloads_open.fetch_sub(1, Ordering::SeqCst);       
+            self.downloads_open.fetch_sub(1, Ordering::SeqCst);
         }
 
         fn part_started(&self, _part_index: u64, _range: crate::InclusiveRange) {
             self.parts_open.fetch_add(1, Ordering::SeqCst);
         }
-        fn part_completed(&self, _part_index: u64, _n_chunks: usize, _n_bytes: u64, _time: std::time::Duration) {
-            self.parts_open.fetch_sub(1, Ordering::SeqCst);       
+        fn part_completed(
+            &self,
+            _part_index: u64,
+            _n_chunks: usize,
+            _n_bytes: u64,
+            _time: std::time::Duration,
+        ) {
+            self.parts_open.fetch_sub(1, Ordering::SeqCst);
         }
-        fn part_failed(&self, _error: &crate::errors::CondowError, _part_index: u64, _range: &crate::InclusiveRange) {
-            self.parts_open.fetch_sub(1, Ordering::SeqCst);       
+        fn part_failed(
+            &self,
+            _error: &crate::errors::CondowError,
+            _part_index: u64,
+            _range: &crate::InclusiveRange,
+        ) {
+            self.parts_open.fetch_sub(1, Ordering::SeqCst);
         }
     }
 }

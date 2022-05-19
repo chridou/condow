@@ -64,6 +64,8 @@ impl<P: Probe + Clone> ThreePartsConcurrently<P> {
             + Send
             + 'static,
     {
+        probe.download_started();
+
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
 
         let active_streams = match (
@@ -163,7 +165,14 @@ impl<P: Probe + Clone> Stream for ThreePartsConcurrently<P> {
                 let (poll_result, next_state) =
                     match poll_three(left, middle, right, &mut this.baggage, cx) {
                         Ok(ok) => ok,
-                        Err(err) => return Ready(Some(Err(err))),
+                        Err(err) => {
+                            this.baggage
+                                .probe
+                                .download_failed(Some(this.baggage.download_started_at.elapsed()));
+                            this.baggage.log_dl_msg_dbg.log("download failed: {err}");
+
+                            return Ready(Some(Err(err)));
+                        }
                     };
                 *this.active_streams = next_state;
 
@@ -172,7 +181,14 @@ impl<P: Probe + Clone> Stream for ThreePartsConcurrently<P> {
             ActiveStreams::LastTwoConcurrently { left, right } => {
                 let (poll_result, next_state) = match poll_last_two(left, right, cx) {
                     Ok(ok) => ok,
-                    Err(err) => return Ready(Some(Err(err))),
+                    Err(err) => {
+                        this.baggage
+                            .probe
+                            .download_failed(Some(this.baggage.download_started_at.elapsed()));
+                        this.baggage.log_dl_msg_dbg.log("download failed: {err}");
+
+                        return Ready(Some(Err(err)));
+                    }
                 };
                 *this.active_streams = next_state;
 
@@ -183,8 +199,21 @@ impl<P: Probe + Clone> Stream for ThreePartsConcurrently<P> {
                     *this.active_streams = ActiveStreams::LastPart(stream);
                     Ready(Some(Ok(chunk)))
                 }
-                Ready(Some(Err(err))) => Ready(Some(Err(err))),
-                Ready(None) => Ready(None),
+                Ready(Some(Err(err))) => {
+                    this.baggage
+                        .probe
+                        .download_failed(Some(this.baggage.download_started_at.elapsed()));
+                    this.baggage.log_dl_msg_dbg.log("download failed: {err}");
+                    Ready(Some(Err(err)))
+                }
+                Ready(None) => {
+                    this.baggage
+                        .probe
+                        .download_completed(this.baggage.download_started_at.elapsed());
+                    this.baggage.log_dl_msg_dbg.log("download completed");
+
+                    Ready(None)
+                }
                 Pending => {
                     *this.active_streams = ActiveStreams::LastPart(stream);
                     Pending

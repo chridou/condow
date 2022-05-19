@@ -134,6 +134,8 @@ pub mod part_chunks_stream {
             probe: P,
         ) -> Self {
             let range = part_request.blob_range;
+            probe.part_started(part_request.part_index, range);
+
             PartChunksStream {
                 part_request,
                 state: State::GettingStream(get_part_stream(range)),
@@ -190,11 +192,17 @@ pub mod part_chunks_stream {
                             range_offset: this.part_request.range_offset,
                             bytes_left: this.part_request.blob_range.len(),
                         };
+
                         *this.state = State::Streaming(part_state);
                         cx.waker().wake_by_ref();
                         Poll::Pending
                     }
                     Poll::Ready(Err(err)) => {
+                        this.probe.part_failed(
+                            &err,
+                            this.part_request.part_index,
+                            &this.part_request.blob_range,
+                        );
                         *this.state = State::Finished;
                         Poll::Ready(Some(Err(err)))
                     }
