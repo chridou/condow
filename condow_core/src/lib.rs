@@ -82,7 +82,7 @@
 //! Downloads with a concurrency greater or equal than 4 are executed on dedicated tasks. 
 //! Panics will be detected and the stream will abort with an error.
 //! 
-//! With the `` config settings all downloads will be executed on dedicated tasks and
+//! With the [EnsureActivePull] config setting all downloads will be executed on dedicated tasks and
 //! panics will be detected. 
 //! 
 //! All downloads executed on dedicated tasks will pull bytes from the network eagerly 
@@ -96,6 +96,7 @@
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
 //! [InMemoryClient]:condow_client::InMemoryClient
+//! [EnsureActivePull]:config::EnsureActivePull
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Error as AnyError;
