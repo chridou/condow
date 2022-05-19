@@ -509,28 +509,38 @@ mod probe_events {
         Arc,
     };
 
-    use crate::{config::Config, probe::Probe, test_utils::TestCondowClient, Condow};
+    use crate::{
+        config::{Config, SequentialDownloadMode},
+        probe::Probe,
+        test_utils::TestCondowClient,
+        Condow,
+    };
 
     #[tokio::test]
     async fn test_open_close() {
+        //! We test different levels of concurrencie since there are special
+        //! implementations and each of them has to trifgger the events.
+
         let n_concurencies = [1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
 
         for n_concurrency in n_concurencies {
             let client = TestCondowClient::new().max_chunk_size(10);
             let config = Config::default()
                 .part_size_bytes(5)
+                .sequential_download_mode(SequentialDownloadMode::KeepParts)
                 .max_concurrency(n_concurrency);
             let condow = Condow::new(client.clone(), config).unwrap();
 
             let probe = TestProbe::new();
             let result = condow
                 .blob()
+                .range(0..100)
                 .probe(Arc::new(probe.clone()))
                 .download_into_vec()
                 .await
                 .unwrap();
 
-            assert_eq!(result, client.data_slice());
+            assert_eq!(result, client.data_slice()[0..100]);
 
             assert_eq!(
                 probe.downloads_open(),
@@ -538,9 +548,19 @@ mod probe_events {
                 "downloads open - n_conc: {n_concurrency}"
             );
             assert_eq!(
+                probe.downloads_started(),
+                1,
+                "downloads started - n_conc: {n_concurrency}"
+            );
+            assert_eq!(
                 probe.parts_open(),
                 0,
                 "parts open - n_conc: {n_concurrency}"
+            );
+            assert_eq!(
+                probe.parts_received(),
+                20,
+                "parts received - n_conc: {n_concurrency}"
             );
         }
     }
@@ -548,28 +568,39 @@ mod probe_events {
     #[derive(Clone)]
     struct TestProbe {
         downloads_open: Arc<AtomicUsize>,
+        downloads_started: Arc<AtomicUsize>,
         parts_open: Arc<AtomicUsize>,
+        parts_received: Arc<AtomicUsize>,
     }
 
     impl TestProbe {
         fn new() -> Self {
             Self {
                 downloads_open: Default::default(),
+                downloads_started: Default::default(),
                 parts_open: Default::default(),
+                parts_received: Default::default(),
             }
         }
 
         fn downloads_open(&self) -> usize {
             self.downloads_open.load(Ordering::SeqCst)
         }
+        fn downloads_started(&self) -> usize {
+            self.downloads_started.load(Ordering::SeqCst)
+        }
         fn parts_open(&self) -> usize {
             self.parts_open.load(Ordering::SeqCst)
+        }
+        fn parts_received(&self) -> usize {
+            self.parts_received.load(Ordering::SeqCst)
         }
     }
 
     impl Probe for TestProbe {
         fn download_started(&self) {
             self.downloads_open.fetch_add(1, Ordering::SeqCst);
+            self.downloads_started.fetch_add(1, Ordering::SeqCst);
         }
         fn download_completed(&self, _time: std::time::Duration) {
             self.downloads_open.fetch_sub(1, Ordering::SeqCst);
@@ -580,6 +611,7 @@ mod probe_events {
 
         fn part_started(&self, _part_index: u64, _range: crate::InclusiveRange) {
             self.parts_open.fetch_add(1, Ordering::SeqCst);
+            self.parts_received.fetch_add(1, Ordering::SeqCst);
         }
         fn part_completed(
             &self,
