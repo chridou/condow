@@ -23,7 +23,7 @@ use crate::{
 
 use super::KillSwitch;
 
-/// Downloads equeued parts ([RangeRequest]s) of a download sequentially.
+/// Downloads enqueued parts ([RangeRequest]s) of a download sequentially.
 ///
 /// Spawns a task internally to process the parts to be downloaded one by one.
 /// The parts to be downloaded are enqueued in a channel.
