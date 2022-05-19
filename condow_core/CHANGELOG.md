@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## unreleased
 
+### FIXED
+
+- Events for download started and finished on Probes. Same for parts.
+
+### CHANGED
+
+- Updated documenation on parallelism behaviour
+
 ### ADDED
 
 - config parameter `EnsureActivePull` to allow the stream to always be pulled by a dedicated task. This also gives some panic protection.

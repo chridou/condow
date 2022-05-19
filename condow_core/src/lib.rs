@@ -71,7 +71,23 @@
 //! Be aware that some clients might also do retries themselves based on
 //! their underlying implementation. In this case you should disable retries for either the
 //! client or ConDow itself.
-//!
+//! 
+//! ## Behaviour
+//! 
+//! Downloads with a maximum concurrency of 3 are streamed on the same task the download
+//! was initiated on. This means that the returned stream needs to be polled to drive
+//! pulling chunks from the network. Executing the streaming also means that panics
+//! of underlying libraries will pop up on the polling task. 
+//! 
+//! Downloads with a concurrency greater or equal than 4 are executed on dedicated tasks. 
+//! Panics will be detected and the stream will abort with an error.
+//! 
+//! With the `` config settings all downloads will be executed on dedicated tasks and
+//! panics will be detected. 
+//! 
+//! All downloads executed on dedicated tasks will pull bytes from the network eagerly 
+//! and fill a queue.
+//! 
 //! ## Instrumentation
 //!
 //! Instrumentation can be done for each individual download or centralized

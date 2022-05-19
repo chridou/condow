@@ -255,6 +255,7 @@ mod chunk_stream_unordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         count_bytes(scenario, num_iterations, benchmarks_collected).await?;
+        count_bytes_no_retries(scenario, num_iterations, benchmarks_collected).await?;
         active_pull_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
         Ok(())
     }
@@ -265,6 +266,36 @@ mod chunk_stream_unordered {
         benchmarks_collected: &mut Benchmarks,
     ) -> Result<(), anyhow::Error> {
         let mut measurements = Benchmark::new("chunk_stream_count_bytes", scenario);
+
+        let downloader = scenario.gen_downloader();
+
+        let expected_byte_count = scenario.blob_size;
+
+        for _ in 0..num_iterations {
+            let start = Instant::now();
+
+            let bytes_read = downloader
+                .blob()
+                .download_chunks()
+                .await?
+                .count_bytes()
+                .await?;
+
+            measurements.measured(start, Instant::now(), scenario.blob_size);
+
+            assert_eq!(bytes_read, expected_byte_count);
+        }
+
+        benchmarks_collected.add_measurements(measurements);
+
+        Ok(())
+    }
+    async fn count_bytes_no_retries(
+        scenario: &Scenario,
+        num_iterations: usize,
+        benchmarks_collected: &mut Benchmarks,
+    ) -> Result<(), anyhow::Error> {
+        let mut measurements = Benchmark::new("chunk_stream_no_retries_count_bytes", scenario);
 
         let downloader = scenario.gen_downloader();
 
