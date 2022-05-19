@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use anyhow::{bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Future, Stream, StreamExt};
-use tracing::{debug, debug_span, warn, Instrument, Span};
+use tracing::{debug, warn, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
@@ -353,9 +353,7 @@ where
         location: C::Location,
         probe: &P,
     ) -> Result<u64, CondowError> {
-        let parent = Span::current();
-        let span = debug_span!(parent: &parent, "client_get_size");
-        debug!(parent: &span, "getting size");
+        debug!("getting size");
 
         let (client, config) = self.inner.as_ref();
         let f = async {
@@ -364,8 +362,7 @@ where
             } else {
                 Ok(client.get_size(location).await?)
             }
-        }
-        .instrument(span);
+        };
 
         f.await
     }
@@ -376,9 +373,7 @@ where
         spec: DownloadSpec,
         probe: P,
     ) -> impl Future<Output = Result<(BytesStream, BytesHint), CondowError>> + Send + 'static {
-        let parent = Span::current();
-        let span = debug_span!(parent: &parent, "client_download_part", %spec);
-        debug!(parent: &span, "downloading part");
+        debug!("retry client - downloading part");
 
         let inner = Arc::clone(&self.inner);
         async move {
@@ -389,7 +384,6 @@ where
                 Ok(client.download(location, spec).await?)
             }
         }
-        .instrument(span)
     }
 
     /// Returns the inner [CondowClient]

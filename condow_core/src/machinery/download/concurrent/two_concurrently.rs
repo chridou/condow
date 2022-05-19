@@ -11,7 +11,7 @@ use crate::{
     condow_client::CondowClient,
     config::LogDownloadMessagesAsDebug,
     errors::CondowError,
-    machinery::{download::PartChunksStream, part_request::PartRequest},
+    machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
     streams::{BytesHint, BytesStream, ChunkStreamItem},
@@ -43,6 +43,7 @@ struct Baggage<P: Probe> {
     probe: P,
     download_started_at: Instant,
     log_dl_msg_dbg: LogDownloadMessagesAsDebug,
+    download_span_guard: DownloadSpanGuard,
 }
 
 enum ActiveStreams<P: Probe> {
@@ -58,11 +59,12 @@ enum ActiveStreams<P: Probe> {
 }
 
 impl<P: Probe + Clone> TwoPartsConcurrently<P> {
-    pub fn new<I, L, F>(
+    pub(crate) fn new<I, L, F>(
         get_part_stream: F,
         mut part_requests: I,
         probe: P,
         log_dl_msg_dbg: L,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
@@ -83,12 +85,27 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
                 ActiveStreams::None
             }
             (Some(first), None) => {
-                let stream = PartChunksStream::new(&get_part_stream, first, probe.clone());
+                let stream = PartChunksStream::new(
+                    &get_part_stream,
+                    first,
+                    probe.clone(),
+                    download_span_guard.span(),
+                );
                 ActiveStreams::LastPart(stream)
             }
             (Some(first), Some(second)) => {
-                let left = PartChunksStream::new(&get_part_stream, first, probe.clone());
-                let right = PartChunksStream::new(&get_part_stream, second, probe.clone());
+                let left = PartChunksStream::new(
+                    &get_part_stream,
+                    first,
+                    probe.clone(),
+                    download_span_guard.span(),
+                );
+                let right = PartChunksStream::new(
+                    &get_part_stream,
+                    second,
+                    probe.clone(),
+                    download_span_guard.span(),
+                );
                 ActiveStreams::TwoConcurrently { left, right }
             }
         };
@@ -99,6 +116,7 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
             probe,
             download_started_at: Instant::now(),
             log_dl_msg_dbg,
+            download_span_guard,
         };
 
         Self {
@@ -113,6 +131,7 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
         part_requests: I,
         probe: P,
         log_dl_msg_dbg: L,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
@@ -128,7 +147,13 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
             }
         };
 
-        Self::new(get_part_stream, part_requests, probe, log_dl_msg_dbg)
+        Self::new(
+            get_part_stream,
+            part_requests,
+            probe,
+            log_dl_msg_dbg,
+            download_span_guard,
+        )
     }
 }
 
@@ -216,6 +241,7 @@ fn poll_two<P: Probe + Clone>(
                     &baggage.get_part_stream,
                     next_part_request,
                     baggage.probe.clone(),
+                    baggage.download_span_guard.span(),
                 );
                 Ok((
                     Poll::Pending,
@@ -244,6 +270,7 @@ fn poll_two<P: Probe + Clone>(
                     &baggage.get_part_stream,
                     next_part_request,
                     baggage.probe.clone(),
+                    baggage.download_span_guard.span(),
                 );
                 Ok((
                     Poll::Pending,
@@ -291,6 +318,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -313,6 +341,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -335,6 +364,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -357,6 +387,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -379,6 +410,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -402,6 +434,7 @@ mod tests {
                 part_requests,
                 (),
                 true,
+                Default::default(),
             );
 
             let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -443,6 +476,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -468,6 +502,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -493,6 +528,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())
@@ -520,6 +556,7 @@ mod tests {
             part_requests,
             (),
             true,
+            Default::default(),
         );
 
         let result = ChunkStream::from_stream(stream.boxed(), BytesHint::new_no_hint())

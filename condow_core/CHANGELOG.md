@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### FIXED
 
+- Improved tracing support
+
+## 0.17.2 - 2022-05-19
+
+### FIXED
+
 - Events for download started and finished on Probes. Same for parts.
 
 ### CHANGED

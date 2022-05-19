@@ -81,6 +81,7 @@ pub mod part_chunks_stream {
 
     use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
     use pin_project_lite::pin_project;
+    use tracing::{debug_span, Span};
 
     use crate::{
         condow_client::CondowClient,
@@ -105,6 +106,7 @@ pub mod part_chunks_stream {
             state: State,
             probe: P,
             started_at: Instant,
+            part_span: Span,
         }
     }
 
@@ -118,6 +120,7 @@ pub mod part_chunks_stream {
             location: C::Location,
             part_request: PartRequest,
             probe: P,
+            parent: &Span,
         ) -> Self {
             let get_part_stream = {
                 let probe = probe.clone();
@@ -128,7 +131,7 @@ pub mod part_chunks_stream {
                 }
             };
 
-            Self::new(&get_part_stream, part_request, probe)
+            Self::new(&get_part_stream, part_request, probe, parent)
         }
 
         pub(crate) fn new(
@@ -140,15 +143,23 @@ pub mod part_chunks_stream {
             >,
             part_request: PartRequest,
             probe: P,
+            parent: &Span,
         ) -> Self {
             let range = part_request.blob_range;
             probe.part_started(part_request.part_index, range);
+
+            let part_span = debug_span!(parent: parent,
+                "download_part", 
+                part_index = %part_request.part_index,
+                part_range = %part_request.blob_range,
+                part_offset = %part_request.range_offset);
 
             PartChunksStream {
                 part_request,
                 state: State::GettingStream(get_part_stream(range)),
                 probe,
                 started_at: Instant::now(),
+                part_span,
             }
         }
     }
@@ -181,6 +192,8 @@ pub mod part_chunks_stream {
             cx: &mut std::task::Context<'_>,
         ) -> std::task::Poll<Option<Self::Item>> {
             let this = self.project();
+
+            let _span_gurad = this.part_span.enter();
 
             // We need to get ownership of the state. So we have to reassign it in each match
             // arm unless we want to be in "Finished" state.
@@ -278,6 +291,7 @@ pub mod part_chunks_stream {
     #[cfg(test)]
     mod tests {
         use futures::StreamExt;
+        use tracing::Span;
 
         use crate::{
             condow_client::{
@@ -302,7 +316,13 @@ pub mod part_chunks_stream {
                 range_offset: 0,
             };
 
-            let chunks = PartChunksStream::from_client(&client, IgnoreLocation, part_request, ());
+            let chunks = PartChunksStream::from_client(
+                &client,
+                IgnoreLocation,
+                part_request,
+                (),
+                &Span::none(),
+            );
 
             let result = ChunkStream::from_stream(chunks.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -339,7 +359,13 @@ pub mod part_chunks_stream {
                 blob_range: (0..=999).into(),
                 range_offset: 0,
             };
-            let chunks = PartChunksStream::from_client(&client, IgnoreLocation, part_request, ());
+            let chunks = PartChunksStream::from_client(
+                &client,
+                IgnoreLocation,
+                part_request,
+                (),
+                &Span::none(),
+            );
 
             let result = ChunkStream::from_stream(chunks.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -361,7 +387,13 @@ pub mod part_chunks_stream {
                 blob_range: (0..=(blob.len() as u64 - 1)).into(),
                 range_offset: 0,
             };
-            let chunks = PartChunksStream::from_client(&client, IgnoreLocation, part_request, ());
+            let chunks = PartChunksStream::from_client(
+                &client,
+                IgnoreLocation,
+                part_request,
+                (),
+                &Span::none(),
+            );
 
             let result = ChunkStream::from_stream(chunks.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -383,7 +415,13 @@ pub mod part_chunks_stream {
                 blob_range: (0..=(blob.len() as u64 - 1)).into(),
                 range_offset: 0,
             };
-            let chunks = PartChunksStream::from_client(&client, IgnoreLocation, part_request, ());
+            let chunks = PartChunksStream::from_client(
+                &client,
+                IgnoreLocation,
+                part_request,
+                (),
+                &Span::none(),
+            );
 
             let result = ChunkStream::from_stream(chunks.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -407,7 +445,13 @@ pub mod part_chunks_stream {
                 blob_range: (0..=(blob.len() as u64 - 1)).into(),
                 range_offset: 0,
             };
-            let chunks = PartChunksStream::from_client(&client, IgnoreLocation, part_request, ());
+            let chunks = PartChunksStream::from_client(
+                &client,
+                IgnoreLocation,
+                part_request,
+                (),
+                &Span::none(),
+            );
 
             let result = ChunkStream::from_stream(chunks.boxed(), BytesHint::new_no_hint())
                 .into_vec()

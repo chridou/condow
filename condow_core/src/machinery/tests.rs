@@ -257,8 +257,7 @@ mod download_chunks {
             config,
             (),
             DownloadSpanGuard::new(Span::none()),
-        )
-        .await;
+        );
 
         let result = result_stream.into_vec().await.unwrap();
 
@@ -287,8 +286,7 @@ mod download_chunks {
             config,
             (),
             DownloadSpanGuard::new(Span::none()),
-        )
-        .await;
+        );
 
         let result = result_stream.into_vec().await.unwrap();
 
@@ -317,8 +315,7 @@ mod download_chunks {
             config,
             (),
             DownloadSpanGuard::new(Span::none()),
-        )
-        .await;
+        );
 
         let result = result_stream.into_vec().await.unwrap();
 

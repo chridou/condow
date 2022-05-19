@@ -13,6 +13,7 @@ use crate::{
     machinery::{
         download::PartChunksStream,
         part_request::{PartRequest, PartRequestIterator},
+        DownloadSpanGuard,
     },
     probe::Probe,
     retry::ClientRetryWrapper,
@@ -25,12 +26,13 @@ use super::active_pull;
 /// Download the parts sequentially.
 ///
 /// The download is driven by the returned stream.
-pub(crate) async fn download_sequentially<C: CondowClient, P: Probe + Clone>(
+pub(crate) fn download_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
     config: Config,
+    download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     probe.download_started();
     let bytes_hint = part_requests.bytes_hint();
@@ -40,6 +42,7 @@ pub(crate) async fn download_sequentially<C: CondowClient, P: Probe + Clone>(
         part_requests,
         probe.clone(),
         config.log_download_messages_as_debug,
+        download_span_guard,
     );
 
     if *config.ensure_active_pull {
@@ -69,6 +72,7 @@ pin_project! {
         probe: P,
         download_started_at: Instant,
         log_dl_msg_dbg: LogDownloadMessagesAsDebug,
+        download_span_guard: DownloadSpanGuard,
     }
 }
 
@@ -81,6 +85,7 @@ where
         mut part_requests: I,
         probe: P,
         log_dl_msg_dbg: L,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
@@ -92,7 +97,12 @@ where
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
 
         if let Some(part_request) = part_requests.next() {
-            let stream = PartChunksStream::new(&get_part_stream, part_request, probe.clone());
+            let stream = PartChunksStream::new(
+                &get_part_stream,
+                part_request,
+                probe.clone(),
+                download_span_guard.span(),
+            );
 
             Self {
                 get_part_stream: Box::new(get_part_stream),
@@ -101,6 +111,7 @@ where
                 probe,
                 download_started_at: Instant::now(),
                 log_dl_msg_dbg,
+                download_span_guard,
             }
         } else {
             probe.download_completed(Duration::ZERO);
@@ -114,6 +125,7 @@ where
                 probe,
                 download_started_at: Instant::now(),
                 log_dl_msg_dbg,
+                download_span_guard,
             }
         }
     }
@@ -124,6 +136,7 @@ where
         part_requests: I,
         probe: P,
         log_dl_msg_dbg: L,
+        download_span_guard: DownloadSpanGuard,
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
@@ -139,7 +152,13 @@ where
             }
         };
 
-        Self::new(get_part_stream, part_requests, probe, log_dl_msg_dbg)
+        Self::new(
+            get_part_stream,
+            part_requests,
+            probe,
+            log_dl_msg_dbg,
+            download_span_guard,
+        )
     }
 }
 
@@ -180,6 +199,7 @@ where
                                 this.get_part_stream,
                                 part_request,
                                 this.probe.clone(),
+                                this.download_span_guard.span(),
                             );
                             *this.state = State::Streaming(stream);
                             cx.waker().wake_by_ref(); // Bytes Stream returned "Ready" and will not wake us up!
@@ -231,6 +251,7 @@ mod tests {
                 part_requests,
                 (),
                 true,
+                Default::default(),
             );
 
             let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
@@ -266,8 +287,14 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(0..=999, 13);
 
-        let poll_parts =
-            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts = DownloadPartsSeq::from_client(
+            client.clone(),
+            IgnoreLocation,
+            part_requests,
+            (),
+            true,
+            Default::default(),
+        );
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -286,8 +313,14 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts =
-            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts = DownloadPartsSeq::from_client(
+            client.clone(),
+            IgnoreLocation,
+            part_requests,
+            (),
+            true,
+            Default::default(),
+        );
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -306,8 +339,14 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts =
-            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts = DownloadPartsSeq::from_client(
+            client.clone(),
+            IgnoreLocation,
+            part_requests,
+            (),
+            true,
+            Default::default(),
+        );
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -328,8 +367,14 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts =
-            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts = DownloadPartsSeq::from_client(
+            client.clone(),
+            IgnoreLocation,
+            part_requests,
+            (),
+            true,
+            Default::default(),
+        );
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()

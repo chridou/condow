@@ -98,7 +98,7 @@ impl InclusiveRange {
 
 impl fmt::Display for InclusiveRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{},{}]", self.0, self.1)
+        write!(f, "[{}..{}]", self.0, self.1)
     }
 }
 

@@ -32,9 +32,10 @@ use tracing_subscriber::{
 fn main() -> Result<(), Error> {
     let fmt_layer = Layer::default()
         .with_level(true)
+        .with_target(false)
         //.with_span_events(FmtSpan::FULL) // Spams the log with lifecycle events of spans
-        .with_span_events(FmtSpan::CLOSE)
-        .with_line_number(true);
+        .with_span_events(FmtSpan::NEW)
+        .with_line_number(false);
 
     let (flame_layer, _flame_guard) = FlameLayer::with_file("./tracing_flame.folded").unwrap();
     let flame_layer = flame_layer
@@ -52,7 +53,7 @@ fn main() -> Result<(), Error> {
         .unwrap();
 
     // Create an outer span which might be something created application side...
-    let outer_span = info_span!("outer");
+    let outer_span = info_span!("outer", "request_id" = 42);
 
     runtime.block_on(run().instrument(outer_span))?;
 
@@ -67,7 +68,7 @@ async fn run() -> Result<(), Error> {
     let config = Config::default()
         .max_buffers_full_delay_ms(0)
         .part_size_bytes(13)
-        .max_concurrency(2);
+        .max_concurrency(4);
 
     let condow = FailingClientSimulatorBuilder::default()
         .blob(blob)

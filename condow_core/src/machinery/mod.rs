@@ -110,7 +110,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
     }
 
     config.log_download_messages_as_debug.log(format!(
-        "download started ({} bytes) with effective concurrency {} and {} parts",
+        "download started ({} bytes) with effective concurrency {} and {} part(s)",
         effective_range.len(),
         config.max_concurrency,
         part_requests.exact_size_hint()
@@ -125,8 +125,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
         config.clone(),
         probe.clone(),
         download_guard,
-    )
-    .await;
+    );
 
     // Explicit drops for scope visualization
     drop(download_span_enter_guard);
@@ -134,7 +133,7 @@ pub(crate) async fn download_range<C: CondowClient, DR: Into<DownloadRange>, P: 
     Ok(stream)
 }
 
-async fn download_chunks<C: CondowClient, P: Probe + Clone>(
+fn download_chunks<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     location: C::Location,
     part_requests: PartRequestIterator,
@@ -143,7 +142,14 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     if *config.max_concurrency <= 1 {
-        download::download_sequentially(part_requests, client, location, probe, config).await
+        download::download_sequentially(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
     } else {
         download::download_concurrently(
             part_requests,
@@ -153,7 +159,6 @@ async fn download_chunks<C: CondowClient, P: Probe + Clone>(
             config,
             download_span_guard,
         )
-        .await
     }
 }
 
@@ -224,7 +229,7 @@ fn reconfigure_parts_for_sequential(
             let part_requests = PartRequestIterator::new(effective_range, part_size.into_inner());
             debug!(
                 parent: span,
-                "repartition to {} parts with approx {} bytes",
+                "repartition to {} part(s) with approx. {} bytes each",
                 part_requests.exact_size_hint(),
                 part_size
             );
@@ -246,6 +251,13 @@ impl DownloadSpanGuard {
 
     pub fn span(&self) -> &Span {
         &self.0
+    }
+}
+
+#[cfg(test)]
+impl Default for DownloadSpanGuard {
+    fn default() -> Self {
+        Self(Arc::new(Span::none()))
     }
 }
 

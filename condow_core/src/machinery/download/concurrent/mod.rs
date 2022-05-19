@@ -25,7 +25,7 @@ mod two_concurrently;
 /// Debending on the level of concurrency the returned stream
 /// will either poll chunks eagerly or has to be driven
 /// by the consumer.
-pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
+pub(crate) fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
@@ -34,9 +34,23 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     if *config.max_concurrency <= 2 {
-        download_two_concurrently(part_requests, client, location, probe, config).await
+        download_two_concurrently(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
     } else if *config.max_concurrency == 3 {
-        download_three_concurrently(part_requests, client, location, probe, config).await
+        download_three_concurrently(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
     } else {
         download_concurrently_parallel(
             part_requests,
@@ -46,12 +60,11 @@ pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
             config,
             download_span_guard,
         )
-        .await
     }
 }
 
 /// Download the parst of a BLOB concurrently spawning tasks to create parallelism
-async fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
+fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
@@ -78,12 +91,13 @@ async fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
 }
 
 /// Download with a maximum concurrency of 2
-async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
+fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
     config: Config,
+    download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     let bytes_hint = part_requests.bytes_hint();
     let downloader = two_concurrently::TwoPartsConcurrently::from_client(
@@ -92,6 +106,7 @@ async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
         part_requests,
         probe.clone(),
         config.log_download_messages_as_debug,
+        download_span_guard,
     );
 
     if *config.ensure_active_pull {
@@ -103,12 +118,13 @@ async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
 }
 
 /// Download with a maximum concurrency of 3
-async fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
+fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
     probe: P,
     config: Config,
+    download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     let bytes_hint = part_requests.bytes_hint();
     let downloader = three_concurrently::ThreePartsConcurrently::from_client(
@@ -117,6 +133,7 @@ async fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
         part_requests,
         probe.clone(),
         config.log_download_messages_as_debug,
+        download_span_guard,
     );
 
     if *config.ensure_active_pull {

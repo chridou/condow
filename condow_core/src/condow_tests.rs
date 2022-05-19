@@ -518,7 +518,7 @@ mod probe_events {
 
     #[tokio::test]
     async fn test_open_close() {
-        //! We test different levels of concurrencie since there are special
+        //! We test different levels of concurrency since there are special
         //! implementations and each of them has to trifgger the events.
 
         let n_concurencies = [1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
