@@ -50,6 +50,13 @@ pub struct Config {
     ///
     /// The default is [SequentialDownloadMode::SingleDownload].
     pub sequential_download_mode: SequentialDownloadMode,
+    /// Make sure that the network stream is always actively pulled into an intermediate buffer.
+    ///
+    /// This is not always the case since some low concurrency downloads require the strem to be actively pulled.
+    /// This also allows for detection of panics.
+    ///
+    /// The default is `false` which means this feature is turned off.
+    pub ensure_active_pull: EnsureActivePull,
     /// Size of the buffer for each download task.
     ///
     /// If set to 0 (not advised) there will be now buffer at all.
@@ -136,6 +143,17 @@ impl Config {
         sequential_download_mode: T,
     ) -> Self {
         self.sequential_download_mode = sequential_download_mode.into();
+        self
+    }
+
+    /// Make sure that the network stream is always actively pulled into an intermediate buffer.
+    ///
+    /// This is not always the case since some low concurrency downloads require the strem to be actively pulled.
+    /// This also allows for detection of panics.
+    ///
+    /// The default is `false` which means this feature is turned off.
+    pub fn ensure_active_pull<T: Into<EnsureActivePull>>(mut self, ensure_active_pull: T) -> Self {
+        self.ensure_active_pull = ensure_active_pull.into();
         self
     }
 
@@ -264,6 +282,11 @@ impl Config {
             found_any = true;
             self.sequential_download_mode = sequential_download_mode;
         }
+        if let Some(ensure_active_pull) = EnsureActivePull::try_from_env_prefixed(prefix.as_ref())?
+        {
+            found_any = true;
+            self.ensure_active_pull = ensure_active_pull;
+        }
         if let Some(buffer_size) = BufferSize::try_from_env_prefixed(prefix.as_ref())? {
             found_any = true;
             self.buffer_size = buffer_size;
@@ -303,6 +326,7 @@ impl Default for Config {
             min_bytes_for_concurrent_download: Default::default(),
             min_parts_for_concurrent_download: Default::default(),
             sequential_download_mode: Default::default(),
+            ensure_active_pull: Default::default(),
             buffer_size: Default::default(),
             max_buffers_full_delay_ms: Default::default(),
             always_get_size: Default::default(),
@@ -481,6 +505,21 @@ new_type! {
 impl Default for BufferSize {
     fn default() -> Self {
         BufferSize(2)
+    }
+}
+
+new_type! {
+    #[doc="Make sure that the network stream is always actively pulled into an intermediate buffer."]
+    #[doc="This is not always the case since some low concurrency downloads require the strem to be actively pulled."]
+    #[doc="This also allows for detection of panics."]
+    #[doc="The default is `false` which means this feature is turned off."]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub copy struct EnsureActivePull(bool, env="ENSURE_ACTIVE_PULL");
+}
+
+impl Default for EnsureActivePull {
+    fn default() -> Self {
+        EnsureActivePull(false)
     }
 }
 

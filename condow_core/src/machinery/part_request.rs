@@ -53,6 +53,19 @@ impl PartRequestIterator {
         }
     }
 
+    #[allow(dead_code)]
+    pub fn empty() -> Self {
+        Self {
+            start: 1,
+            part_size: 0,
+            next_range_offset: 0,
+            next_part_index: 0,
+            parts_left: 0,
+            end_incl: 0,
+            bytes_left: 0,
+        }
+    }
+
     pub fn exact_size_hint(&self) -> u64 {
         self.parts_left
     }

@@ -72,6 +72,22 @@
 //! their underlying implementation. In this case you should disable retries for either the
 //! client or ConDow itself.
 //!
+//! ## Behaviour
+//!
+//! Downloads with a maximum concurrency of 3 are streamed on the same task the download
+//! was initiated on. This means that the returned stream needs to be polled to drive
+//! pulling chunks from the network. Executing the streaming also means that panics
+//! of underlying libraries will pop up on the polling task.
+//!
+//! Downloads with a concurrency greater or equal than 4 are executed on dedicated tasks.
+//! Panics will be detected and the stream will abort with an error.
+//!
+//! With the [EnsureActivePull] config setting all downloads will be executed on dedicated tasks and
+//! panics will be detected.
+//!
+//! All downloads executed on dedicated tasks will pull bytes from the network eagerly
+//! and fill a queue.
+//!
 //! ## Instrumentation
 //!
 //! Instrumentation can be done for each individual download or centralized
@@ -80,6 +96,7 @@
 //! [condow_rusoto]:https://docs.rs/condow_rusoto
 //! [condow_fs]:https://docs.rs/condow_fs
 //! [InMemoryClient]:condow_client::InMemoryClient
+//! [EnsureActivePull]:config::EnsureActivePull
 use std::{str::FromStr, sync::Arc};
 
 use anyhow::Error as AnyError;

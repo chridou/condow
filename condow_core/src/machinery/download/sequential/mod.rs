@@ -1,25 +1,31 @@
-use std::{task::Poll, time::Instant};
+use std::{
+    task::Poll,
+    time::{Duration, Instant},
+};
 
-use futures::{stream::BoxStream, Stream, StreamExt};
+use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::{
     condow_client::CondowClient,
     config::{Config, LogDownloadMessagesAsDebug},
     errors::CondowError,
-    machinery::part_request::{PartRequest, PartRequestIterator},
+    machinery::{
+        download::PartChunksStream,
+        part_request::{PartRequest, PartRequestIterator},
+    },
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem},
+    streams::{BytesHint, BytesStream, ChunkStream, ChunkStreamItem},
     InclusiveRange,
 };
 
-mod yield_bytes_streams;
+use super::active_pull;
 
 /// Download the parts sequentially.
 ///
 /// The download is driven by the returned stream.
-pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
+pub(crate) async fn download_sequentially<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
     location: C::Location,
@@ -28,60 +34,91 @@ pub(crate) async fn download_chunks_sequentially<C: CondowClient, P: Probe + Clo
 ) -> ChunkStream {
     probe.download_started();
     let bytes_hint = part_requests.bytes_hint();
-    let poll_parts = PollPartsSeq::new(
+    let poll_parts = DownloadPartsSeq::from_client(
         client,
         location,
         part_requests,
-        probe,
+        probe.clone(),
         config.log_download_messages_as_debug,
     );
 
-    let chunk_stream = ChunkStream::from_stream(poll_parts.boxed(), bytes_hint);
-
-    chunk_stream
-}
-
-/// Stateful data for streaming a part
-struct StreamingPart {
-    bytes_stream: BytesStream,
-    part_index: u64,
-    chunk_index: usize,
-    blob_offset: u64,
-    range_offset: u64,
-    bytes_left: u64,
-    bytes_streams: BoxStream<'static, Result<(BytesStream, BytesHint, PartRequest), CondowError>>,
-    part_started_at: Instant,
-    part_range: InclusiveRange,
+    if *config.ensure_active_pull {
+        let active_stream = active_pull(poll_parts, probe, config);
+        ChunkStream::from_receiver(active_stream, bytes_hint)
+    } else {
+        ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)
+    }
 }
 
 /// Internal state of the stream.
-enum State {
-    /// We are waiting for a new [BytesStream] alongside the corresponding [PartRequest].
-    WaitingForStream {
-        bytes_streams:
-            BoxStream<'static, Result<(BytesStream, BytesHint, PartRequest), CondowError>>,
-    },
+enum State<P: Probe> {
     /// We are streming the [Chunk]s of a part.
-    Streaming(StreamingPart),
+    Streaming(PartChunksStream<P>),
     /// Nothing more to do. Always return `None`
     Finished,
 }
 
 pin_project! {
-    /// A strem which polls parts of a download and yields the [Chunk]s in order
-struct PollPartsSeq<P> {
-    state: State,
-    probe: P,
-    download_started_at: Instant,
-    log_dl_msg_dbg: LogDownloadMessagesAsDebug,
-}
+    /// A stream which returns [ChunkStreamItem]s for all [PartRequest]s of a download.
+    ///
+    /// Parts are downloaded sequentially
+    struct DownloadPartsSeq<P: Probe> {
+        get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> + Send + 'static>,
+        part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
+        state: State<P>,
+        probe: P,
+        download_started_at: Instant,
+        log_dl_msg_dbg: LogDownloadMessagesAsDebug,
+    }
 }
 
-impl<P> PollPartsSeq<P>
+impl<P> DownloadPartsSeq<P>
 where
     P: Probe + Clone,
 {
-    fn new<I, C, L>(
+    pub fn new<I, L, F>(
+        get_part_stream: F,
+        mut part_requests: I,
+        probe: P,
+        log_dl_msg_dbg: L,
+    ) -> Self
+    where
+        I: Iterator<Item = PartRequest> + Send + 'static,
+        L: Into<LogDownloadMessagesAsDebug>,
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+            + Send
+            + 'static,
+    {
+        let log_dl_msg_dbg = log_dl_msg_dbg.into();
+
+        if let Some(part_request) = part_requests.next() {
+            let stream = PartChunksStream::new(&get_part_stream, part_request, probe.clone());
+
+            Self {
+                get_part_stream: Box::new(get_part_stream),
+                part_requests: Box::new(part_requests),
+                state: State::Streaming(stream),
+                probe,
+                download_started_at: Instant::now(),
+                log_dl_msg_dbg,
+            }
+        } else {
+            probe.download_completed(Duration::ZERO);
+
+            log_dl_msg_dbg.log("download (empty) completed");
+
+            Self {
+                get_part_stream: Box::new(get_part_stream),
+                part_requests: Box::new(part_requests),
+                state: State::Finished,
+                probe,
+                download_started_at: Instant::now(),
+                log_dl_msg_dbg,
+            }
+        }
+    }
+
+    pub fn from_client<C, I, L>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         part_requests: I,
@@ -90,28 +127,23 @@ where
     ) -> Self
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
-        C: CondowClient,
         L: Into<LogDownloadMessagesAsDebug>,
+        C: CondowClient,
     {
-        let bytes_streams = yield_bytes_streams::YieldBytesStreams::new(
-            client,
-            location,
-            part_requests,
-            probe.clone(),
-        );
+        let get_part_stream = {
+            let probe = probe.clone();
+            move |range: InclusiveRange| {
+                client
+                    .download(location.clone(), range.into(), probe.clone())
+                    .boxed()
+            }
+        };
 
-        Self {
-            state: State::WaitingForStream {
-                bytes_streams: bytes_streams.boxed(),
-            },
-            probe,
-            download_started_at: Instant::now(),
-            log_dl_msg_dbg: log_dl_msg_dbg.into(),
-        }
+        Self::new(get_part_stream, part_requests, probe, log_dl_msg_dbg)
     }
 }
 
-impl<P> Stream for PollPartsSeq<P>
+impl<P> Stream for DownloadPartsSeq<P>
 where
     P: Probe + Clone,
 {
@@ -128,80 +160,14 @@ where
         let state = std::mem::replace(this.state, State::Finished);
 
         match state {
-            State::Finished => Poll::Ready(None),
-            State::WaitingForStream { mut bytes_streams } => {
-                match bytes_streams.poll_next_unpin(cx) {
-                    Poll::Ready(Some(Ok((bytes_stream, _, part_request)))) => {
-                        this.probe
-                            .part_started(part_request.part_index, part_request.blob_range);
-
-                        *this.state = State::Streaming(StreamingPart {
-                            bytes_stream,
-                            part_index: part_request.part_index,
-                            chunk_index: 0,
-                            blob_offset: part_request.blob_range.start(),
-                            range_offset: part_request.range_offset,
-                            bytes_left: part_request.blob_range.len(),
-                            bytes_streams,
-                            part_started_at: Instant::now(),
-                            part_range: part_request.blob_range,
-                        });
-                        cx.waker().wake_by_ref(); // Stream sent "Ready" we return "Pending" -> We need to wake!
-                        Poll::Pending
-                    }
-                    Poll::Ready(Some(Err(err))) => {
-                        this.probe
-                            .download_failed(Some(this.download_started_at.elapsed()));
-                        this.log_dl_msg_dbg.log(format!("download failed: {err}"));
-                        *this.state = State::Finished;
-                        Poll::Ready(Some(Err(err)))
-                    }
-                    Poll::Ready(None) => {
-                        this.log_dl_msg_dbg.log("download completed");
-                        this.probe
-                            .download_completed(this.download_started_at.elapsed());
-                        *this.state = State::Finished;
-                        Poll::Ready(None)
-                    }
-                    Poll::Pending => {
-                        *this.state = State::WaitingForStream { bytes_streams };
-                        Poll::Pending
-                    }
-                }
-            }
-            State::Streaming(mut streaming_state) => {
-                match streaming_state.bytes_stream.poll_next_unpin(cx) {
-                    Poll::Ready(Some(Ok(bytes))) => {
-                        let bytes_len = bytes.len() as u64;
-                        streaming_state.bytes_left -= bytes_len;
-                        let chunk = Chunk {
-                            part_index: streaming_state.part_index,
-                            chunk_index: streaming_state.chunk_index,
-                            blob_offset: streaming_state.blob_offset,
-                            range_offset: streaming_state.range_offset,
-                            bytes,
-                            bytes_left: streaming_state.bytes_left,
-                        };
-
-                        this.probe.chunk_received(
-                            streaming_state.part_index,
-                            streaming_state.chunk_index,
-                            bytes_len as usize,
-                        );
-
-                        streaming_state.chunk_index += 1;
-                        streaming_state.blob_offset += bytes_len;
-                        streaming_state.range_offset += bytes_len;
-                        *this.state = State::Streaming(streaming_state);
+            State::Streaming(mut part_stream) => {
+                match part_stream.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Ok(chunk))) => {
+                        *this.state = State::Streaming(part_stream);
                         Poll::Ready(Some(Ok(chunk)))
                     }
                     Poll::Ready(Some(Err(err))) => {
                         let err: CondowError = err.into();
-                        this.probe.part_failed(
-                            &err,
-                            streaming_state.part_index,
-                            &streaming_state.part_range,
-                        );
                         this.probe
                             .download_failed(Some(this.download_started_at.elapsed()));
                         this.log_dl_msg_dbg.log(format!("download failed: {err}"));
@@ -209,24 +175,30 @@ where
                         Poll::Ready(Some(Err(err)))
                     }
                     Poll::Ready(None) => {
-                        this.probe.part_completed(
-                            streaming_state.part_index,
-                            streaming_state.chunk_index,
-                            streaming_state.part_range.len(),
-                            streaming_state.part_started_at.elapsed(),
-                        );
-                        *this.state = State::WaitingForStream {
-                            bytes_streams: streaming_state.bytes_streams,
-                        };
-                        cx.waker().wake_by_ref(); // Bytes Stream returned "Ready" and will not wake us up!
-                        Poll::Pending
+                        if let Some(part_request) = this.part_requests.next() {
+                            let stream = PartChunksStream::new(
+                                this.get_part_stream,
+                                part_request,
+                                this.probe.clone(),
+                            );
+                            *this.state = State::Streaming(stream);
+                            cx.waker().wake_by_ref(); // Bytes Stream returned "Ready" and will not wake us up!
+                            Poll::Pending
+                        } else {
+                            this.probe
+                                .download_completed(this.download_started_at.elapsed());
+                            this.log_dl_msg_dbg.log("download completed");
+                            *this.state = State::Finished;
+                            Poll::Ready(None)
+                        }
                     }
                     Poll::Pending => {
-                        *this.state = State::Streaming(streaming_state);
+                        *this.state = State::Streaming(part_stream);
                         Poll::Pending
                     }
                 }
             }
+            State::Finished => Poll::Ready(None),
         }
     }
 }
@@ -245,7 +217,7 @@ mod tests {
         ChunkStream,
     };
 
-    use super::PollPartsSeq;
+    use super::DownloadPartsSeq;
 
     #[tokio::test]
     async fn get_ranges() {
@@ -253,8 +225,13 @@ mod tests {
         for part_size in 1..100 {
             let part_requests = PartRequestIterator::new(0..=99, part_size);
 
-            let poll_parts =
-                PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
+            let poll_parts = DownloadPartsSeq::from_client(
+                client.clone(),
+                IgnoreLocation,
+                part_requests,
+                (),
+                true,
+            );
 
             let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
                 .into_vec()
@@ -289,7 +266,8 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(0..=999, 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts =
+            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -308,7 +286,8 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts =
+            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -327,7 +306,8 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts =
+            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
@@ -348,7 +328,8 @@ mod tests {
 
         let part_requests = PartRequestIterator::new(..=(blob.len() as u64 - 1), 13);
 
-        let poll_parts = PollPartsSeq::new(client.clone(), IgnoreLocation, part_requests, (), true);
+        let poll_parts =
+            DownloadPartsSeq::from_client(client.clone(), IgnoreLocation, part_requests, (), true);
 
         let result = ChunkStream::from_stream(poll_parts.boxed(), BytesHint::new_no_hint())
             .into_vec()
