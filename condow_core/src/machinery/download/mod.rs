@@ -19,6 +19,14 @@ pub(crate) use sequential::download_sequentially;
 mod concurrent;
 mod sequential;
 
+/// This functions polls the given stream eagerly on a seperate task.
+///
+/// There is an infinite buffer in place.
+///
+/// The returned receiver can be used to retrieve the items.
+///
+/// This functions emits an error over the receiber in case a panic occurred whie
+/// polling the input stream.
 pub fn active_pull<St, P: Probe>(
     mut input: St,
     probe: P,
