@@ -1,3 +1,4 @@
+//! Download with a maximum concurrncy of 3
 use std::{
     task::Poll,
     time::{Duration, Instant},
@@ -18,6 +19,14 @@ use crate::{
 };
 
 pin_project! {
+    /// Downloads pats with a maximum concurrency of 3.
+    ///
+    /// The download must be driven by polling the returned stream.
+    ///
+    /// The algorithm is "left biased" which means that it favors
+    /// parts which have a lower part number (they come in ordered).
+    ///
+    /// This way there is less entropy in the ordering of the returned chunks.
     pub struct ThreePartsConcurrently<P: Probe> {
         active_streams: ActiveStreams<P>,
         baggage: Baggage<P>,
@@ -37,16 +46,20 @@ struct Baggage<P: Probe> {
 }
 
 enum ActiveStreams<P: Probe> {
+    /// Nothing more to do
     None,
+    /// There are 3 or more parts left to download
     ThreeConcurrently {
         left: PartChunksStream<P>,
         middle: PartChunksStream<P>,
         right: PartChunksStream<P>,
     },
+    /// There are exactly 2 parts left to download
     LastTwoConcurrently {
         left: PartChunksStream<P>,
         right: PartChunksStream<P>,
     },
+    /// There is exactly 1 part left to download
     LastPart(PartChunksStream<P>),
 }
 
@@ -223,6 +236,12 @@ impl<P: Probe + Clone> Stream for ThreePartsConcurrently<P> {
     }
 }
 
+/// poll "left biased" until there are only 2 parts left
+///
+/// There are exactly 3 or more parts left to download.
+///
+/// Add new parts to the right. If the right slot is not free
+/// move items to the left before adding the new part.
 fn poll_three<P: Probe + Clone>(
     mut left: PartChunksStream<P>,
     mut middle: PartChunksStream<P>,
@@ -356,6 +375,9 @@ fn poll_three<P: Probe + Clone>(
     }
 }
 
+/// poll "left biased" until there is only 1 part left
+///
+/// There are exactly 2 parts left to download.
 fn poll_last_two<P: Probe + Clone>(
     mut left: PartChunksStream<P>,
     mut right: PartChunksStream<P>,

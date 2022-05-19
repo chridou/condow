@@ -1,3 +1,4 @@
+//! Download with a maximum concurrency of 2
 use std::{
     task::Poll,
     time::{Duration, Instant},
@@ -18,6 +19,14 @@ use crate::{
 };
 
 pin_project! {
+    /// Downloads pats with a maximum concurrency of 2.
+    ///
+    /// The download must be driven by polling the returned stream.
+    ///
+    /// The algorithm is "left biased" which means that it favors
+    /// parts which have a lower part number (they come in ordered).
+    ///
+    /// This way there is less entropy in the ordering of the returned chunks.
     pub struct TwoPartsConcurrently<P: Probe> {
         active_streams: ActiveStreams<P>,
         baggage: Baggage<P>,
@@ -37,11 +46,14 @@ struct Baggage<P: Probe> {
 }
 
 enum ActiveStreams<P: Probe> {
+    /// Nothing more to do
     None,
+    /// 2 or more parts left to download
     TwoConcurrently {
         left: PartChunksStream<P>,
         right: PartChunksStream<P>,
     },
+    /// Exactly 1 part left to download
     LastPart(PartChunksStream<P>),
 }
 
@@ -181,6 +193,9 @@ impl<P: Probe + Clone> Stream for TwoPartsConcurrently<P> {
     }
 }
 
+/// poll "left biased" until there is only 1 part left
+///
+/// New parts are added "to the right"
 fn poll_two<P: Probe + Clone>(
     mut left: PartChunksStream<P>,
     mut right: PartChunksStream<P>,
@@ -214,7 +229,7 @@ fn poll_two<P: Probe + Clone>(
             };
         }
         Poll::Ready(Some(Err(err))) => return Err(err),
-        Poll::Pending => {}
+        Poll::Pending => {} // nothing here? try the other one!
     };
 
     match right.poll_next_unpin(cx) {

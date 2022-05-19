@@ -21,6 +21,10 @@ mod two_concurrently;
 /// Download the chunks concurrently
 ///
 /// This has more overhead than downloading sequentially.
+///
+/// Debending on the level of concurrency the returned stream
+/// will either poll chunks eagerly or has to be driven
+/// by the consumer.
 pub(crate) async fn download_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
@@ -73,6 +77,7 @@ async fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
     chunk_stream
 }
 
+/// Download with a maximum concurrency of 2
 async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
@@ -97,6 +102,7 @@ async fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
     }
 }
 
+/// Download with a maximum concurrency of 3
 async fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
     part_requests: PartRequestIterator,
     client: ClientRetryWrapper<C>,
