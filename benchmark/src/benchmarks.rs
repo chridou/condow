@@ -306,6 +306,7 @@ mod chunk_stream_unordered {
 
             let bytes_read = downloader
                 .blob()
+                .reconfigure(|c| c.ensure_active_pull(true))
                 .download_chunks()
                 .await?
                 .count_bytes()
