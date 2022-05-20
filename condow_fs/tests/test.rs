@@ -15,15 +15,26 @@ fn get_test_file_path() -> String {
 async fn download_full() {
     let condow = create_condow_condow();
 
-    let data = condow
-        .download(get_test_file_path(), ..)
-        .await
-        .unwrap()
-        .into_vec()
-        .await
-        .unwrap();
+    let f = async {
+        let data = condow
+            .blob()
+            .at(get_test_file_path())
+            .range(..)
+            .download()
+            .await?
+            .into_vec()
+            .await?;
 
-    assert_eq!(&data[..], b"abcdefghijklmnopqrstuvwxyz");
+        Ok::<_, anyhow::Error>(data)
+    };
+
+    match f.await {
+        Ok(data) => assert_eq!(&data[..], b"abcdefghijklmnopqrstuvwxyz"),
+        Err(err) => {
+            dbg!(err);
+            panic!("failed. see debug output")
+        }
+    }
 }
 
 #[tokio::test]
@@ -31,7 +42,10 @@ async fn download_to() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), ..5)
+        .blob()
+        .at(get_test_file_path())
+        .range(..5)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -46,7 +60,10 @@ async fn download_to_end() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), ..=26)
+        .blob()
+        .at(get_test_file_path())
+        .range(..=26)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -61,7 +78,10 @@ async fn download_from() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), 10..)
+        .blob()
+        .at(get_test_file_path())
+        .range(10..)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -76,7 +96,10 @@ async fn download_from_to() {
     let condow = create_condow_condow();
 
     let data = condow
-        .download(get_test_file_path(), 1..11)
+        .blob()
+        .at(get_test_file_path())
+        .range(1..11)
+        .download()
         .await
         .unwrap()
         .into_vec()

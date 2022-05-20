@@ -16,9 +16,9 @@
 //! let client = S3ClientWrapper::new(Region::default());
 //! let condow = client.condow(Config::default()).unwrap();
 //!
-//! let location = Bucket::new("my_bucket").object("my_object");
+//! let s3_obj = Bucket::new("my_bucket").object("my_object");
 //!
-//! let stream = condow.download(location, 23..46).await.unwrap();
+//! let stream = condow.blob().at(s3_obj).range(23..46).download().await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
 //! # };
 //! # ()
@@ -26,9 +26,10 @@
 use std::{
     fmt,
     ops::{Deref, DerefMut},
+    str::FromStr,
 };
 
-use anyhow::Error as AnyError;
+use anyhow::{anyhow, Error as AnyError};
 use futures::{future::BoxFuture, stream::TryStreamExt};
 use rusoto_core::{request::BufferedHttpResponse, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
@@ -55,6 +56,14 @@ impl Bucket {
         Self(bucket.into())
     }
 
+    /// Specify an object key and make it a [S3Location]
+    ///
+    /// ```
+    /// use condow_rusoto::{Bucket, S3Location};
+    ///
+    /// let location = Bucket::new("bucket").object("key");
+    /// assert_eq!(location, S3Location::new("bucket", "key"));
+    /// ```
     pub fn object<O: Into<ObjectKey>>(self, key: O) -> S3Location {
         S3Location(self, key.into())
     }
@@ -99,6 +108,14 @@ impl ObjectKey {
         Self(key.into())
     }
 
+    /// Specify a bucket and make it a [S3Location]
+    ///
+    /// ```
+    /// use condow_rusoto::{ObjectKey, S3Location};
+    ///
+    /// let location = ObjectKey::new("key").in_bucket("bucket");
+    /// assert_eq!(location, S3Location::new("bucket", "key"));
+    /// ```
     pub fn in_bucket<B: Into<Bucket>>(self, bucket: B) -> S3Location {
         S3Location(bucket.into(), self)
     }
@@ -135,6 +152,44 @@ impl From<&str> for ObjectKey {
 }
 
 /// Full "path" to an S3 object
+///
+///
+/// ## Examples
+///
+/// `FromStr`
+///
+/// ```
+/// use condow_rusoto::S3Location;
+///
+/// let location: S3Location = "s3://my_bucket/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_object"));
+///
+/// let location: S3Location = "s3a://my_bucket/my_prefix/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_prefix/my_object"));
+///
+/// let location: S3Location = "s3n://my_bucket/my_prefix/1/my_object".parse().unwrap();
+/// assert_eq!(location, S3Location::new("my_bucket", "my_prefix/1/my_object"));
+///
+///
+/// // invalid protocol
+/// assert!("s4://my_bucket/my_object".parse::<S3Location>().is_err());
+/// // missing object key
+/// assert!("s3://my_bucket".parse::<S3Location>().is_err());
+/// // empty object key
+/// assert!("s3://my_bucket/".parse::<S3Location>().is_err());
+/// // no bucket and object key
+/// assert!("s3://".parse::<S3Location>().is_err());
+/// // empty bucket
+/// assert!("s3:///my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("my_bucket/my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("//my_bucket/my_object".parse::<S3Location>().is_err());
+/// // no protocol
+/// assert!("//my_bucket/my_object".parse::<S3Location>().is_err());
+/// // well... obvious...
+/// assert!("".parse::<S3Location>().is_err());
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct S3Location(Bucket, ObjectKey);
 
@@ -163,7 +218,42 @@ impl fmt::Display for S3Location {
     }
 }
 
-/// Just a wrapper around a clietn
+impl FromStr for S3Location {
+    type Err = AnyError;
+
+    fn from_str(uri: &str) -> Result<Self, Self::Err> {
+        if uri.is_empty() {
+            return Err(anyhow!("S3 URI must no be empty"));
+        }
+
+        let prefixes = ["s3://", "s3a://", "s3n://"];
+        let res = prefixes
+            .iter()
+            .find(|&&p| uri.starts_with(p))
+            .map(|p| uri.trim_start_matches(p))
+            .ok_or_else(|| anyhow!(format!("invalid protocol for S3 URI: '{uri}'")))?;
+
+        let (bucket, key) = res.split_once('/').ok_or_else(|| {
+            anyhow!(format!(
+                "S3 URI must contain a bucket \
+            and object key seperated by a '/': {uri}"
+            ))
+        })?;
+
+        let bucket = bucket.trim();
+        let key = key.trim();
+
+        if bucket.is_empty() {
+            return Err(anyhow!("bucket (S3 URI) must no be empty: {uri}"));
+        } else if key.is_empty() {
+            return Err(anyhow!("object key (S3 URI) must no be empty: {uri}"));
+        }
+
+        Ok(Bucket::new(bucket).object(key))
+    }
+}
+
+/// Just a wrapper around a client
 /// to implement the trait [CondowClient](condow_client::CondowClient) on.
 #[derive(Clone)]
 pub struct S3ClientWrapper<C>(C);
@@ -228,7 +318,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let get_object_request = GetObjectRequest {
                 bucket: bucket.into_inner(),
                 key: object_key.into_inner(),
-                range: spec.http_range_value(),
+                range: spec.http_bytes_range_value(),
                 ..Default::default()
             };
 
@@ -262,19 +352,24 @@ fn get_obj_err_to_download_err(err: RusotoError<GetObjectError>) -> CondowError 
         RusotoError::Service(err) => match err {
             GetObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
             GetObjectError::InvalidObjectState(s) => {
-                CondowError::new_other(format!("invalid object state: {}", s))
+                CondowError::new_other(format!("invalid object state (get object request): {}", s))
             }
         },
         RusotoError::Validation(cause) => {
-            CondowError::new_other(format!("validation error: {}", cause))
+            CondowError::new_other(format!("validation error (get object request): {}", cause))
         }
         RusotoError::Credentials(err) => {
-            CondowError::new_other(format!("credentials error: {}", err)).with_source(err)
+            CondowError::new_other(format!("credentials error (get object request): {}", err))
+                .with_source(err)
         }
-        RusotoError::HttpDispatch(dispatch_error) => {
-            CondowError::new_other(format!("http dispatch error: {}", dispatch_error)).with_source(dispatch_error)
+        RusotoError::HttpDispatch(dispatch_error) => CondowError::new_other(format!(
+            "http dispatch error (get object request): {}",
+            dispatch_error
+        ))
+        .with_source(dispatch_error),
+        RusotoError::ParseError(cause) => {
+            CondowError::new_other(format!("parse error (get object request): {}", cause))
         }
-        RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => {
             CondowError::new_other("failed to run blocking future within rusoto")
@@ -288,15 +383,20 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
             HeadObjectError::NoSuchKey(s) => CondowError::new_not_found(s),
         },
         RusotoError::Validation(cause) => {
-            CondowError::new_other(format!("validation error: {}", cause))
+            CondowError::new_other(format!("validation error (head object request): {}", cause))
         }
         RusotoError::Credentials(err) => {
-            CondowError::new_other("credentials error").with_source(err)
+            CondowError::new_other(format!("credentials error (head object request): {}", err))
+                .with_source(err)
         }
-        RusotoError::HttpDispatch(dispatch_error) => {
-            CondowError::new_other("http dispatch error").with_source(dispatch_error)
+        RusotoError::HttpDispatch(dispatch_error) => CondowError::new_other(format!(
+            "http dispatch error (head object request): {}",
+            dispatch_error
+        ))
+        .with_source(dispatch_error),
+        RusotoError::ParseError(cause) => {
+            CondowError::new_other(format!("parse error (head object request): {}", cause))
         }
-        RusotoError::ParseError(cause) => CondowError::new_other(format!("parse error: {}", cause)),
         RusotoError::Unknown(response) => response_to_condow_err(response),
         RusotoError::Blocking => {
             CondowError::new_other("failed to run blocking future within rusoto")

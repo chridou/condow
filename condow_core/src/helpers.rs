@@ -200,8 +200,23 @@ macro_rules! __new_type_base {
 macro_rules! __new_type_base_copy_ext {
     ($Name:ident; $T:ty) => {
         impl $Name {
+            /// Returns the inner representation
             pub fn into_inner(self) -> $T {
                 self.0
+            }
+        }
+
+        impl std::ops::Deref for $Name {
+            type Target = $T;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl std::ops::DerefMut for $Name {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
             }
         }
     };

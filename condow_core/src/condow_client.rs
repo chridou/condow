@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::ops::RangeInclusive;
+use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
 
 use futures::future::BoxFuture;
 
@@ -29,10 +29,10 @@ pub enum DownloadSpec {
 impl DownloadSpec {
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
     /// if the variant is [DownloadSpec::Range]
-    pub fn http_range_value(&self) -> Option<String> {
+    pub fn http_bytes_range_value(&self) -> Option<String> {
         match self {
             DownloadSpec::Complete => None,
-            DownloadSpec::Range(r) => Some(r.http_range_value()),
+            DownloadSpec::Range(r) => Some(r.http_bytes_range_value()),
         }
     }
 
@@ -41,6 +41,15 @@ impl DownloadSpec {
         match self {
             DownloadSpec::Complete => 0,
             DownloadSpec::Range(r) => r.start(),
+        }
+    }
+}
+
+impl fmt::Display for DownloadSpec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DownloadSpec::Complete => write!(f, "[..]"),
+            DownloadSpec::Range(r) => r.fmt(f),
         }
     }
 }
@@ -61,6 +70,9 @@ impl From<RangeInclusive<u64>> for DownloadSpec {
 /// partial downloads
 ///
 /// This is an adapter trait
+///
+/// Implementors of this trait may not panic on calling any of the methods nor
+/// within any of the futures returned.
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
@@ -81,11 +93,28 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
 
 /// A location usable for testing.
 #[derive(Debug, Clone, Copy)]
-pub struct NoLocation;
+pub struct IgnoreLocation;
 
-impl std::fmt::Display for NoLocation {
+impl std::fmt::Display for IgnoreLocation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<no location>")
+    }
+}
+
+impl FromStr for IgnoreLocation {
+    type Err = Infallible;
+
+    fn from_str(_: &str) -> Result<Self, Self::Err> {
+        Ok(IgnoreLocation)
+    }
+}
+
+impl<T> From<T> for IgnoreLocation
+where
+    T: AsRef<str>,
+{
+    fn from(_: T) -> Self {
+        IgnoreLocation
     }
 }
 
@@ -104,26 +133,27 @@ mod in_memory {
         future::{self, BoxFuture, FutureExt},
         stream,
     };
+    use tracing::trace;
 
-    use super::{CondowClient, DownloadSpec, NoLocation};
+    use super::{CondowClient, DownloadSpec, IgnoreLocation};
 
-    /// Holds the BLOB in memory as owned data.
+    /// Holds the BLOB in memory as owned or static data.
     ///
     /// Use for testing.
     #[derive(Clone)]
-    pub struct InMemoryClient<L = NoLocation> {
+    pub struct InMemoryClient<L = IgnoreLocation> {
         blob: Blob,
         chunk_size: usize,
         _location: PhantomData<L>,
     }
 
     impl<L> InMemoryClient<L> {
-        /// Blob from owned bytes
+        /// BLOB from owned bytes
         pub fn new(blob: Vec<u8>) -> Self {
             Self::new_shared(Arc::new(blob))
         }
 
-        /// Blob from shared bytes
+        /// BLOB from shared bytes
         pub fn new_shared(blob: Arc<Vec<u8>>) -> Self {
             Self {
                 blob: Blob::Owned(blob),
@@ -132,12 +162,12 @@ mod in_memory {
             }
         }
 
-        /// Blob copied from slice
+        /// BLOB copied from slice
         pub fn new_from_slice(blob: &[u8]) -> Self {
             Self::new(blob.to_vec())
         }
 
-        /// Blob with static byte slice
+        /// BLOB with static byte slice
         pub fn new_static(blob: &'static [u8]) -> Self {
             Self {
                 blob: Blob::Static(blob),
@@ -156,7 +186,7 @@ mod in_memory {
     where
         L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
     {
-        pub fn condow(&self, config: Config) -> Result<Condow<Self>, AnyError> {
+        pub fn condow(&self, config: Config) -> Result<Condow<Self, ()>, AnyError> {
             Condow::new(self.clone(), config)
         }
     }
@@ -171,6 +201,8 @@ mod in_memory {
             &self,
             _location: Self::Location,
         ) -> BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("in-memory-client: get_size");
+
             futures::future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -179,6 +211,8 @@ mod in_memory {
             _location: Self::Location,
             spec: DownloadSpec,
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+            trace!("in-memory-client: download");
+
             download(&self.blob.as_slice(), self.chunk_size, spec)
         }
     }
@@ -337,6 +371,7 @@ pub mod failing_client_simulator {
 
     use bytes::Bytes;
     use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
+    use tracing::trace;
 
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
@@ -346,7 +381,7 @@ pub mod failing_client_simulator {
         Condow, InclusiveRange,
     };
 
-    pub use super::NoLocation;
+    pub use super::IgnoreLocation;
 
     /// A builder for a [FailingClientSimulator]
     pub struct FailingClientSimulatorBuilder {
@@ -400,7 +435,7 @@ pub mod failing_client_simulator {
         /// If `chunk_size` is 0.
         pub fn chunk_size(mut self, chunk_size: usize) -> Self {
             if chunk_size == 0 {
-                panic!("chun size must be greater than 0")
+                panic!("chunk size must be greater than 0")
             }
 
             self.chunk_size = chunk_size;
@@ -431,7 +466,7 @@ pub mod failing_client_simulator {
     ///
     /// Clones will share the responses to be played back
     #[derive(Clone)]
-    pub struct FailingClientSimulator<L = NoLocation> {
+    pub struct FailingClientSimulator<L = IgnoreLocation> {
         blob: Blob,
         responses: Arc<Mutex<vec::IntoIter<ResponseBehaviour>>>,
         chunk_size: usize,
@@ -467,6 +502,7 @@ pub mod failing_client_simulator {
             &self,
             _location: Self::Location,
         ) -> futures::future::BoxFuture<'static, Result<u64, CondowError>> {
+            trace!("failing-client-simulator: get_size");
             future::ready(Ok(self.blob.len() as u64)).boxed()
         }
 
@@ -476,6 +512,7 @@ pub mod failing_client_simulator {
             spec: DownloadSpec,
         ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
         {
+            trace!("failing-client-simulator: download");
             let me = self.clone();
             let range_incl = match spec {
                 DownloadSpec::Range(r) => r,
@@ -1203,7 +1240,7 @@ pub mod failing_client_simulator {
             client: &FailingClientSimulator,
             range: R,
         ) -> Result<Result<Vec<u8>, Vec<u8>>, CondowError> {
-            let (mut stream, _bytes_hint) = client.download(NoLocation, range.into()).await?;
+            let (mut stream, _bytes_hint) = client.download(IgnoreLocation, range.into()).await?;
 
             let mut received = Vec::new();
 

@@ -5,26 +5,32 @@ use std::{
 
 use bytes::Bytes;
 use futures::{
-    future::{self, BoxFuture, FutureExt, TryFutureExt},
+    future::{self, BoxFuture, FutureExt},
     stream, StreamExt as _,
 };
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec, NoLocation},
+    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    config::Config,
     errors::CondowError,
-    reader::RandomAccessReader,
-    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, PartStream},
-    DownloadRange, Downloads,
+    reader::{RandomAccessReader, ReaderAdapter},
+    streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
+    DownloadRange, Downloads, Params, RequestNoLocation,
 };
 
-#[derive(Clone)]
+use self::stream_penderizer::{Penderizer, PenderizerModule};
+
+/// TODO: make members private
 pub struct TestCondowClient {
     pub data: Arc<Vec<u8>>,
     pub max_jitter_ms: usize,
     pub include_size_hint: bool,
     pub max_chunk_size: usize,
+    pub pending_on_stream_module: Option<PenderizerModule>,
+    pub pending_on_requests_module: Option<Mutex<PenderizerModule>>,
+    pub initial_pendings_on_request: usize,
 }
 
 impl TestCondowClient {
@@ -34,7 +40,22 @@ impl TestCondowClient {
             max_jitter_ms: 0,
             include_size_hint: true,
             max_chunk_size: 10,
+            pending_on_stream_module: None,
+            pending_on_requests_module: None,
+            initial_pendings_on_request: 0,
         }
+    }
+
+    pub fn pending_on_stream_n_times(mut self, consecutive_pendings: usize) -> Self {
+        self.pending_on_stream_module = Some(PenderizerModule::new(consecutive_pendings));
+        self
+    }
+
+    pub fn pending_on_request_n_times(mut self, consecutive_pendings: usize) -> Self {
+        self.initial_pendings_on_request = consecutive_pendings;
+        self.pending_on_requests_module =
+            Some(Mutex::new(PenderizerModule::new(consecutive_pendings)));
+        self
     }
 
     pub fn max_jitter_ms(mut self, max_jitter_ms: usize) -> Self {
@@ -55,6 +76,31 @@ impl TestCondowClient {
     pub fn data(&self) -> Arc<Vec<u8>> {
         Arc::clone(&self.data)
     }
+
+    pub fn data_slice(&self) -> &[u8] {
+        &self.data
+    }
+}
+
+impl Clone for TestCondowClient {
+    fn clone(&self) -> Self {
+        let pending_on_requests_module = if self.initial_pendings_on_request > 0 {
+            Some(Mutex::new(PenderizerModule::new(
+                self.initial_pendings_on_request,
+            )))
+        } else {
+            None
+        };
+        Self {
+            data: Arc::clone(&self.data),
+            max_jitter_ms: self.max_jitter_ms,
+            include_size_hint: self.include_size_hint,
+            max_chunk_size: self.max_chunk_size,
+            pending_on_stream_module: self.pending_on_stream_module,
+            pending_on_requests_module,
+            initial_pendings_on_request: self.initial_pendings_on_request,
+        }
+    }
 }
 
 impl Default for TestCondowClient {
@@ -64,7 +110,7 @@ impl Default for TestCondowClient {
 }
 
 impl CondowClient for TestCondowClient {
-    type Location = NoLocation;
+    type Location = IgnoreLocation;
 
     fn get_size(
         &self,
@@ -85,51 +131,69 @@ impl CondowClient for TestCondowClient {
             crate::errors::CondowError,
         >,
     > {
-        let range = match spec {
-            DownloadSpec::Complete => 0..self.data.len(),
-            DownloadSpec::Range(r) => {
-                let r = r.to_std_range_excl();
-                r.start as usize..r.end as usize
-            }
-        };
-
-        if range.end > self.data.len() {
-            return Box::pin(future::ready(Err(CondowError::new_invalid_range(format!(
-                "max upper bound is {} but {} was requested",
-                self.data.len() - 1,
-                range.end - 1
-            )))));
-        }
-
-        let slice = &self.data[range];
-
-        let bytes_hint = if self.include_size_hint {
-            BytesHint::new_exact(slice.len() as u64)
+        let should_be_pending = if let Some(module) = &self.pending_on_requests_module {
+            module.lock().unwrap().return_pending()
         } else {
-            BytesHint::new_no_hint()
+            false
         };
 
-        let iter = slice
-            .chunks(self.max_chunk_size)
-            .map(Bytes::copy_from_slice)
-            .map(Ok);
+        let me = self.clone();
 
-        let owned_bytes: Vec<_> = iter.collect();
-
-        let jitter = self.max_jitter_ms;
-        let stream = stream::iter(owned_bytes).then(move |bytes| async move {
-            if jitter > 0 {
-                let jitter = OsRng.gen_range(0..=(jitter as u64));
-                time::sleep(Duration::from_millis(jitter)).await;
+        async move {
+            if should_be_pending {
+                tokio::task::yield_now().await;
             }
-            bytes
-        });
 
-        let stream: BytesStream = Box::pin(stream);
+            let range = match spec {
+                DownloadSpec::Complete => 0..me.data.len(),
+                DownloadSpec::Range(r) => {
+                    let r = r.to_std_range_excl();
+                    r.start as usize..r.end as usize
+                }
+            };
 
-        let f = future::ready(Ok((stream, bytes_hint)));
+            if range.end > me.data.len() {
+                return Err(CondowError::new_invalid_range(format!(
+                    "max upper bound is {} but {} was requested",
+                    me.data.len() - 1,
+                    range.end - 1
+                )));
+            }
 
-        Box::pin(f)
+            let slice = &me.data[range];
+
+            let bytes_hint = if me.include_size_hint {
+                BytesHint::new_exact(slice.len() as u64)
+            } else {
+                BytesHint::new_no_hint()
+            };
+
+            let iter = slice
+                .chunks(me.max_chunk_size)
+                .map(Bytes::copy_from_slice)
+                .map(Ok);
+
+            let owned_bytes: Vec<_> = iter.collect();
+
+            let jitter = me.max_jitter_ms;
+            let stream = stream::iter(owned_bytes).then(move |bytes| async move {
+                if jitter > 0 {
+                    let jitter = OsRng.gen_range(0..=(jitter as u64));
+                    time::sleep(Duration::from_millis(jitter)).await;
+                }
+                bytes
+            });
+
+            let stream: BytesStream = if let Some(pending_module) = me.pending_on_stream_module {
+                let stream_with_pending = Penderizer::new(stream, pending_module.clone());
+                stream_with_pending.boxed()
+            } else {
+                stream.boxed()
+            };
+
+            Ok((stream, bytes_hint))
+        }
+        .boxed()
     }
 }
 
@@ -141,6 +205,26 @@ pub fn create_test_data() -> Vec<u8> {
         data.extend_from_slice(bytes.as_ref());
     }
     data
+}
+
+#[tokio::test]
+async fn test_test_client() {
+    use futures::TryStreamExt;
+    let client = TestCondowClient::new().max_jitter_ms(5);
+
+    let (bytes_stream, _bytes_hint) = client
+        .download(IgnoreLocation, (10..=30).into())
+        .await
+        .unwrap();
+    let result = bytes_stream
+        .try_fold(Vec::new(), |mut acc, chunk| {
+            acc.extend_from_slice(&chunk);
+            future::ok(acc)
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(result, client.data_slice()[10usize..=30]);
 }
 
 pub fn create_chunk_stream(
@@ -215,14 +299,14 @@ pub fn create_chunk_stream(
 
     parts.shuffle(&mut rng);
 
-    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+    let (chunk_stream, tx) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
     loop {
         let n = rng.gen_range(0..parts.len());
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.unbounded_send(chunk);
+        let _ = tx.send(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -310,12 +394,12 @@ pub fn create_chunk_stream_with_err(
 
     parts.shuffle(&mut rng);
 
-    let (chunk_stream, tx) = ChunkStream::new(bytes_hint);
+    let (chunk_stream, tx) = ChunkStream::new_channel_sink_pair(bytes_hint);
 
     let mut err_sent = chunks_left_until_err == 0;
     loop {
         if chunks_left_until_err == 0 {
-            let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error")));
+            let _ = tx.send(Err(CondowError::new_other("forced stream error")));
             err_sent = true;
             break;
         }
@@ -324,7 +408,7 @@ pub fn create_chunk_stream_with_err(
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.unbounded_send(chunk);
+        let _ = tx.send(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -335,7 +419,7 @@ pub fn create_chunk_stream_with_err(
     }
 
     if !err_sent {
-        let _ = tx.unbounded_send(Err(CondowError::new_other("forced stream error after end")));
+        let _ = tx.send(Err(CondowError::new_other("forced stream error after end")));
     }
 
     (chunk_stream, values)
@@ -346,10 +430,13 @@ pub fn create_part_stream(
     n_chunks: usize,
     exact_hint: bool,
     max_variable_chunk_size: Option<usize>,
-) -> (PartStream<ChunkStream>, Vec<u8>) {
+) -> (OrderedChunkStream, Vec<u8>) {
     let (stream, values) =
         create_chunk_stream(n_parts, n_chunks, exact_hint, max_variable_chunk_size);
-    (PartStream::from_chunk_stream(stream).unwrap(), values)
+    (
+        OrderedChunkStream::from_chunk_stream(stream).unwrap(),
+        values,
+    )
 }
 
 #[tokio::test]
@@ -369,7 +456,6 @@ async fn check_chunk_stream_variable_chunk_size() {
 
     assert_eq!(result, expected);
 }
-
 #[derive(Clone)]
 pub struct TestDownloader {
     blob: Arc<Mutex<Vec<u8>>>,
@@ -402,54 +488,71 @@ impl TestDownloader {
     pub fn set_pattern(self, pattern: Vec<Option<usize>>) {
         *self.pattern.lock().unwrap() = pattern;
     }
-
-    pub fn blob(&self) -> Vec<u8> {
-        self.blob.lock().unwrap().clone()
-    }
 }
 
-impl Downloads<NoLocation> for TestDownloader {
-    fn download<'a, R: Into<DownloadRange> + Send + Sync + 'static>(
-        &'a self,
-        location: NoLocation,
-        range: R,
-    ) -> BoxFuture<'a, Result<crate::streams::PartStream<crate::streams::ChunkStream>, CondowError>>
-    {
-        self.download_chunks(location, range)
-            .and_then(|st| async move { PartStream::from_chunk_stream(st) })
-            .boxed()
+impl Downloads for TestDownloader {
+    type Location = IgnoreLocation;
+
+    fn blob(&self) -> RequestNoLocation<IgnoreLocation> {
+        let me = self.clone();
+
+        let download_fn = move |_: IgnoreLocation, params: Params| {
+            let result = make_a_stream(&me.blob, params.range, me.pattern.lock().unwrap().clone());
+
+            futures::future::ready(result).boxed()
+        };
+
+        RequestNoLocation::new(download_fn, Config::default())
     }
 
-    fn download_chunks<'a, R: Into<crate::DownloadRange> + Send + Sync + 'static>(
+    fn get_size<'a>(
         &'a self,
-        _location: NoLocation,
-        range: R,
-    ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>> {
-        Box::pin(make_a_stream(
-            self.blob.as_ref(),
-            range.into(),
-            self.pattern.lock().unwrap().clone(),
-        ))
-    }
-
-    fn get_size<'a>(&'a self, _location: NoLocation) -> BoxFuture<'a, Result<u64, CondowError>> {
+        _location: IgnoreLocation,
+    ) -> BoxFuture<'a, Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 
-    fn reader_with_length(
-        &self,
-        location: NoLocation,
-        length: u64,
-    ) -> RandomAccessReader<Self, NoLocation>
+    fn reader_with_length(&self, _location: IgnoreLocation, length: u64) -> RandomAccessReader
     where
         Self: Sized,
     {
-        RandomAccessReader::new_with_length(self.clone(), location, length)
+        RandomAccessReader::new_with_length(self.clone(), length)
+    }
+
+    fn reader<'a>(
+        &'a self,
+        location: Self::Location,
+    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
+    where
+        Self: Sized + Sync,
+    {
+        let me = self;
+        async move {
+            let length = Downloads::get_size(me, location.clone()).await?;
+            Ok(me.reader_with_length(location, length))
+        }
+        .boxed()
     }
 }
 
-async fn make_a_stream(
+impl ReaderAdapter for TestDownloader {
+    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
+        <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
+    }
+
+    fn download_range<'a>(
+        &'a self,
+        range: DownloadRange,
+    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
+        <TestDownloader as Downloads>::blob(self)
+            .range(range)
+            .download()
+            .boxed()
+    }
+}
+
+fn make_a_stream(
     blob: &Mutex<Vec<u8>>,
     range: DownloadRange,
     pattern: Vec<Option<usize>>,
@@ -469,7 +572,8 @@ async fn make_a_stream(
 
     let mut chunk_patterns = pattern.into_iter().cycle().enumerate();
 
-    let (chunk_stream, tx) = ChunkStream::new(BytesHint::new_exact(bytes.len() as u64));
+    let (chunk_stream, tx) =
+        ChunkStream::new_channel_sink_pair(BytesHint::new_exact(bytes.len() as u64));
 
     tokio::spawn(async move {
         let mut start = 0;
@@ -483,7 +587,7 @@ async fn make_a_stream(
                     if let Some(pattern) = pattern {
                         (chunk_index, pattern)
                     } else {
-                        let _ = tx.unbounded_send(Err(CondowError::new_other("test error")));
+                        let _ = tx.send(Err(CondowError::new_other("test error")));
                         break;
                     }
                 } else {
@@ -503,7 +607,7 @@ async fn make_a_stream(
                 bytes_left,
             };
 
-            let _ = tx.unbounded_send(Ok(chunk));
+            let _ = tx.send(Ok(chunk));
 
             start = end_excl;
         }
@@ -512,17 +616,254 @@ async fn make_a_stream(
     Ok(chunk_stream)
 }
 
+pub mod stream_penderizer {
+    //! Makes a stream more pending...
+
+    use std::{fmt, task::Poll};
+
+    use futures::Stream;
+    use pin_project_lite::pin_project;
+
+    pin_project! {
+        /// Adds pendings to poll
+        ///
+        /// Useful to test for codepaths on pending in
+        /// custom stream implementations.
+        ///
+        ///
+        /// TODO: Can something be named like this?
+        pub struct Penderizer<St> {
+            #[pin]
+            incoming: St,
+            pending_module: PenderizerModule,
+        }
+    }
+
+    impl<St> Penderizer<St>
+    where
+        St: Stream + Send + 'static,
+    {
+        pub fn new(incoming: St, pending_module: PenderizerModule) -> Self {
+            Self {
+                incoming,
+                pending_module,
+            }
+        }
+    }
+
+    impl<St> Stream for Penderizer<St>
+    where
+        St: Stream + Send + 'static,
+    {
+        type Item = St::Item;
+
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Option<Self::Item>> {
+            let this = self.project();
+
+            if this.pending_module.return_pending() {
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+
+            match this.incoming.poll_next(cx) {
+                Poll::Ready(Some(item)) => Poll::Ready(Some(item)),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => {
+                    panic!("input must never return pending")
+                }
+            }
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    pub struct PenderizerModule {
+        /// Zero means no pendings are added
+        consecutive_pendings: usize,
+        pendings_done: usize,
+    }
+
+    impl PenderizerModule {
+        pub fn new(consecutive_pendings: usize) -> Self {
+            Self {
+                consecutive_pendings,
+                pendings_done: 0,
+            }
+        }
+
+        pub fn return_pending(&mut self) -> bool {
+            let pending = if self.pendings_done < self.consecutive_pendings {
+                self.pendings_done += 1;
+                true
+            } else {
+                self.pendings_done = 0;
+                false
+            };
+            pending
+        }
+    }
+
+    impl fmt::Display for PenderizerModule {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "Consecutive pendings: {}, pendings done: {}",
+                self.consecutive_pendings, self.pendings_done
+            )
+        }
+    }
+}
+
 #[tokio::test]
-async fn check_test_downloader() {
+async fn check_test_downloader_1() {
+    // Use the range patterns completely and even cycle them
     for n in 1..255 {
         let expected: Vec<u8> = (0..n).collect();
 
         let downloader = TestDownloader::new(n as usize);
 
-        let parts = downloader.download(NoLocation, ..).await.unwrap();
-
-        let result = parts.into_vec().await.unwrap();
+        let result = downloader
+            .blob()
+            .range(..)
+            .download_into_vec()
+            .await
+            .unwrap();
 
         assert_eq!(result, expected, "bytes read ({} items)", n);
     }
+}
+
+#[tokio::test]
+async fn check_test_downloader_2() {
+    let sample: Vec<u8> = (0..101).collect();
+
+    let downloader = TestDownloader::new_with_blob(sample.clone());
+
+    let result = downloader
+        .blob()
+        .range(..)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1A");
+
+    let result = downloader
+        .blob()
+        .range(0..101)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1B");
+
+    let result = downloader
+        .blob()
+        .range(0..=100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1C");
+
+    let result = downloader
+        .blob()
+        .range(1..100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..100], "2");
+
+    let result = downloader
+        .blob()
+        .range(1..=100)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..=100], "3");
+
+    let result = downloader
+        .blob()
+        .range(..=33)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..=33], "4");
+
+    let result = downloader
+        .blob()
+        .range(..40)
+        .download_into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..40], "5");
+}
+
+#[tokio::test]
+async fn check_test_downloader_as_reader_adapter() {
+    let sample: Vec<u8> = (0..101).collect();
+
+    let downloader = TestDownloader::new_with_blob(sample.clone());
+
+    let result = downloader
+        .download_range((..).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1A");
+
+    let result = downloader
+        .download_range((0..101).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1B");
+
+    let result = downloader
+        .download_range((0..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample, "1C");
+
+    let result = downloader
+        .download_range((1..100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..100], "2");
+
+    let result = downloader
+        .download_range((1..=100).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[1..=100], "3");
+
+    let result = downloader
+        .download_range((..=33).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..=33], "4");
+
+    let result = downloader
+        .download_range((..40).into())
+        .await
+        .unwrap()
+        .into_vec()
+        .await
+        .unwrap();
+    assert_eq!(result, sample[..40], "5");
 }

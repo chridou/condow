@@ -4,6 +4,118 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.17.4 - 2022-05-20
+
+### CHANGD
+
+- with concurrency 4 only 1 task is used.
+
+## 0.17.2 - 2022-05-19
+
+### FIXED
+
+- Improved tracing support
+
+## 0.17.2 - 2022-05-19
+
+### FIXED
+
+- Events for download started and finished on Probes. Same for parts.
+
+### CHANGED
+
+- Updated documenation on parallelism behaviour
+
+### ADDED
+
+- config parameter `EnsureActivePull` to allow the stream to always be pulled by a dedicated task. This also gives some panic protection.
+- config parameter `LogDownloadMessagesAsDebug` to configure log level of outer doenload events
+- config parameters `MinPartsForConcurrentDownload`, `MinBytesForConcurrentDownload` and `SequentialDownloadMode` to configure sequential downloads
+
+## 0.17.1 - 2022-05-12
+
+### CHANGED
+
+- `Probe` is handled with static dispatch internally
+- Deprecated `Probe::chunk_completed` (time parameter was inaccurate and had a negative performance impact). Use new method `chunk_received` instead.
+- improved performance on sequential downloads
+
+## 0.17.0 - 2022-05-05
+
+### CHANGED
+
+- **BREAKING** `BuffersFullDelayMs` became `MaxBuffersFullDelayMs`.
+
+### FIXED
+
+- performance issues
+
+## 0.16.0 - 2022-05-01
+
+### CHANGED
+
+- Download requests can change the configuration for the requested download
+
+### REMOVED
+
+- **BREAKING** `GetSizeMode`
+
+## 0.15.0 - 2022-04-29
+
+### CHANGED
+
+- ***BREAKING*** Switched global instrumentation back to static dispatch
+
+## 0.14.4 - 2022-04-29
+
+### ADDED
+
+- documentation for global instrumentation
+
+## 0.14.3 - 2022-04-29
+
+### ADDED
+
+- documentation for per request probing
+
+## 0.14.2 - 2022-04-28
+
+### CHANGED
+
+- In `OrderedChunkStream` replaced `dyn Stream` with concrete type `UnboundedReceiver`
+
+## 0.14.1 - 2022-04-28
+
+### ADDED
+
+- documentation and tests
+
+## 0.14.0 - 2022-04-28
+
+### CHANGED
+
+- `PartStream` has been replaced by an `OrderedChunkStream` to achieve a lower first byte to client latency
+
+## 0.13.0 - 2022-04-27
+
+### CHANGED
+
+- **BREAKING** Downloading is done via a builder style request object
+- **BREAKING** `Reporter` is used dynamically and now called `Probe`
+- **BREAKING** Trait `Downloads` uses request API and has location as associated type
+- **BREAKING** `RandomAccessReader` has type parameter removed
+- **BREAKING** Renamed `NoLocation` to `IgnoreLocation`
+
+### ADDED
+
+- support of `tracing crate`
+- trait `DownloadsUntyped` which takes a `&str` as a location
+
+### REMOVED
+
+- **BREAKING** Old logging mechanism via reporter 
+- **BREAKING** `CompositeReporter`
+
 ## [0.12.4] - 2022-02-08
 
 ### ADDED
@@ -83,7 +195,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changes
 
-- Breaking: In meory clients are generic over the location. Default tyoe is `NoLocation`
+- Breaking: In meory clients are generic over the location. Default type is `NoLocation`
 - Updated README.md
 
 ## [0.10.2] - 2021/10/22

@@ -1,5 +1,6 @@
-use super::*;
 use crate::errors::CondowErrorKind;
+
+use super::*;
 
 const RETRYABLE: CondowErrorKind = CondowErrorKind::Remote;
 const ANOTHER_RETRYABLE: CondowErrorKind = CondowErrorKind::Io;
@@ -37,11 +38,11 @@ mod retry_download {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, IgnoreLocation,
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        reporter::Reporter,
+        probe::Probe,
         retry::{
             retry_download,
             tests::{NON_RETRYABLE, RETRYABLE},
@@ -616,9 +617,9 @@ mod retry_download {
         let client = client_builder.into().finish();
 
         #[derive(Clone, Default)]
-        struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -641,10 +642,16 @@ mod retry_download {
             }
         }
 
-        let probe = Probe::default();
+        let probe = TestProbe::default();
 
-        let (mut stream, _bytes_hint) =
-            retry_download(&client, NoLocation, download_spec.into(), &config, &probe).await?;
+        let (mut stream, _bytes_hint) = retry_download(
+            &client,
+            IgnoreLocation,
+            download_spec.into(),
+            &config,
+            probe.clone(),
+        )
+        .await?;
 
         let mut received = Vec::new();
 
@@ -801,11 +808,11 @@ mod loop_retry_complete_stream {
 
     use crate::{
         condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, NoLocation,
+            failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
         config::RetryConfig,
         errors::{CondowError, IoError},
-        reporter::Reporter,
+        probe::Probe,
         retry::{
             loop_retry_complete_stream,
             tests::{NON_RETRYABLE, RETRYABLE},
@@ -1084,9 +1091,9 @@ mod loop_retry_complete_stream {
         let client = client_builder.into().finish();
 
         #[derive(Clone, Default)]
-        struct Probe(Arc<AtomicUsize>, Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1109,19 +1116,19 @@ mod loop_retry_complete_stream {
             }
         }
 
-        let probe = Probe::default();
+        let probe = TestProbe::default();
 
         let (next_elem_tx, mut rx) = mpsc::unbounded();
 
         let original_range: InclusiveRange = range.into();
         let (initial_stream, _) = client
-            .download(NoLocation, original_range.into())
+            .download(IgnoreLocation, original_range.into())
             .await
             .unwrap();
 
         tokio::spawn(loop_retry_complete_stream(
             initial_stream,
-            NoLocation,
+            IgnoreLocation,
             original_range,
             client,
             next_elem_tx,
@@ -1167,7 +1174,7 @@ mod retry_download_get_stream {
 
     use futures::{stream, FutureExt};
 
-    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
+    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
 
     use super::*;
 
@@ -1329,7 +1336,7 @@ mod retry_download_get_stream {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
+            type Location = IgnoreLocation;
 
             fn get_size(
                 &self,
@@ -1362,9 +1369,9 @@ mod retry_download_get_stream {
         };
 
         #[derive(Clone)]
-        struct Probe(Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1380,13 +1387,13 @@ mod retry_download_get_stream {
             .max_attempts(n_retries)
             .max_delay_ms(0);
 
-        let probe = Probe(Default::default());
+        let probe = TestProbe(Default::default());
         match retry_download_get_stream(
             &client,
-            NoLocation,
+            IgnoreLocation,
             DownloadSpec::Complete,
             &config,
-            &probe,
+            &probe.clone(),
         )
         .await
         {
@@ -1412,7 +1419,7 @@ mod retry_get_size {
 
     use futures::FutureExt;
 
-    use crate::{condow_client::NoLocation, errors::CondowErrorKind};
+    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
 
     use super::*;
 
@@ -1574,7 +1581,7 @@ mod retry_get_size {
         }
 
         impl CondowClient for Client {
-            type Location = NoLocation;
+            type Location = IgnoreLocation;
 
             fn get_size(
                 &self,
@@ -1606,9 +1613,9 @@ mod retry_get_size {
         };
 
         #[derive(Clone)]
-        struct Probe(Arc<AtomicUsize>);
+        struct TestProbe(Arc<AtomicUsize>);
 
-        impl Reporter for Probe {
+        impl Probe for TestProbe {
             fn retry_attempt(
                 &self,
                 _location: &dyn std::fmt::Display,
@@ -1624,8 +1631,8 @@ mod retry_get_size {
             .max_attempts(n_retries)
             .max_delay_ms(0);
 
-        let probe = Probe(Default::default());
-        match retry_get_size(&client, NoLocation, &config, &probe).await {
+        let probe = TestProbe(Default::default());
+        match retry_get_size(&client, IgnoreLocation, &config, &probe.clone()).await {
             Ok(_) => Ok(probe.0.load(Ordering::SeqCst)),
             Err(err) => Err((probe.0.load(Ordering::SeqCst), err.kind())),
         }

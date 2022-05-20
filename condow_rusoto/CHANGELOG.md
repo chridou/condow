@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] -  2022-05-12
+
+## CHANGES
+
+- deprecation on method in condow core (Probe::chunk_completed)
+
+## [0.18.0] -  2022-05-05
+
+### CHANGES
+
+- breaking changes in `condow_core`
+## [0.17.0] -  2022-05-01
+
+### CHANGES
+
+- breaking changes in `condow_core`
+
+## [0.16.0] -  2022-04-29
+
+### CHANGES
+
+- breaking changes in `condow_core`
+
+## [0.15.1] - 2022-04-28
+
+### ADDED
+
+- documentation
+
+## [0.15.0] - 2022-04-28
+
+### CHANGED
+
+- Breaking changes in `condow_core`
+
+## [0.14.0] - 2022-04-27
+
+### CHANGED
+
+- Breaking changes in `condow_core`
+
+### ADDED
+
+- `FromStr` for `S3Location`
+
+## [0.13.3]
+
+### CHANGED
+
+- Bump rusoto to 0.48
+
+## [0.13.1] -  2022-03-22
+
+### CHANGED
+
+- Improve error messages
+
 ## [0.13.1] -  2022-02-08
 
 ### CHANGED

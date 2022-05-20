@@ -1,8 +1,114 @@
-//! Reporting
+//! # Probes & Instrumentation
 //!
 //! This goes more into the direction of instrumentation. Unfortunately
 //! `tokio` uses the word `Instrumentation` already for their tracing
 //! implementation.
+//!
+//! Instrumentation is done via the [Probe] trait. Implementations
+//! will always be shared via an [Arc] internally.
+//!
+//! Instrumentation can be done for each individual download or globally
+//! where a [Probe] is injectecd internally for each download.
+//!
+//! Both methods can be combined.
+//!
+//! ## Per request probing
+//!
+//! ```
+//! # use std::time::Duration;
+//! # use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+//! use condow_core::condow_client::{InMemoryClient, IgnoreLocation};
+//! use condow_core::{Condow, config::Config};
+//! use condow_core::probe::Probe;
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//!
+//!
+//! struct MyProbe {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! // Methods of Probe have noop default implementations
+//! impl Probe for MyProbe {
+//!     fn chunk_completed(&self,
+//!         _part_index: u64,
+//!         _chunk_index: usize,
+//!         n_bytes: usize,
+//!         _time: Duration) {
+//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     }
+//! }
+//!
+//! let bytes_received = Arc::new(AtomicUsize::default());
+//! let probe = MyProbe { bytes_received: Arc::clone(&bytes_received)};
+//!
+//! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
+//! let config = Config::default();
+//! let condow = Condow::new(client, config).unwrap();
+//!
+//! // Download the complete BLOB
+//! let blob = condow.blob().probe(Arc::new(probe)).wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 13);
+//! # }
+//! ```
+//!
+//! ## Global Instrumentation
+//!
+//! ```
+//! # use std::time::Duration;
+//! # use std::fmt;
+//! # use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+//! use condow_core::condow_client::{InMemoryClient, IgnoreLocation};
+//! use condow_core::{Condow, config::Config};
+//! use condow_core::probe::{Probe, ProbeFactory};
+//!
+//! # #[tokio::main]
+//! # async fn main() {
+//!
+//!
+//! #[derive(Clone)]
+//! struct MyProbe {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! // Methods of Probe have noop default implementations
+//! impl Probe for MyProbe {
+//!     fn chunk_received(&self,
+//!         _part_index: u64,
+//!         _chunk_index: usize,
+//!         n_bytes: usize) {
+//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     }
+//! }
+//!
+//! struct MyProbeFactory {
+//!     bytes_received: Arc<AtomicUsize>,
+//! }
+//!
+//! impl ProbeFactory for MyProbeFactory {
+//!     type Probe = MyProbe;
+//!     fn make(&self, _location: &dyn fmt::Display) -> MyProbe {
+//!         MyProbe {
+//!             bytes_received: Arc::clone(&self.bytes_received),
+//!         }
+//!     }
+//! }
+//!
+//! let bytes_received = Arc::new(AtomicUsize::default());
+//! let probe_factory = MyProbeFactory { bytes_received: Arc::clone(&bytes_received)};
+//!
+//! let client = InMemoryClient::<IgnoreLocation>::new_static(b"a remote BLOB");
+//! let config = Config::default();
+//! let condow = Condow::new(client, config).unwrap().probe_factory(probe_factory);
+//!
+//! let blob = condow.blob().wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 13);
+//!
+//! let blob = condow.blob().range(1..5).wc().await.unwrap();
+//! assert_eq!(bytes_received.load(Ordering::SeqCst), 17);
+//! # }
+//! ```
 use std::{fmt, time::Duration};
 
 use crate::{
@@ -12,45 +118,49 @@ use crate::{
 
 pub use simple_reporter::*;
 
-pub trait ReporterFactory: Send + Sync + 'static {
-    type ReporterType: Reporter;
-
-    /// Create a new [Reporter].
+pub trait ProbeFactory: Send + Sync + 'static {
+    type Probe: Probe + Clone + Send + Sync + 'static;
+    /// Create a new [Probe].
     ///
-    /// This might share state with the factory or not
-    fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType;
+    /// It might share state with the factory or not
+    fn make(&self, location: &dyn fmt::Display) -> Self::Probe;
 }
 
-/// A Reporter is an interface to track occurences of different kinds
+/// A Probe is an interface to track occurences of different kinds
 ///
-/// Implementors can use this to put instrumentation on downloads
-/// or simply to log.
+/// Implementors can use this to put instrumentation on downloads.
 ///
 /// All methods should return quickly to not to influence the
 /// downloading too much with measuring.
 #[allow(unused_variables)]
-pub trait Reporter: Clone + Send + Sync + 'static {
+pub trait Probe: Send + Sync + 'static {
     fn effective_range(&self, range: InclusiveRange) {}
+
     /// The actual IO started
+    #[inline]
     fn download_started(&self) {}
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download was successful.**
+    /// **This always is the last method called on a [Probe] if the download was successful.**
+    #[inline]
     fn download_completed(&self, time: Duration) {}
 
     /// IO tasks finished
     ///
-    /// **This always is the last method called on a [Reporter] if the download failed.**
+    /// **This always is the last method called on a [Probe] if the download failed.**
+    #[inline]
     fn download_failed(&self, time: Option<Duration>) {}
 
-    /// An error occurd but a retry will be attempted
+    /// An error occurred but a retry will be attempted
+    #[inline]
     fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
     ///
     /// `orig_range` is the original range for the download attempted.
     /// `remaining_range` the tail of the part which is still missing.
+    #[inline]
     fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
@@ -63,126 +173,50 @@ pub trait Reporter: Clone + Send + Sync + 'static {
     /// A panic was detected
     ///
     /// Unless from a bug in this library it is most likely caused by the [crate::condow_client::CondowClient] implementation
+    #[inline]
     fn panic_detected(&self, msg: &str) {}
 
     /// All queues are full so no new request could be scheduled
+    #[inline]
     fn queue_full(&self) {}
 
     /// A part was completed
+    #[inline]
+    fn chunk_received(&self, part_index: u64, chunk_index: usize, n_bytes: usize) {
+        // Just for the time being as long as chunk_completed is not removed
+        #[allow(deprecated)]
+        self.chunk_completed(part_index, chunk_index, n_bytes, Duration::ZERO)
+    }
+
+    /// A part was completed
+    #[inline]
+    #[deprecated(note = "use chunk_received instead", since = "0.17.1")]
     fn chunk_completed(&self, part_index: u64, chunk_index: usize, n_bytes: usize, time: Duration) {
     }
+
     /// Download of a part has started
+    #[inline]
     fn part_started(&self, part_index: u64, range: InclusiveRange) {}
 
     /// Download of a part was completed
+    #[inline]
     fn part_completed(&self, part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {}
 
     /// Download of a part failed
+    #[inline]
     fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {}
 }
 
-/// Disables reporting
-#[derive(Copy, Clone)]
-pub struct NoReporting;
+impl Probe for () {}
 
-impl Reporter for NoReporting {}
-impl ReporterFactory for NoReporting {
-    type ReporterType = Self;
+impl ProbeFactory for () {
+    type Probe = ();
 
-    fn make(&self, _location: &dyn fmt::Display) -> Self {
-        NoReporting
+    fn make(&self, _location: &dyn fmt::Display) -> Self::Probe {
+        ()
     }
 }
 
-/// Plug 2 [Reporter]s into one and have them both notified.
-///
-/// `RA` is notified first.
-#[derive(Clone)]
-pub struct CompositeReporter<RA: Reporter, RB: Reporter>(pub RA, pub RB);
-
-impl<RA: Reporter, RB: Reporter> Reporter for CompositeReporter<RA, RB> {
-    fn effective_range(&self, range: InclusiveRange) {
-        self.0.effective_range(range);
-        self.1.effective_range(range);
-    }
-
-    fn download_started(&self) {
-        self.0.download_started();
-        self.1.download_started();
-    }
-
-    fn download_completed(&self, time: Duration) {
-        self.0.download_completed(time);
-        self.1.download_completed(time);
-    }
-
-    fn download_failed(&self, time: Option<Duration>) {
-        self.0.download_failed(time);
-        self.1.download_failed(time);
-    }
-
-    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
-        self.0.retry_attempt(location, error, next_in);
-        self.1.retry_attempt(location, error, next_in);
-    }
-
-    fn stream_resume_attempt(
-        &self,
-        location: &dyn fmt::Display,
-        error: &IoError,
-        orig_range: InclusiveRange,
-        remaining_range: InclusiveRange,
-    ) {
-        self.0
-            .stream_resume_attempt(location, error, orig_range, remaining_range);
-        self.1
-            .stream_resume_attempt(location, error, orig_range, remaining_range);
-    }
-
-    fn panic_detected(&self, msg: &str) {
-        self.0.panic_detected(msg);
-        self.1.panic_detected(msg);
-    }
-
-    fn queue_full(&self) {
-        self.0.queue_full();
-        self.1.queue_full();
-    }
-
-    fn chunk_completed(
-        &self,
-        part_index: u64,
-        chunk_index: usize,
-        n_bytes: usize,
-        time: std::time::Duration,
-    ) {
-        self.0
-            .chunk_completed(part_index, chunk_index, n_bytes, time);
-        self.1
-            .chunk_completed(part_index, chunk_index, n_bytes, time);
-    }
-
-    fn part_started(&self, part_index: u64, range: crate::InclusiveRange) {
-        self.0.part_started(part_index, range);
-        self.1.part_started(part_index, range);
-    }
-
-    fn part_completed(
-        &self,
-        part_index: u64,
-        n_chunks: usize,
-        n_bytes: u64,
-        time: std::time::Duration,
-    ) {
-        self.0.part_completed(part_index, n_chunks, n_bytes, time);
-        self.1.part_completed(part_index, n_chunks, n_bytes, time);
-    }
-
-    fn part_failed(&self, error: &CondowError, part_index: u64, range: &InclusiveRange) {
-        self.0.part_failed(error, part_index, range);
-        self.1.part_failed(error, part_index, range);
-    }
-}
 mod simple_reporter {
     //! Simple reporting with (mostly) counters
 
@@ -200,54 +234,18 @@ mod simple_reporter {
         InclusiveRange,
     };
 
-    use super::{Reporter, ReporterFactory};
-
-    /// Creates [SimpleReporter]s
-    pub struct SimpleReporterFactory {
-        skip_first_chunk_timings: bool,
-    }
-
-    impl SimpleReporterFactory {
-        /// Create a new factory
-        ///
-        /// If `skip_first_chunk_timings` is set to `true`
-        /// the first chunk of a part is not considered for
-        /// muasuring timing. This should be enabled
-        /// on HTTP downloads since there is a high chance that
-        /// the first chunk was received with the headers.
-        pub fn new(skip_first_chunk_timings: bool) -> Self {
-            Self {
-                skip_first_chunk_timings,
-            }
-        }
-    }
-
-    impl ReporterFactory for SimpleReporterFactory {
-        type ReporterType = SimpleReporter;
-
-        fn make(&self, location: &dyn fmt::Display) -> Self::ReporterType {
-            SimpleReporter::new(location, self.skip_first_chunk_timings)
-        }
-    }
-
-    impl Default for SimpleReporterFactory {
-        fn default() -> Self {
-            Self::new(false)
-        }
-    }
+    use super::Probe;
 
     /// A `SimpleReporter` collects metrics and creates a [SimpleReport]
     #[derive(Clone)]
     pub struct SimpleReporter {
         inner: Arc<Inner>,
-        skip_first_chunk_timings: bool,
     }
 
     impl SimpleReporter {
-        pub fn new(location: &dyn fmt::Display, skip_first_chunk_timings: bool) -> Self {
+        pub fn new(location: &dyn fmt::Display) -> Self {
             SimpleReporter {
                 inner: Arc::new(Inner::new(location.to_string())),
-                skip_first_chunk_timings,
             }
         }
 
@@ -312,7 +310,7 @@ mod simple_reporter {
 
     impl Default for SimpleReporter {
         fn default() -> Self {
-            Self::new(&"unknown".to_string(), false)
+            Self::new(&"unknown".to_string())
         }
     }
 
@@ -350,7 +348,7 @@ mod simple_reporter {
         pub max_part_time: Duration,
     }
 
-    impl Reporter for SimpleReporter {
+    impl Probe for SimpleReporter {
         fn effective_range(&self, effective_range: InclusiveRange) {
             *self.inner.effective_range.lock().unwrap() = Some(effective_range);
         }
@@ -397,22 +395,11 @@ mod simple_reporter {
             self.inner.n_queue_full.fetch_add(1, Ordering::SeqCst);
         }
 
-        fn chunk_completed(
-            &self,
-            _part_index: u64,
-            chunk_index: usize,
-            n_bytes: usize,
-            time: Duration,
-        ) {
+        fn chunk_received(&self, _part_index: u64, _chunk_index: usize, n_bytes: usize) {
             let inner = self.inner.as_ref();
             inner.n_chunks_received.fetch_add(1, Ordering::SeqCst);
             inner.min_chunk_bytes.fetch_min(n_bytes, Ordering::SeqCst);
             inner.max_chunk_bytes.fetch_max(n_bytes, Ordering::SeqCst);
-            if self.skip_first_chunk_timings && chunk_index == 0 {
-                let us = time.as_micros() as u64;
-                inner.min_chunk_us.fetch_min(us, Ordering::SeqCst);
-                inner.max_chunk_us.fetch_max(us, Ordering::SeqCst);
-            }
         }
 
         fn part_completed(&self, _part_index: u64, n_chunks: usize, n_bytes: u64, time: Duration) {

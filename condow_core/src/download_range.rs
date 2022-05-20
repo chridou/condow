@@ -9,18 +9,57 @@ use crate::errors::CondowError;
 /// An inclusive range which can not have a length of 0.
 ///
 /// A replacement for [RangeInclusive] with some sugar.
+///
+///
+/// ## Examples
+///
+/// ```
+/// # use condow_core::InclusiveRange;
+///
+/// let range1: InclusiveRange = (10..=20).into();
+/// let range2 = InclusiveRange(10, 20);
+///
+/// assert_eq!(range1, range2);
+/// ```
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct InclusiveRange(pub u64, pub u64);
 
 impl InclusiveRange {
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the last item within the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.end_incl(), 9);
+    /// ```
     pub fn end_incl(&self) -> u64 {
         self.1
     }
 
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
         if self.1 < self.0 {
@@ -44,14 +83,22 @@ impl InclusiveRange {
     }
 
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
-    pub fn http_range_value(&self) -> String {
+    ///
+    /// ```
+    /// use condow_core::InclusiveRange;
+    ///
+    /// let range: InclusiveRange = (4..=9).into();
+    ///
+    /// assert_eq!(range.http_bytes_range_value(), "bytes=4-9");
+    /// ```
+    pub fn http_bytes_range_value(&self) -> String {
         format!("bytes={}-{}", self.0, self.1)
     }
 }
 
 impl fmt::Display for InclusiveRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{},{}]", self.0, self.1)
+        write!(f, "[{}..{}]", self.0, self.1)
     }
 }
 
@@ -61,6 +108,11 @@ impl From<RangeInclusive<u64>> for InclusiveRange {
     }
 }
 
+impl From<RangeToInclusive<u64>> for InclusiveRange {
+    fn from(ri: RangeToInclusive<u64>) -> Self {
+        Self(0, ri.end)
+    }
+}
 impl From<InclusiveRange> for RangeInclusive<u64> {
     fn from(ir: InclusiveRange) -> Self {
         ir.to_std_range()
@@ -82,15 +134,42 @@ impl OffsetRange {
         Self(offset, len)
     }
 
+    /// Returns the index of the first item within the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.start(), 4);
+    /// ```
     pub fn start(&self) -> u64 {
         self.0
     }
 
+    /// Returns the index of the first item after the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.end_excl(), 10);
+    /// ```
     pub fn end_excl(&self) -> u64 {
         self.0 + self.1
     }
 
     #[allow(clippy::len_without_is_empty)]
+    /// Returns the length of the range
+    ///
+    /// ```
+    /// use condow_core::OffsetRange;
+    ///
+    /// let range = OffsetRange::new(4, 6);
+    ///
+    /// assert_eq!(range.len(), 6);
+    /// ```
     pub fn len(&self) -> u64 {
         self.1
     }
@@ -111,22 +190,68 @@ impl fmt::Display for OffsetRange {
 /// is part of the file. This is the default behaviour. If this
 /// behaviour is disabled, it is up to the caller to ensure a valid
 /// range which does not exceed the end of the file is supplied.
+///
+/// Naming
+///
+/// variants where the last index is included in the range are suffixed with
+/// "Inclusive". Those missing the suffix do not include the last index which
+/// makes them exlusive. This is the same convention as with the stdlib.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ClosedRange {
+    /// From including the first value to excluding the second value
     FromTo(u64, u64),
+    /// From including the first value to including the second value
     FromToInclusive(u64, u64),
+    /// From the beginning to excluding the value
     To(u64),
+    /// From the beginning to including the value
     ToInclusive(u64),
 }
 
 impl ClosedRange {
+    /// Validates the range.
+    ///
+    /// Fails with an error containig the reason if the range is invalid.
+    ///
+    /// Ranges with only 1 parameter are always valid.
+    ///
+    /// ## Examples
+    ///
+    /// [ClosedRange::FromTo]:
+    ///
+    /// ```
+    /// use condow_core::ClosedRange;
+    ///
+    /// let range = ClosedRange::FromTo(0,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromTo(1,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromTo(1,0);
+    /// assert!(range.validate().is_err());
+    /// ```
+    ///
+    /// [ClosedRange::FromToInclusive]:
+    ///
+    /// ```
+    /// use condow_core::ClosedRange;
+    ///
+    /// let range = ClosedRange::FromToInclusive(0,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromToInclusive(1,1);
+    /// assert!(range.validate().is_ok());
+    ///
+    /// let range = ClosedRange::FromToInclusive(1,0);
+    /// assert!(range.validate().is_err());
+    /// ```
     pub fn validate(&self) -> Result<(), CondowError> {
         match self {
             Self::FromTo(a, b) => {
                 if b < a {
                     Err(CondowError::new_invalid_range(format!(
-                        "FromTo: 'to'({}) must be lesser or equal than 'from'({})",
-                        a, b
+                        "FromTo: 'to'({b}) must not be lesser than 'from'({a})"
                     )))
                 } else {
                     Ok(())
@@ -135,14 +260,22 @@ impl ClosedRange {
             Self::FromToInclusive(a, b) => {
                 if b < a {
                     Err(CondowError::new_invalid_range(format!(
-                        "FromToInclusive: 'to'({}) must be lesser or equal than 'from'({})",
-                        a, b
+                        "FromToInclusive: 'to'({b}) must not be lesser than 'from'({a})"
                     )))
                 } else {
                     Ok(())
                 }
             }
             _ => Ok(()),
+        }
+    }
+
+    pub fn len(self) -> u64 {
+        match self {
+            Self::FromTo(a, b) => b - a,
+            Self::FromToInclusive(a, b) => b - a + 1,
+            Self::To(last_excl) => last_excl,
+            Self::ToInclusive(last_incl) => last_incl + 1,
         }
     }
 
@@ -229,11 +362,41 @@ impl ClosedRange {
 impl fmt::Display for ClosedRange {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ClosedRange::To(to) => write!(f, "[0..{}[", to),
-            ClosedRange::ToInclusive(to) => write!(f, "[0..{}]", to),
-            ClosedRange::FromTo(from, to) => write!(f, "[{}..{}[", from, to),
-            ClosedRange::FromToInclusive(from, to) => write!(f, "[{}..{}]", from, to),
+            ClosedRange::To(to) => write!(f, "[0..{to}["),
+            ClosedRange::ToInclusive(to) => write!(f, "[0..{to}]"),
+            ClosedRange::FromTo(from, to) => write!(f, "[{from}..{to}["),
+            ClosedRange::FromToInclusive(from, to) => write!(f, "[{from}..{to}]"),
         }
+    }
+}
+
+impl From<Range<u64>> for ClosedRange {
+    fn from(r: Range<u64>) -> Self {
+        ClosedRange::FromTo(r.start, r.end)
+    }
+}
+
+impl From<RangeInclusive<u64>> for ClosedRange {
+    fn from(r: RangeInclusive<u64>) -> Self {
+        ClosedRange::FromToInclusive(*r.start(), *r.end())
+    }
+}
+
+impl From<RangeTo<u64>> for ClosedRange {
+    fn from(r: RangeTo<u64>) -> Self {
+        ClosedRange::To(r.end)
+    }
+}
+
+impl From<RangeToInclusive<u64>> for ClosedRange {
+    fn from(r: RangeToInclusive<u64>) -> Self {
+        ClosedRange::ToInclusive(r.end)
+    }
+}
+
+impl From<InclusiveRange> for ClosedRange {
+    fn from(r: InclusiveRange) -> Self {
+        ClosedRange::FromToInclusive(r.0, r.1)
     }
 }
 
@@ -355,6 +518,14 @@ impl DownloadRange {
             DownloadRange::Closed(r) => r.incl_range_from_size(size),
         }
     }
+
+    /// Returns the length in bytes for ranges where an end is defined
+    pub fn len(self) -> Option<u64> {
+        match self {
+            DownloadRange::Open(_) => None,
+            DownloadRange::Closed(r) => Some(r.len()),
+        }
+    }
 }
 
 impl fmt::Display for DownloadRange {
@@ -374,13 +545,13 @@ impl From<RangeFull> for DownloadRange {
 
 impl From<Range<u64>> for DownloadRange {
     fn from(r: Range<u64>) -> Self {
-        Self::Closed(ClosedRange::FromTo(r.start, r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<RangeInclusive<u64>> for DownloadRange {
     fn from(r: RangeInclusive<u64>) -> Self {
-        Self::Closed(ClosedRange::FromToInclusive(*r.start(), *r.end()))
+        Self::Closed(r.into())
     }
 }
 
@@ -392,25 +563,31 @@ impl From<RangeFrom<u64>> for DownloadRange {
 
 impl From<RangeTo<u64>> for DownloadRange {
     fn from(r: RangeTo<u64>) -> Self {
-        Self::Closed(ClosedRange::To(r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<RangeToInclusive<u64>> for DownloadRange {
     fn from(r: RangeToInclusive<u64>) -> Self {
-        Self::Closed(ClosedRange::ToInclusive(r.end))
+        Self::Closed(r.into())
     }
 }
 
 impl From<InclusiveRange> for DownloadRange {
     fn from(r: InclusiveRange) -> Self {
-        Self::Closed(ClosedRange::FromToInclusive(r.0, r.1))
+        Self::Closed(r.into())
     }
 }
 
 impl From<OffsetRange> for DownloadRange {
     fn from(r: OffsetRange) -> Self {
         Self::Closed(ClosedRange::FromTo(r.start(), r.end_excl()))
+    }
+}
+
+impl From<ClosedRange> for DownloadRange {
+    fn from(r: ClosedRange) -> Self {
+        Self::Closed(r)
     }
 }
 
