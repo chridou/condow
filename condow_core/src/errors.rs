@@ -1,5 +1,5 @@
 //! Error types returned by Condow
-use std::fmt;
+use std::{fmt, io};
 
 use thiserror::Error;
 
@@ -123,15 +123,27 @@ impl From<CondowErrorKind> for CondowError {
     }
 }
 
-impl From<std::io::Error> for CondowError {
-    fn from(io: std::io::Error) -> Self {
-        use std::io::ErrorKind;
-        match io.kind() {
-            ErrorKind::NotFound => CondowError::new_not_found("not found"),
-            ErrorKind::PermissionDenied => CondowError::new_access_denied("permission denied"),
-            _ => CondowError::new_io("io error"),
+impl From<io::Error> for CondowError {
+    fn from(io_err: io::Error) -> Self {
+        use io::ErrorKind;
+        match io_err.kind() {
+            ErrorKind::NotFound => CondowError::new_not_found(format!("io error: {io_err}")),
+            ErrorKind::PermissionDenied => {
+                CondowError::new_access_denied(format!("permission denied: {io_err}"))
+            }
+            _ => CondowError::new_io(format!("io error: {io_err}")),
         }
-        .with_source(io)
+        .with_source(io_err)
+    }
+}
+
+impl From<CondowError> for io::Error {
+    fn from(err: CondowError) -> Self {
+        match err.kind() {
+            CondowErrorKind::NotFound => io::Error::new(io::ErrorKind::NotFound, err),
+            CondowErrorKind::AccessDenied => io::Error::new(io::ErrorKind::PermissionDenied, err),
+            _ => io::Error::new(io::ErrorKind::Other, err),
+        }
     }
 }
 
