@@ -44,8 +44,8 @@ use condow_core::{
     streams::{BytesHint, BytesStream},
 };
 
-pub use condow_core::*;
 use condow_core::errors::http_status_to_error;
+pub use condow_core::*;
 
 /// S3 bucket name
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -406,5 +406,10 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
 
 fn response_to_condow_err(response: BufferedHttpResponse) -> CondowError {
     let s = response.status;
-    http_status_to_error(s.as_u16(), &s.to_string(), s.is_server_error(), response.body.as_ref())
+    http_status_to_error(
+        s.as_u16(),
+        &s.to_string(),
+        s.is_server_error(),
+        response.body.as_ref(),
+    )
 }

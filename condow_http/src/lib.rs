@@ -15,40 +15,31 @@
 //!
 //! let location = String::from("my_file");
 //!
-//! let stream = condow.download(location, 23..46).await.unwrap();
+//! let stream = condow.blob().at(location).range(23..46).download().await.unwrap();
 //! let downloaded_bytes: Vec<u8> = stream.into_vec().await.unwrap();
 //! # };
 //! # ()
 //! ```
 
-
 use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::Error as AnyError;
-use futures::{
-    future::BoxFuture,
-    TryStreamExt,
-};
+use futures::{future::BoxFuture, TryStreamExt};
 use http_content_range::ContentRange;
 use reqwest::{
-    Client,
-    header::CONTENT_LENGTH,
-    header::CONTENT_RANGE,
-    header::HeaderMap,
-    header::HeaderName,
-    header::RANGE,
-    StatusCode,
+    header::HeaderMap, header::HeaderName, header::CONTENT_LENGTH, header::CONTENT_RANGE,
+    header::RANGE, Client, StatusCode,
 };
 
+use condow_core::config::Config;
+use condow_core::errors::{http_status_to_error, IoError};
+pub use condow_core::*;
 use condow_core::{
     condow_client::{CondowClient, DownloadSpec},
     errors::CondowError,
     streams::{BytesHint, BytesStream},
 };
-pub use condow_core::*;
-use condow_core::config::Config;
-use condow_core::errors::{http_status_to_error, IoError};
 
 #[derive(Clone)]
 pub struct HttpClient {
@@ -91,7 +82,7 @@ impl CondowClient for HttpClient {
             // TODO: implement timeout support, e.g. head(url).timeout(config.timeout).send()
             let mut req = client.get(location);
             if let DownloadSpec::Range(r) = spec {
-                req = req.header(RANGE, r.http_range_value());
+                req = req.header(RANGE, r.http_bytes_range_value());
             }
             let res = req.send().await.map_err(into_io_error)?;
             let status = res.status();
@@ -99,8 +90,10 @@ impl CondowClient for HttpClient {
                 let hint = if status == StatusCode::PARTIAL_CONTENT {
                     let range = header_as_str(res.headers(), &CONTENT_RANGE)?;
                     match ContentRange::parse(range) {
-                        ContentRange::Bytes(r) => BytesHint::new_exact(r.last_byte - r.first_byte + 1),
-                        _ => BytesHint::new_no_hint()
+                        ContentRange::Bytes(r) => {
+                            BytesHint::new_exact(r.last_byte - r.first_byte + 1)
+                        }
+                        _ => BytesHint::new_no_hint(),
                     }
                 } else {
                     BytesHint::new_exact(parse_content_length(res.headers())?)
@@ -108,8 +101,12 @@ impl CondowClient for HttpClient {
                 let stream: BytesStream = Box::pin(res.bytes_stream().map_err(into_io_error));
                 Ok((stream, hint))
             } else {
-                Err(http_status_to_error(status.as_u16(), &status.to_string(), status.is_server_error(),
-                                         res.bytes().await.unwrap_or_default().as_ref()))
+                Err(http_status_to_error(
+                    status.as_u16(),
+                    &status.to_string(),
+                    status.is_server_error(),
+                    res.bytes().await.unwrap_or_default().as_ref(),
+                ))
             }
         })
     }
@@ -119,12 +116,14 @@ fn parse_content_length(headers: &HeaderMap) -> Result<u64, CondowError> {
     // NOTE: res.content_length() might give incorrect value, so parsing it directly
     // See https://github.com/seanmonstar/reqwest/issues/843
     let len = header_as_str(headers, &CONTENT_LENGTH)?;
-    u64::from_str(len)
-        .map_err(|_| CondowError::new_other(format!("{} header is not a valid integer", CONTENT_LENGTH)))
+    u64::from_str(len).map_err(|_| {
+        CondowError::new_other(format!("{} header is not a valid integer", CONTENT_LENGTH))
+    })
 }
 
 fn header_as_str<'a>(headers: &'a HeaderMap, header: &HeaderName) -> Result<&'a str, CondowError> {
-    let len = headers.get(header)
+    let len = headers
+        .get(header)
         .ok_or_else(|| CondowError::new_other(format!("{} header is not available", header)))?;
     len.to_str()
         .map_err(|_| CondowError::new_other(format!("{} header is not a valid string", header)))

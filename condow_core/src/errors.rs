@@ -152,7 +152,12 @@ impl From<std::io::Error> for IoError {
 }
 
 /// Utility function to convert an error HTTP response to a CondowError.
-pub fn http_status_to_error(status_code: u16, status_str: &str, is_server_error: bool, body: &[u8]) -> CondowError {
+pub fn http_status_to_error(
+    status_code: u16,
+    status_str: &str,
+    is_server_error: bool,
+    body: &[u8],
+) -> CondowError {
     // Ideally this fn should take the StatusCode from http crate,
     // but that would make multiple crates depend on the same http crate, possibly with different versions.
     let message = if let Ok(body_str) = std::str::from_utf8(body) {
