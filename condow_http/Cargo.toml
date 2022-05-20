@@ -1,0 +1,27 @@
+[package]
+name = "condow_http"
+version = "0.13.0"
+authors = ["Yuri Astrakhan <YuriAstrakhan@gmail.com>"]
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+description = "Concurrent downloads for http resources"
+repository = "https://github.com/chridou/condow"
+edition = "2021"
+
+[dependencies]
+condow_core = { version = "0.12", path = "../condow_core"}
+anyhow = "1.0"
+bytes = "1"
+futures = "0.3"
+http-content-range = "0.1"
+reqwest = { version = "0.11", features = ["default", "stream"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+
+[lib]
+name = "condow_http"
+
+[[example]]
+name = "simple"
+path = "examples/simple.rs"

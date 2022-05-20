@@ -45,6 +45,7 @@ use condow_core::{
 };
 
 pub use condow_core::*;
+use condow_core::errors::http_status_to_error;
 
 /// S3 bucket name
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -404,23 +405,6 @@ fn head_obj_err_to_get_size_err(err: RusotoError<HeadObjectError>) -> CondowErro
 }
 
 fn response_to_condow_err(response: BufferedHttpResponse) -> CondowError {
-    let message = if let Ok(body_str) = std::str::from_utf8(response.body.as_ref()) {
-        body_str
-    } else {
-        "<<< response body received from AWS not UTF-8 >>>"
-    };
-
-    let status = response.status;
-    let message = format!("{} - {}", status, message);
-    match status.as_u16() {
-        404 => CondowError::new_not_found(message),
-        401 | 403 => CondowError::new_access_denied(message),
-        _ => {
-            if status.is_server_error() {
-                CondowError::new_remote(message)
-            } else {
-                CondowError::new_other(message)
-            }
-        }
-    }
+    let s = response.status;
+    http_status_to_error(s.as_u16(), &s.to_string(), s.is_server_error(), response.body.as_ref())
 }
