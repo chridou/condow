@@ -14,6 +14,7 @@ use self::parallel::ParallelDownloader;
 
 use super::active_pull;
 
+mod four_concurrently;
 mod parallel;
 mod three_concurrently;
 mod two_concurrently;
@@ -44,6 +45,15 @@ pub(crate) fn download_concurrently<C: CondowClient, P: Probe + Clone>(
         )
     } else if *config.max_concurrency == 3 {
         download_three_concurrently(
+            part_requests,
+            client,
+            location,
+            probe,
+            config,
+            download_span_guard,
+        )
+    } else if *config.max_concurrency == 4 {
+        download_four_concurrently(
             part_requests,
             client,
             location,
@@ -128,6 +138,33 @@ fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
 ) -> ChunkStream {
     let bytes_hint = part_requests.bytes_hint();
     let downloader = three_concurrently::ThreePartsConcurrently::from_client(
+        client,
+        location,
+        part_requests,
+        probe.clone(),
+        config.log_download_messages_as_debug,
+        download_span_guard,
+    );
+
+    if *config.ensure_active_pull {
+        let active_stream = active_pull(downloader, probe, config);
+        ChunkStream::from_receiver(active_stream, bytes_hint)
+    } else {
+        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
+    }
+}
+
+/// Download with a maximum concurrency of 3
+fn download_four_concurrently<C: CondowClient, P: Probe + Clone>(
+    part_requests: PartRequestIterator,
+    client: ClientRetryWrapper<C>,
+    location: C::Location,
+    probe: P,
+    config: Config,
+    download_span_guard: DownloadSpanGuard,
+) -> ChunkStream {
+    let bytes_hint = part_requests.bytes_hint();
+    let downloader = four_concurrently::FourPartsConcurrently::from_client(
         client,
         location,
         part_requests,
