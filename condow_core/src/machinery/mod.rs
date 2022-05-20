@@ -1,13 +1,13 @@
 //! Streams for handling downloads
-use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, io};
 
 use tracing::{debug, info_span, Instrument, Span};
 
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config, SequentialDownloadMode};
-use crate::errors::{CondowError, IoError};
+use crate::errors::CondowError;
 use crate::streams::{BytesHint, ChunkStream};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
@@ -334,7 +334,7 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
-        error: &IoError,
+        error: &io::Error,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {

@@ -15,7 +15,7 @@ use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
     config::{ClientRetryWrapper, Config},
-    errors::{CondowError, IoError},
+    errors::CondowError,
     machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
@@ -289,13 +289,14 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
                 chunk_index += 1;
                 offset_in_range += n_bytes as u64;
             }
-            Err(IoError(msg)) => {
+            Err(err) => {
+                let err = err.into();
                 context.probe.part_failed(
-                    &CondowError::new_io(msg.clone()),
+                    &err,
                     range_request.part_index,
                     &range_request.blob_range,
                 );
-                context.send_err(CondowError::new_io(msg));
+                context.send_err(err);
                 return Err(());
             }
         }

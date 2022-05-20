@@ -1,13 +1,13 @@
-use std::{sync::Arc, time::Duration};
+use std::{io, sync::Arc, time::Duration};
 
-use anyhow::{bail, Error as AnyError};
+use anyhow::{anyhow, bail, Error as AnyError};
 use bytes::Bytes;
 use futures::{channel::mpsc, Future, Stream, StreamExt};
 use tracing::{debug, warn, Instrument, Span};
 
 use crate::{
     condow_client::{CondowClient, DownloadSpec},
-    errors::{CondowError, IoError},
+    errors::CondowError,
     probe::Probe,
     streams::{BytesHint, BytesStream},
     InclusiveRange,
@@ -507,7 +507,7 @@ where
 /// [loop_retry_complete_stream] otherwise a panic is assumed.
 struct RetryLoopPanicGuard<P: Probe + Clone> {
     completed_without_panic: bool,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
+    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     probe: P,
 }
 
@@ -515,9 +515,10 @@ impl<P: Probe + Clone> Drop for RetryLoopPanicGuard<P> {
     fn drop(&mut self) {
         if !self.completed_without_panic {
             self.probe.panic_detected("panicked while retrying");
-            let _ = self
-                .next_elem_tx
-                .unbounded_send(Err(IoError("panicked while retrying".to_string())));
+            let _ = self.next_elem_tx.unbounded_send(Err(io::Error::new(
+                io::ErrorKind::Other,
+                anyhow!("panicked while retrying"),
+            )));
         }
     }
 }
@@ -531,7 +532,7 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
     location: C::Location,
     original_range: InclusiveRange,
     client: C,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
+    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
     config: RetryConfig,
     probe: P,
 ) where
@@ -561,11 +562,15 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
             }
 
             if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
-                let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                    "failed to make progress on the stream {} times \
+                let _ = next_elem_tx.unbounded_send(Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    anyhow!(
+                        "failed to make progress on the stream {} times \
                     with the last error being \"{}\"",
-                    n_times_made_no_progress, stream_io_error
-                ))));
+                        n_times_made_no_progress,
+                        stream_io_error
+                    ),
+                )));
                 break;
             }
 
@@ -588,11 +593,15 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
                 }
                 Err(err_new_stream) => {
                     // we must send the final error over the stream
-                    let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                        "failed to create a new stream with error \"{}\"\
+                    let _ = next_elem_tx.unbounded_send(Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        anyhow!(
+                            "failed to create a new stream with error \"{}\"\
                          after previous stream broke with \"{}\"",
-                        err_new_stream, stream_io_error
-                    ))));
+                            err_new_stream,
+                            stream_io_error
+                        ),
+                    )));
                     break;
                 }
             }
@@ -610,10 +619,10 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
 ///
 /// If it finished [Ok] will be returned otherwise an [Err] containing
 /// the bytes read and the [IoError].
-async fn try_consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
+async fn try_consume_stream<St: Stream<Item = Result<Bytes, io::Error>>>(
     stream: St,
-    next_elem_tx: &mpsc::UnboundedSender<Result<Bytes, IoError>>,
-) -> Result<(), (IoError, u64)> {
+    next_elem_tx: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+) -> Result<(), (io::Error, u64)> {
     let mut stream = Box::pin(stream);
 
     let mut bytes_read = 0;

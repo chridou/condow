@@ -367,8 +367,9 @@ mod in_memory {
 
 pub mod failing_client_simulator {
     //! Simulate failing requests and streams
-    use std::{fmt::Display, marker::PhantomData, sync::Arc, vec};
+    use std::{fmt::Display, io, marker::PhantomData, sync::Arc, vec};
 
+    use anyhow::anyhow;
     use bytes::Bytes;
     use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
     use tracing::trace;
@@ -376,7 +377,7 @@ pub mod failing_client_simulator {
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
         config::Config,
-        errors::{CondowError, IoError},
+        errors::CondowError,
         streams::{BytesHint, BytesStream},
         Condow, InclusiveRange,
     };
@@ -894,7 +895,7 @@ pub mod failing_client_simulator {
     }
 
     impl Stream for BytesStreamWithError {
-        type Item = Result<Bytes, IoError>;
+        type Item = Result<Bytes, io::Error>;
 
         fn poll_next(
             mut self: std::pin::Pin<&mut Self>,
@@ -903,7 +904,10 @@ pub mod failing_client_simulator {
             if self.next == self.end_excl || self.chunk_size == 0 {
                 if let Some(error_action) = self.error.take() {
                     match error_action {
-                        ErrorAction::Err(msg) => return task::Poll::Ready(Some(Err(IoError(msg)))),
+                        ErrorAction::Err(msg) => {
+                            let err = io::Error::new(io::ErrorKind::Other, anyhow!("{msg}"));
+                            return task::Poll::Ready(Some(Err(err)));
+                        }
                         ErrorAction::Panic(msg) => panic!("{}", msg),
                     }
                 } else {

@@ -26,7 +26,7 @@ fn check_error_kinds() {
 
 mod retry_download {
     use std::{
-        fmt,
+        fmt, io,
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -41,7 +41,7 @@ mod retry_download {
             failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, IgnoreLocation,
         },
         config::RetryConfig,
-        errors::{CondowError, IoError},
+        errors::CondowError,
         probe::Probe,
         retry::{
             retry_download,
@@ -633,7 +633,7 @@ mod retry_download {
             fn stream_resume_attempt(
                 &self,
                 _location: &dyn fmt::Display,
-                _error: &IoError,
+                _error: &io::Error,
                 _orig_range: InclusiveRange,
                 _remaining_range: InclusiveRange,
             ) {
@@ -683,10 +683,13 @@ mod try_consume_stream {
     // which returns wheter the stream broke or not by signaling `Ok` or `Err`.
     // The result will contain the number of bytes read in both cases.
 
+    use std::io;
+
+    use anyhow::anyhow;
     use bytes::Bytes;
     use futures::{channel::mpsc, stream, StreamExt};
 
-    use crate::{errors::IoError, streams::BytesStream};
+    use crate::streams::BytesStream;
 
     #[tokio::test]
     async fn empty_ok() {
@@ -758,7 +761,7 @@ mod try_consume_stream {
                 return Ok(Bytes::from(bytes));
             }
 
-            Err(IoError("bang!".to_string()))
+            Err(io::Error::new(io::ErrorKind::Other, anyhow!("bang!")))
         });
 
         let stream = stream::iter(items).boxed() as BytesStream;
@@ -795,7 +798,7 @@ mod loop_retry_complete_stream {
     //! Tests for the function `loop_retry_complete_stream`
 
     use std::{
-        fmt,
+        fmt, io,
         ops::RangeInclusive,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -804,6 +807,7 @@ mod loop_retry_complete_stream {
         time::Duration,
     };
 
+    use anyhow::anyhow;
     use futures::{channel::mpsc, StreamExt};
 
     use crate::{
@@ -811,7 +815,7 @@ mod loop_retry_complete_stream {
             failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
         config::RetryConfig,
-        errors::{CondowError, IoError},
+        errors::CondowError,
         probe::Probe,
         retry::{
             loop_retry_complete_stream,
@@ -1107,7 +1111,7 @@ mod loop_retry_complete_stream {
             fn stream_resume_attempt(
                 &self,
                 _location: &dyn fmt::Display,
-                _error: &IoError,
+                _error: &io::Error,
                 _orig_range: InclusiveRange,
                 _remaining_range: InclusiveRange,
             ) {

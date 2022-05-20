@@ -109,12 +109,9 @@
 //! assert_eq!(bytes_received.load(Ordering::SeqCst), 17);
 //! # }
 //! ```
-use std::{fmt, time::Duration};
+use std::{fmt, io, time::Duration};
 
-use crate::{
-    errors::{CondowError, IoError},
-    InclusiveRange,
-};
+use crate::{errors::CondowError, InclusiveRange};
 
 pub use simple_reporter::*;
 
@@ -164,7 +161,7 @@ pub trait Probe: Send + Sync + 'static {
     fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
-        error: &IoError,
+        error: &io::Error,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {
@@ -221,7 +218,7 @@ mod simple_reporter {
     //! Simple reporting with (mostly) counters
 
     use std::{
-        fmt,
+        fmt, io,
         sync::{
             atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
             Arc, Mutex,
@@ -229,10 +226,7 @@ mod simple_reporter {
         time::{Duration, Instant},
     };
 
-    use crate::{
-        errors::{CondowError, IoError},
-        InclusiveRange,
-    };
+    use crate::{errors::CondowError, InclusiveRange};
 
     use super::Probe;
 
@@ -378,7 +372,7 @@ mod simple_reporter {
         fn stream_resume_attempt(
             &self,
             _location: &dyn fmt::Display,
-            _error: &IoError,
+            _error: &io::Error,
             _orig_range: InclusiveRange,
             _remaining_range: InclusiveRange,
         ) {

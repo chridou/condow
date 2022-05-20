@@ -386,7 +386,12 @@ mod chunk_stream_ordered {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let bytes_read = downloader.blob().download_chunks_ordered().await?.count_bytes().await?;
+            let bytes_read = downloader
+                .blob()
+                .download_chunks_ordered()
+                .await?
+                .count_bytes()
+                .await?;
 
             measurements.measured(start, Instant::now(), scenario.blob_size);
 
@@ -402,12 +407,11 @@ mod chunk_stream_ordered {
 mod raw {
     //! Manual implementation with almost no overhead to compare against
 
-    use std::time::Instant;
+    use std::{io, time::Instant};
 
     use bytes::Bytes;
     use condow_core::{
         condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
-        errors::IoError,
         probe::Probe,
         streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
     };
@@ -513,7 +517,7 @@ mod raw {
         probe: P,
     ) -> impl Stream<Item = ChunkStreamItem> + Send + 'static
     where
-        St: Stream<Item = Result<Bytes, IoError>> + Send + 'static,
+        St: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
         P: Probe,
     {
         let mut chunk_index = 0;

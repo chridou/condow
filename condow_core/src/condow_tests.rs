@@ -165,8 +165,12 @@ mod range {
                         for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream =
-                                condow.blob().range(range).download_chunks_unordered().await.unwrap();
+                            let result_stream = condow
+                                .blob()
+                                .range(range)
+                                .download_chunks_unordered()
+                                .await
+                                .unwrap();
 
                             let result = result_stream.into_vec().await.unwrap();
 

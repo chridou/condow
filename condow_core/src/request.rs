@@ -11,7 +11,7 @@ use futures::{
 
 use crate::{
     condow_client::IgnoreLocation, config::Config, errors::CondowError, probe::Probe,
-    reader::BytesAsyncReader, ChunkStream, DownloadRange, OrderedChunkStream, streams::BytesStream,
+    reader::BytesAsyncReader, streams::BytesStream, ChunkStream, DownloadRange, OrderedChunkStream,
 };
 
 /// A function which downloads from the given location and the given [Params].
@@ -119,7 +119,7 @@ impl RequestNoLocation<IgnoreLocation> {
     /// Download chunks of bytes
     ///
     /// Provided mainly for testing.
-    /// 
+    ///
     pub async fn download(self) -> Result<BytesStream, CondowError> {
         self.at(IgnoreLocation).download().await
     }
@@ -216,8 +216,8 @@ impl<L> Request<L> {
     /// Download chunks of bytes
     pub async fn download(self) -> Result<BytesStream, CondowError> {
         todo!()
-     }
- 
+    }
+
     /// Download as an [OrderedChunkStream]
     pub async fn download_chunks_ordered(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::from_chunk_stream(self.download_chunks_unordered().await?)

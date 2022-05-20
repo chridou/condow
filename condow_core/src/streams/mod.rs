@@ -1,7 +1,7 @@
 //! Stream implememtations used by Condow
-use std::fmt;
+use std::{fmt, io};
 
-use crate::errors::{CondowError, IoError};
+use crate::errors::CondowError;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 
@@ -12,7 +12,7 @@ pub use chunk_stream::*;
 pub use ordered_chunk_stream::*;
 
 /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
-pub type BytesStream = BoxStream<'static, Result<Bytes, IoError>>;
+pub type BytesStream = BoxStream<'static, Result<Bytes, io::Error>>;
 
 /// The type of the elements returned by a [ChunkStream]
 pub type ChunkStreamItem = Result<Chunk, CondowError>;

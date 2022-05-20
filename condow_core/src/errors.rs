@@ -135,22 +135,6 @@ impl From<std::io::Error> for CondowError {
     }
 }
 
-impl From<IoError> for CondowError {
-    fn from(io: IoError) -> Self {
-        CondowError::new_io(io.0)
-    }
-}
-
-#[derive(Error, Debug)]
-#[error("io error: {0}")]
-pub struct IoError(pub String);
-
-impl From<std::io::Error> for IoError {
-    fn from(io: std::io::Error) -> Self {
-        IoError(io.to_string())
-    }
-}
-
 /// Utility function to convert an error HTTP response to a CondowError.
 pub fn http_status_to_error(
     status_code: u16,
