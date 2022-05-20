@@ -109,7 +109,7 @@ mod test {
 
         let bytes_downloaded = condow
             .blob()
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -127,7 +127,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(0..)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -146,7 +146,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(range)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -163,7 +163,7 @@ mod test {
 
         let bytes_downloaded = condow
             .blob()
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -181,7 +181,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(0..)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -200,7 +200,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(range)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()

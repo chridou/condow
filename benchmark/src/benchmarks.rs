@@ -276,7 +276,7 @@ mod chunk_stream_unordered {
 
             let bytes_read = downloader
                 .blob()
-                .download_chunks()
+                .download_chunks_unordered()
                 .await?
                 .count_bytes()
                 .await?;
@@ -306,7 +306,7 @@ mod chunk_stream_unordered {
 
             let bytes_read = downloader
                 .blob()
-                .download_chunks()
+                .download_chunks_unordered()
                 .await?
                 .count_bytes()
                 .await?;
@@ -338,7 +338,7 @@ mod chunk_stream_unordered {
             let bytes_read = downloader
                 .blob()
                 .reconfigure(|c| c.ensure_active_pull(true))
-                .download_chunks()
+                .download_chunks_unordered()
                 .await?
                 .count_bytes()
                 .await?;
@@ -386,7 +386,7 @@ mod chunk_stream_ordered {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let bytes_read = downloader.blob().download().await?.count_bytes().await?;
+            let bytes_read = downloader.blob().download_chunks_ordered().await?.count_bytes().await?;
 
             measurements.measured(start, Instant::now(), scenario.blob_size);
 
@@ -408,6 +408,7 @@ mod raw {
     use condow_core::{
         condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
         errors::IoError,
+        probe::Probe,
         streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
     };
     use futures::{future, Stream, TryStreamExt};
@@ -449,7 +450,7 @@ mod raw {
                 .download(IgnoreLocation, DownloadSpec::Complete)
                 .await?;
 
-            let chunks_stream = make_chunks_stream(bytes_stream, scenario);
+            let chunks_stream = make_chunks_stream(bytes_stream, scenario, ());
 
             let bytes_read = chunks_stream
                 .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
@@ -490,7 +491,7 @@ mod raw {
                 .download(IgnoreLocation, DownloadSpec::Complete)
                 .await?;
 
-            let chunks_stream = make_chunks_stream(bytes_stream, scenario);
+            let chunks_stream = make_chunks_stream(bytes_stream, scenario, ());
             let ordered_stream =
                 OrderedChunkStream::new(chunks_stream, BytesHint::new_exact(scenario.blob_size));
 
@@ -506,10 +507,15 @@ mod raw {
         Ok(())
     }
 
-    fn make_chunks_stream<St: Stream<Item = Result<Bytes, IoError>> + Send + 'static>(
+    fn make_chunks_stream<St, P>(
         bytes_stream: St,
         scenario: &Scenario,
-    ) -> impl Stream<Item = ChunkStreamItem> + Send + 'static {
+        probe: P,
+    ) -> impl Stream<Item = ChunkStreamItem> + Send + 'static
+    where
+        St: Stream<Item = Result<Bytes, IoError>> + Send + 'static,
+        P: Probe,
+    {
         let mut chunk_index = 0;
         let mut range_offset = 0;
         let mut blob_offset = 0;
@@ -527,6 +533,9 @@ mod raw {
                     bytes,
                     bytes_left,
                 };
+
+                probe.chunk_received(0, chunk_index, bytes_len as usize);
+
                 chunk_index += 1;
                 blob_offset += bytes_len;
                 range_offset += bytes_len;

@@ -87,7 +87,7 @@ async fn run() -> Result<(), Error> {
         .condow(config)
         .unwrap();
 
-    let stream = condow.blob().range(200..300).download().await?;
+    let stream = condow.blob().range(200..300).download_chunks_ordered().await?;
     let _downloaded = stream.into_vec().await?;
 
     println!("Download finished (not from tracing...)");

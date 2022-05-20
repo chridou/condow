@@ -20,7 +20,7 @@ async fn download_full() {
             .blob()
             .at(get_test_file_path())
             .range(..)
-            .download()
+            .download_chunks_ordered()
             .await?
             .into_vec()
             .await?;
@@ -45,7 +45,7 @@ async fn download_to() {
         .blob()
         .at(get_test_file_path())
         .range(..5)
-        .download()
+        .download_chunks_ordered()
         .await
         .unwrap()
         .into_vec()
@@ -63,7 +63,7 @@ async fn download_to_end() {
         .blob()
         .at(get_test_file_path())
         .range(..=26)
-        .download()
+        .download_chunks_ordered()
         .await
         .unwrap()
         .into_vec()
@@ -81,7 +81,7 @@ async fn download_from() {
         .blob()
         .at(get_test_file_path())
         .range(10..)
-        .download()
+        .download_chunks_ordered()
         .await
         .unwrap()
         .into_vec()
@@ -99,7 +99,7 @@ async fn download_from_to() {
         .blob()
         .at(get_test_file_path())
         .range(1..11)
-        .download()
+        .download_chunks_ordered()
         .await
         .unwrap()
         .into_vec()

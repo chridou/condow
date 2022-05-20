@@ -35,22 +35,23 @@ pub(crate) fn download_sequentially<C: CondowClient, P: Probe + Clone>(
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     probe.download_started();
-    let bytes_hint = part_requests.bytes_hint();
-    let poll_parts = DownloadPartsSeq::from_client(
-        client,
-        location,
-        part_requests,
-        probe.clone(),
-        config.log_download_messages_as_debug,
-        download_span_guard,
-    );
 
-    if *config.ensure_active_pull {
-        let active_stream = active_pull(poll_parts, probe, config);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
-    } else {
-        ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)
-    }
+     let bytes_hint = part_requests.bytes_hint();
+        let poll_parts = DownloadPartsSeq::from_client(
+            client,
+            location,
+            part_requests,
+            probe.clone(),
+            config.log_download_messages_as_debug,
+            download_span_guard,
+        );
+
+        if *config.ensure_active_pull {
+            let active_stream = active_pull(poll_parts, probe, config);
+            ChunkStream::from_receiver(active_stream, bytes_hint)
+        } else {
+            ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)
+        }
 }
 
 /// Internal state of the stream.

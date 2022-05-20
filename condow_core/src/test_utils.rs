@@ -547,7 +547,7 @@ impl ReaderAdapter for TestDownloader {
     ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
         <TestDownloader as Downloads>::blob(self)
             .range(range)
-            .download()
+            .download_chunks_ordered()
             .boxed()
     }
 }

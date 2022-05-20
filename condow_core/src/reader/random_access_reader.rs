@@ -117,7 +117,7 @@ where
             .range(range)
             .at(self.location.clone())
             .reconfigure(|cfg| cfg.always_get_size(false)) // The reader has the size already
-            .download()
+            .download_chunks_ordered()
             .boxed()
     }
 }
