@@ -1,7 +1,7 @@
 //! Streams for handling downloads
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt, io};
 
 use tracing::{debug, info_span, Instrument, Span};
 
@@ -334,7 +334,7 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     fn stream_resume_attempt(
         &self,
         location: &dyn fmt::Display,
-        error: &io::Error,
+        error: &CondowError,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {

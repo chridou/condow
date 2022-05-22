@@ -1,7 +1,6 @@
-use std::{io, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use anyhow::{anyhow, bail, Error as AnyError};
-use bytes::Bytes;
+use anyhow::{bail, Error as AnyError};
 use futures::{channel::mpsc, Future, Stream, StreamExt};
 use tracing::{debug, warn, Instrument, Span};
 
@@ -9,7 +8,7 @@ use crate::{
     condow_client::{CondowClient, DownloadSpec},
     errors::CondowError,
     probe::Probe,
-    streams::{BytesHint, BytesStream},
+    streams::{BytesStream, BytesStreamItem},
     InclusiveRange,
 };
 
@@ -372,7 +371,7 @@ where
         location: C::Location,
         spec: DownloadSpec,
         probe: P,
-    ) -> impl Future<Output = Result<(BytesStream, BytesHint), CondowError>> + Send + 'static {
+    ) -> impl Future<Output = Result<BytesStream, CondowError>> + Send + 'static {
         debug!("retry client - downloading part");
 
         let inner = Arc::clone(&self.inner);
@@ -448,19 +447,19 @@ async fn retry_download<C, P: Probe + Clone>(
     spec: DownloadSpec,
     config: &RetryConfig,
     probe: P,
-) -> Result<(BytesStream, BytesHint), CondowError>
+) -> Result<BytesStream, CondowError>
 where
     C: CondowClient,
 {
     // The initial stream for the whole download
-    let (stream, bytes_hint) =
-        retry_download_get_stream(client, location.clone(), spec, config, &probe).await?;
+    let stream = retry_download_get_stream(client, location.clone(), spec, config, &probe).await?;
+    let bytes_hint = stream.bytes_hint();
 
     // Only if we have an length we can try to continue broken streams
     // because we can only download whole BLOBs or ranges. We use a range for
     // the complete BLOB to be able to determine the remainder after a stream broke.
     // If the mximum number to resume is 0 we also do not want to resume on broken streams.
-    let blob_len_for_resume = bytes_hint.exact().and_then(|blob_len| {
+    let blob_len_for_resume = stream.bytes_hint().exact().and_then(|blob_len| {
         if config.max_stream_resume_attempts.into_inner() > 0 {
             Some(blob_len)
         } else {
@@ -472,7 +471,7 @@ where
         InclusiveRange(spec.start(), spec.start() + blob_len_for_resume - 1) // original range has at least len 1
     } else {
         // We are done because we will not do any resume attempts
-        return Ok((stream, bytes_hint));
+        return Ok(stream);
     };
 
     // The returned stream is a channel so that we can continue easily after a stream broke
@@ -494,7 +493,10 @@ where
         .instrument(span),
     );
 
-    Ok((Box::pin(output_stream_rx), bytes_hint))
+    Ok(BytesStream::new_futures_receiver(
+        output_stream_rx,
+        bytes_hint,
+    ))
 }
 
 /// Used to check whether [loop_retry_complete_stream] exited with a panic
@@ -507,7 +509,7 @@ where
 /// [loop_retry_complete_stream] otherwise a panic is assumed.
 struct RetryLoopPanicGuard<P: Probe + Clone> {
     completed_without_panic: bool,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    next_elem_tx: mpsc::UnboundedSender<BytesStreamItem>,
     probe: P,
 }
 
@@ -515,10 +517,9 @@ impl<P: Probe + Clone> Drop for RetryLoopPanicGuard<P> {
     fn drop(&mut self) {
         if !self.completed_without_panic {
             self.probe.panic_detected("panicked while retrying");
-            let _ = self.next_elem_tx.unbounded_send(Err(io::Error::new(
-                io::ErrorKind::Other,
-                anyhow!("panicked while retrying"),
-            )));
+            let _ = self
+                .next_elem_tx
+                .unbounded_send(Err(CondowError::new_other("panicked while retrying")));
         }
     }
 }
@@ -532,7 +533,7 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
     location: C::Location,
     original_range: InclusiveRange,
     client: C,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, io::Error>>,
+    next_elem_tx: mpsc::UnboundedSender<BytesStreamItem>,
     config: RetryConfig,
     probe: P,
 ) where
@@ -562,15 +563,11 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
             }
 
             if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
-                let _ = next_elem_tx.unbounded_send(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    anyhow!(
-                        "failed to make progress on the stream {} times \
+                let _ = next_elem_tx.unbounded_send(Err(CondowError::new_other(format!(
+                    "failed to make progress on the stream {} times \
                     with the last error being \"{}\"",
-                        n_times_made_no_progress,
-                        stream_io_error
-                    ),
-                )));
+                    n_times_made_no_progress, stream_io_error
+                ))));
                 break;
             }
 
@@ -588,20 +585,16 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
             match retry_download_get_stream(&client, location.clone(), new_spec, &config, &probe)
                 .await
             {
-                Ok((new_stream, _)) => {
+                Ok(new_stream) => {
                     stream = new_stream;
                 }
                 Err(err_new_stream) => {
                     // we must send the final error over the stream
-                    let _ = next_elem_tx.unbounded_send(Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        anyhow!(
-                            "failed to create a new stream with error \"{}\"\
+                    let _ = next_elem_tx.unbounded_send(Err(CondowError::new_other(format!(
+                        "failed to create a new stream with error \"{}\"\
                          after previous stream broke with \"{}\"",
-                            err_new_stream,
-                            stream_io_error
-                        ),
-                    )));
+                        err_new_stream, stream_io_error
+                    ))));
                     break;
                 }
             }
@@ -619,10 +612,10 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
 ///
 /// If it finished [Ok] will be returned otherwise an [Err] containing
 /// the bytes read and the [IoError].
-async fn try_consume_stream<St: Stream<Item = Result<Bytes, io::Error>>>(
+async fn try_consume_stream<St: Stream<Item = BytesStreamItem>>(
     stream: St,
-    next_elem_tx: &mpsc::UnboundedSender<Result<Bytes, io::Error>>,
-) -> Result<(), (io::Error, u64)> {
+    next_elem_tx: &mpsc::UnboundedSender<BytesStreamItem>,
+) -> Result<(), (CondowError, u64)> {
     let mut stream = Box::pin(stream);
 
     let mut bytes_read = 0;
@@ -651,7 +644,7 @@ async fn retry_download_get_stream<C, P: Probe + Clone>(
     spec: DownloadSpec,
     config: &RetryConfig,
     probe: &P,
-) -> Result<(BytesStream, BytesHint), CondowError>
+) -> Result<BytesStream, CondowError>
 where
     C: CondowClient,
 {

@@ -25,14 +25,13 @@ use anyhow::Error as AnyError;
 use bytes::Bytes;
 use condow_core::config::Config;
 use futures::future::BoxFuture;
-use futures::StreamExt;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use condow_core::{
     condow_client::{CondowClient, DownloadSpec},
     errors::CondowError,
-    streams::{BytesHint, BytesStream},
+    streams::BytesStream,
 };
 
 pub use condow_core::*;
@@ -65,7 +64,7 @@ impl CondowClient for FsClient {
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let f = async move {
             let bytes = match spec {
                 DownloadSpec::Complete => fs::read(location.as_str()).await?,
@@ -98,11 +97,7 @@ impl CondowClient for FsClient {
 
             let bytes = Bytes::from(bytes);
 
-            let bytes_hint = BytesHint::new_exact(bytes.len() as u64);
-
-            let stream = futures::stream::once(futures::future::ready(Ok(bytes)));
-
-            Ok((stream.boxed(), bytes_hint))
+            Ok(BytesStream::once_ok(bytes))
         };
 
         Box::pin(f)

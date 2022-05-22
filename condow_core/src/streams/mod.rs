@@ -1,18 +1,16 @@
 //! Stream implememtations used by Condow
-use std::{fmt, io};
+use std::fmt;
 
 use crate::errors::CondowError;
 use bytes::Bytes;
-use futures::stream::BoxStream;
 
+mod bytes_stream;
 mod chunk_stream;
 mod ordered_chunk_stream;
 
+pub use bytes_stream::{BytesStream, BytesStreamItem};
 pub use chunk_stream::*;
 pub use ordered_chunk_stream::*;
-
-/// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
-pub type BytesStream = BoxStream<'static, Result<Bytes, io::Error>>;
 
 /// The type of the elements returned by a [ChunkStream]
 pub type ChunkStreamItem = Result<Chunk, CondowError>;
@@ -141,6 +139,7 @@ impl BytesHint {
     }
 
     /// Bytes have been send and `by` less will be received from now on
+    #[inline]
     pub fn reduce_by(&mut self, by: u64) {
         if by == 0 {
             return;

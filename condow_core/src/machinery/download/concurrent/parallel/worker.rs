@@ -75,7 +75,7 @@ impl SequentialDownloader {
                         .instrument(span.clone())
                         .await
                     {
-                        Ok((bytes_stream, _total_bytes)) => {
+                        Ok(bytes_stream) => {
                             if consume_and_dispatch_bytes(bytes_stream, &mut context, range_request)
                                 .instrument(span.clone())
                                 .await

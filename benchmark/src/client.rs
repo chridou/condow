@@ -48,7 +48,7 @@ impl CondowClient for BenchmarkClient {
         &self,
         _location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let bytes_to_send = match spec {
             DownloadSpec::Complete => self.size,
             DownloadSpec::Range(r) => {
@@ -90,9 +90,10 @@ impl CondowClient for BenchmarkClient {
 
             chunk
         });
-        let stream = Box::pin(stream).boxed();
+        //       let stream = stream::iter(iter);
+        let stream = BytesStream::new(stream, BytesHint::new_exact(bytes_to_send));
 
-        futures::future::ok((stream, BytesHint::new_exact(bytes_to_send))).boxed()
+        futures::future::ok(stream).boxed()
     }
 }
 

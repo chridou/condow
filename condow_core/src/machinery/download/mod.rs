@@ -9,7 +9,6 @@ use crate::{
     config::{Config, LogDownloadMessagesAsDebug},
     errors::CondowError,
     probe::Probe,
-    streams::ChunkStreamItem,
 };
 
 pub(crate) use concurrent::download_concurrently;
@@ -27,13 +26,14 @@ mod sequential;
 ///
 /// This functions emits an error over the receiber in case a panic occurred whie
 /// polling the input stream.
-pub fn active_pull<St, P: Probe>(
+pub fn active_pull<St, T, P: Probe>(
     mut input: St,
     probe: P,
     config: Config,
-) -> mpsc::UnboundedReceiver<St::Item>
+) -> mpsc::UnboundedReceiver<Result<T, CondowError>>
 where
-    St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
+    St: Stream<Item = Result<T, CondowError>> + Send + 'static + Unpin,
+    T: Send + 'static,
 {
     let (sender, rx) = mpsc::unbounded_channel();
 
@@ -89,7 +89,7 @@ pub mod part_chunks_stream {
         machinery::part_request::PartRequest,
         probe::Probe,
         retry::ClientRetryWrapper,
-        streams::{BytesHint, BytesStream, Chunk, ChunkStreamItem},
+        streams::{BytesStream, Chunk, ChunkStreamItem},
         InclusiveRange,
     };
 
@@ -137,10 +137,8 @@ pub mod part_chunks_stream {
         pub(crate) fn new(
             get_part_stream: &dyn Fn(
                 InclusiveRange,
-            ) -> BoxFuture<
-                'static,
-                Result<(BytesStream, BytesHint), CondowError>,
-            >,
+            )
+                -> BoxFuture<'static, Result<BytesStream, CondowError>>,
             part_request: PartRequest,
             probe: P,
             parent: &Span,
@@ -175,7 +173,7 @@ pub mod part_chunks_stream {
     enum State {
         /// A future to yield a [BytesStream] was created. It needs to be polled
         /// until it retuns the stream.
-        GettingStream(BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>),
+        GettingStream(BoxFuture<'static, Result<BytesStream, CondowError>>),
         Streaming(StreamingPart),
         /// Nothing to do anymore. Always return `None`.
         Finished,
@@ -205,7 +203,7 @@ pub mod part_chunks_stream {
                         *this.state = State::GettingStream(fut);
                         Poll::Pending
                     } // Nothing there. Poll again later. Future will wake us up.
-                    Poll::Ready(Ok((bytes_stream, _bytes_hint))) => {
+                    Poll::Ready(Ok(bytes_stream)) => {
                         let part_state = StreamingPart {
                             bytes_stream,
                             chunk_index: 0,

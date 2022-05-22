@@ -20,8 +20,6 @@
 //! # };
 //! # ()
 //! ```
-
-use std::io;
 use std::str::FromStr;
 
 use anyhow::Error as AnyError;
@@ -80,7 +78,7 @@ impl CondowClient for HttpClient {
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         dbg!(spec);
         let client = self.client.clone();
         Box::pin(async move {
@@ -103,9 +101,11 @@ impl CondowClient for HttpClient {
                 } else {
                     BytesHint::new_exact(parse_content_length(res.headers())?)
                 };
-                let stream: BytesStream =
-                    Box::pin(res.bytes_stream().map_err(reqwest_error_to_io_error));
-                Ok((stream, hint))
+                let stream = res.bytes_stream().map_err(reqwest_error_to_condow_error);
+
+                let stream = BytesStream::new(stream, hint);
+
+                Ok(stream)
             } else {
                 Err(http_status_to_error(
                     status.as_u16(),
@@ -136,10 +136,13 @@ fn header_as_str<'a>(headers: &'a HeaderMap, header: &HeaderName) -> Result<&'a 
 }
 
 fn reqwest_error_to_condow_error(err: reqwest::Error) -> CondowError {
-    CondowError::new_io("send HTTP request failed").with_source(err)
-}
-
-fn reqwest_error_to_io_error(err: reqwest::Error) -> io::Error {
-    // TODO: map more accurate
-    io::Error::new(io::ErrorKind::Other, err)
+    if err.is_connect() {
+        CondowError::new_io("connect failed").with_source(err)
+    } else if err.is_request() {
+        CondowError::new_io("request failed").with_source(err)
+    } else if err.is_timeout() {
+        CondowError::new_io("send HTTP request failed").with_source(err)
+    } else {
+        CondowError::new_other("reqwest error").with_source(err)
+    }
 }

@@ -17,7 +17,7 @@ use crate::{
     },
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesHint, BytesStream, ChunkStream, ChunkStreamItem},
+    streams::{BytesStream, ChunkStream, ChunkStreamItem},
     InclusiveRange,
 };
 
@@ -67,7 +67,7 @@ pin_project! {
     ///
     /// Parts are downloaded sequentially
     struct DownloadPartsSeq<P: Probe> {
-        get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> + Send + 'static>,
+        get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>> + Send + 'static>,
         part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
         state: State<P>,
         probe: P,
@@ -91,7 +91,7 @@ where
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
-        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     {

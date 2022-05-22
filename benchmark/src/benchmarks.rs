@@ -407,13 +407,12 @@ mod chunk_stream_ordered {
 mod raw {
     //! Manual implementation with almost no overhead to compare against
 
-    use std::{io, time::Instant};
+    use std::time::Instant;
 
-    use bytes::Bytes;
     use condow_core::{
         condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
         probe::Probe,
-        streams::{BytesHint, Chunk, ChunkStreamItem, OrderedChunkStream},
+        streams::{BytesHint, BytesStreamItem, Chunk, ChunkStreamItem, OrderedChunkStream},
     };
     use futures::{future, Stream, TryStreamExt};
 
@@ -450,7 +449,7 @@ mod raw {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let (bytes_stream, _) = client
+            let bytes_stream = client
                 .download(IgnoreLocation, DownloadSpec::Complete)
                 .await?;
 
@@ -491,7 +490,7 @@ mod raw {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let (bytes_stream, _) = client
+            let bytes_stream = client
                 .download(IgnoreLocation, DownloadSpec::Complete)
                 .await?;
 
@@ -517,7 +516,7 @@ mod raw {
         probe: P,
     ) -> impl Stream<Item = ChunkStreamItem> + Send + 'static
     where
-        St: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
+        St: Stream<Item = BytesStreamItem> + Send + 'static,
         P: Probe,
     {
         let mut chunk_index = 0;
@@ -587,7 +586,7 @@ mod condow_client {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let (bytes_stream, _size_hint) = client
+            let bytes_stream = client
                 .download(IgnoreLocation, DownloadSpec::Complete)
                 .await?;
 

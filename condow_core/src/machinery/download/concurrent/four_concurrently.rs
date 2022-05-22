@@ -14,7 +14,7 @@ use crate::{
     machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesHint, BytesStream, ChunkStreamItem},
+    streams::{BytesStream, ChunkStreamItem},
     InclusiveRange,
 };
 
@@ -35,7 +35,7 @@ pin_project! {
 
 struct Baggage<P: Probe> {
     get_part_stream: Box<
-        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     >,
@@ -82,7 +82,7 @@ impl<P: Probe + Clone> FourPartsConcurrently<P> {
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
-        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     {

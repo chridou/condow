@@ -26,7 +26,7 @@ fn check_error_kinds() {
 
 mod retry_download {
     use std::{
-        fmt, io,
+        fmt,
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -633,7 +633,7 @@ mod retry_download {
             fn stream_resume_attempt(
                 &self,
                 _location: &dyn fmt::Display,
-                _error: &io::Error,
+                _error: &CondowError,
                 _orig_range: InclusiveRange,
                 _remaining_range: InclusiveRange,
             ) {
@@ -644,7 +644,7 @@ mod retry_download {
 
         let probe = TestProbe::default();
 
-        let (mut stream, _bytes_hint) = retry_download(
+        let mut stream = retry_download(
             &client,
             IgnoreLocation,
             download_spec.into(),
@@ -683,13 +683,13 @@ mod try_consume_stream {
     // which returns wheter the stream broke or not by signaling `Ok` or `Err`.
     // The result will contain the number of bytes read in both cases.
 
-    use std::io;
-
-    use anyhow::anyhow;
     use bytes::Bytes;
     use futures::{channel::mpsc, stream, StreamExt};
 
-    use crate::streams::BytesStream;
+    use crate::{
+        errors::CondowError,
+        streams::{BytesHint, BytesStream},
+    };
 
     #[tokio::test]
     async fn empty_ok() {
@@ -761,10 +761,10 @@ mod try_consume_stream {
                 return Ok(Bytes::from(bytes));
             }
 
-            Err(io::Error::new(io::ErrorKind::Other, anyhow!("bang!")))
+            Err(CondowError::new_io("bang!"))
         });
 
-        let stream = stream::iter(items).boxed() as BytesStream;
+        let stream = BytesStream::new(stream::iter(items), BytesHint::new_no_hint());
 
         let (next_elem_tx, chunk_receiver) = mpsc::unbounded();
 
@@ -798,7 +798,7 @@ mod loop_retry_complete_stream {
     //! Tests for the function `loop_retry_complete_stream`
 
     use std::{
-        fmt, io,
+        fmt,
         ops::RangeInclusive,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -807,7 +807,6 @@ mod loop_retry_complete_stream {
         time::Duration,
     };
 
-    use anyhow::anyhow;
     use futures::{channel::mpsc, StreamExt};
 
     use crate::{
@@ -1111,7 +1110,7 @@ mod loop_retry_complete_stream {
             fn stream_resume_attempt(
                 &self,
                 _location: &dyn fmt::Display,
-                _error: &io::Error,
+                _error: &CondowError,
                 _orig_range: InclusiveRange,
                 _remaining_range: InclusiveRange,
             ) {
@@ -1125,7 +1124,7 @@ mod loop_retry_complete_stream {
         let (next_elem_tx, mut rx) = mpsc::unbounded();
 
         let original_range: InclusiveRange = range.into();
-        let (initial_stream, _) = client
+        let initial_stream = client
             .download(IgnoreLocation, original_range.into())
             .await
             .unwrap();
@@ -1176,7 +1175,7 @@ mod retry_download_get_stream {
         Mutex,
     };
 
-    use futures::{stream, FutureExt};
+    use futures::FutureExt;
 
     use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
 
@@ -1353,13 +1352,11 @@ mod retry_download_get_stream {
                 &self,
                 _location: Self::Location,
                 _spec: DownloadSpec,
-            ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
-            {
+            ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
                 let mut fails = self.fails_reversed.lock().unwrap();
 
                 if fails.is_empty() {
-                    let stream = Box::pin(stream::empty()) as BytesStream;
-                    futures::future::ready(Ok((stream, BytesHint::new_no_hint()))).boxed()
+                    futures::future::ready(Ok(BytesStream::empty())).boxed()
                 } else {
                     let err = CondowError::from(fails.pop().unwrap());
                     futures::future::ready(Err(err)).boxed()
@@ -1605,8 +1602,7 @@ mod retry_get_size {
                 &self,
                 _location: Self::Location,
                 _spec: DownloadSpec,
-            ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
-            {
+            ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
                 unimplemented!()
             }
         }

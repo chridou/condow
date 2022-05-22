@@ -124,13 +124,7 @@ impl CondowClient for TestCondowClient {
         &self,
         _location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<
-        'static,
-        Result<
-            (crate::streams::BytesStream, crate::streams::BytesHint),
-            crate::errors::CondowError,
-        >,
-    > {
+    ) -> BoxFuture<'static, Result<crate::streams::BytesStream, crate::errors::CondowError>> {
         let should_be_pending = if let Some(module) = &self.pending_on_requests_module {
             module.lock().unwrap().return_pending()
         } else {
@@ -186,12 +180,12 @@ impl CondowClient for TestCondowClient {
 
             let stream: BytesStream = if let Some(pending_module) = me.pending_on_stream_module {
                 let stream_with_pending = Penderizer::new(stream, pending_module.clone());
-                stream_with_pending.boxed()
+                BytesStream::new(stream_with_pending.boxed(), bytes_hint)
             } else {
-                stream.boxed()
+                BytesStream::new(stream.boxed(), bytes_hint)
             };
 
-            Ok((stream, bytes_hint))
+            Ok(stream)
         }
         .boxed()
     }
@@ -212,7 +206,7 @@ async fn test_test_client() {
     use futures::TryStreamExt;
     let client = TestCondowClient::new().max_jitter_ms(5);
 
-    let (bytes_stream, _bytes_hint) = client
+    let bytes_stream = client
         .download(IgnoreLocation, (10..=30).into())
         .await
         .unwrap();

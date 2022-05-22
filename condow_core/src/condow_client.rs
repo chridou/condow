@@ -9,11 +9,7 @@ use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
 
 use futures::future::BoxFuture;
 
-use crate::{
-    errors::CondowError,
-    streams::{BytesHint, BytesStream},
-    InclusiveRange,
-};
+use crate::{errors::CondowError, streams::BytesStream, InclusiveRange};
 
 pub use in_memory::InMemoryClient;
 
@@ -88,7 +84,7 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         &self,
         location: Self::Location,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>;
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>>;
 }
 
 /// A location usable for testing.
@@ -210,7 +206,7 @@ mod in_memory {
             &self,
             _location: Self::Location,
             spec: DownloadSpec,
-        ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+        ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
             trace!("in-memory-client: download");
 
             download(&self.blob.as_slice(), self.chunk_size, spec)
@@ -221,7 +217,7 @@ mod in_memory {
         blob: &[u8],
         chunk_size: usize,
         spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let range = match spec {
             DownloadSpec::Complete => 0..blob.len(),
             DownloadSpec::Range(r) => {
@@ -248,9 +244,9 @@ mod in_memory {
 
         let stream = stream::iter(owned_bytes);
 
-        let stream: BytesStream = Box::pin(stream);
+        let stream = BytesStream::new(stream, bytes_hint);
 
-        let f = future::ready(Ok((stream, bytes_hint)));
+        let f = future::ready(Ok(stream));
 
         Box::pin(f)
     }
@@ -292,8 +288,9 @@ mod in_memory {
             chunk_size: usize,
             spec: DownloadSpec,
         ) -> Result<(Vec<u8>, BytesHint), CondowError> {
-            let (stream, bytes_hint) = super::download(blob, chunk_size, spec).await?;
+            let stream = super::download(blob, chunk_size, spec).await?;
 
+            let bytes_hint = stream.bytes_hint();
             let mut buf = Vec::with_capacity(bytes_hint.lower_bound() as usize);
             pin_mut!(stream);
             while let Some(next) = stream.next().await {
@@ -367,18 +364,16 @@ mod in_memory {
 
 pub mod failing_client_simulator {
     //! Simulate failing requests and streams
-    use std::{fmt::Display, io, marker::PhantomData, sync::Arc, vec};
-
-    use anyhow::anyhow;
     use bytes::Bytes;
-    use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
+    use futures::{future, lock::Mutex, task, FutureExt, Stream};
+    use std::{fmt::Display, marker::PhantomData, sync::Arc, vec};
     use tracing::trace;
 
     use crate::{
         condow_client::{CondowClient, DownloadSpec},
         config::Config,
         errors::CondowError,
-        streams::{BytesHint, BytesStream},
+        streams::{BytesHint, BytesStream, BytesStreamItem},
         Condow, InclusiveRange,
     };
 
@@ -511,8 +506,7 @@ pub mod failing_client_simulator {
             &self,
             _location: Self::Location,
             spec: DownloadSpec,
-        ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
-        {
+        ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
             trace!("failing-client-simulator: download");
             let me = self.clone();
             let range_incl = match spec {
@@ -552,7 +546,7 @@ pub mod failing_client_simulator {
                             error: None,
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                     ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
                         let start = range_incl.start() as usize;
@@ -575,7 +569,7 @@ pub mod failing_client_simulator {
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                     ResponseBehaviour::Error(error) => Err(error),
                     ResponseBehaviour::Panic(msg) => {
@@ -602,7 +596,7 @@ pub mod failing_client_simulator {
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                 }
             }
@@ -895,7 +889,7 @@ pub mod failing_client_simulator {
     }
 
     impl Stream for BytesStreamWithError {
-        type Item = Result<Bytes, io::Error>;
+        type Item = BytesStreamItem;
 
         fn poll_next(
             mut self: std::pin::Pin<&mut Self>,
@@ -905,7 +899,7 @@ pub mod failing_client_simulator {
                 if let Some(error_action) = self.error.take() {
                     match error_action {
                         ErrorAction::Err(msg) => {
-                            let err = io::Error::new(io::ErrorKind::Other, anyhow!("{msg}"));
+                            let err = CondowError::new_io(format!("{msg}"));
                             return task::Poll::Ready(Some(Err(err)));
                         }
                         ErrorAction::Panic(msg) => panic!("{}", msg),
@@ -934,6 +928,8 @@ pub mod failing_client_simulator {
 
     #[cfg(test)]
     mod test_client {
+        use futures::StreamExt;
+
         use crate::errors::CondowErrorKind;
 
         use super::*;
@@ -1244,7 +1240,7 @@ pub mod failing_client_simulator {
             client: &FailingClientSimulator,
             range: R,
         ) -> Result<Result<Vec<u8>, Vec<u8>>, CondowError> {
-            let (mut stream, _bytes_hint) = client.download(IgnoreLocation, range.into()).await?;
+            let mut stream = client.download(IgnoreLocation, range.into()).await?;
 
             let mut received = Vec::new();
 
@@ -1263,6 +1259,8 @@ pub mod failing_client_simulator {
     #[cfg(test)]
     mod test_stream {
         use std::ops::Range;
+
+        use futures::StreamExt;
 
         use super::*;
 
