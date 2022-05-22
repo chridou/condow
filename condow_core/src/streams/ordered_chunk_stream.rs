@@ -10,7 +10,7 @@ use pin_project_lite::pin_project;
 
 use crate::errors::CondowError;
 
-use super::{BytesHint, Chunk, ChunkStream, ChunkStreamItem};
+use super::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem};
 
 pin_project! {
     /// A stream of downloaded chunks ordered
@@ -134,8 +134,13 @@ impl OrderedChunkStream {
         }
     }
 
+    #[deprecated(note = "use into_bytes_stream", since = "0.20.0")]
     pub fn bytes_stream(self) -> impl Stream<Item = Result<Bytes, CondowError>> + Send + 'static {
-        self.map_ok(|chunk| chunk.bytes)
+        self.into_bytes_stream()
+    }
+
+    pub fn into_bytes_stream(self) -> BytesStream {
+        BytesStream::from_chunk_stream(self)
     }
 
     /// Counts the number of bytes downloaded
@@ -300,7 +305,8 @@ mod tests {
             async fn parts_0_chunks_1() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -332,7 +338,8 @@ mod tests {
             async fn parts_0_chunks_2() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -374,7 +381,8 @@ mod tests {
             async fn parts_0_1_chunks_1() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -415,7 +423,8 @@ mod tests {
             async fn parts_0_1_chunks_2_non_interleaved() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -474,7 +483,8 @@ mod tests {
             async fn parts_0_1_chunks_2_interleaved_0101() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -533,7 +543,8 @@ mod tests {
             async fn parts_0_1_chunks_2_interleaved_0110() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -592,7 +603,8 @@ mod tests {
             async fn parts_1_0_chunks_1() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 1,
@@ -633,7 +645,8 @@ mod tests {
             async fn parts_1_0_chunks_2_non_interleaved() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 1,
@@ -692,7 +705,8 @@ mod tests {
             async fn parts_1_0_chunks_2_interleaved_1010() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 1,
@@ -751,7 +765,8 @@ mod tests {
             async fn parts_1_0_chunks_2_interleaved_1001() {
                 let (chunk_stream, tx) =
                     ChunkStream::new_channel_sink_pair(BytesHint::new_no_hint());
-                let mut ordered_chunk_stream = chunk_stream.try_into_part_stream().unwrap();
+                let mut ordered_chunk_stream =
+                    chunk_stream.try_into_ordered_chunk_stream().unwrap();
 
                 let chunk = Chunk {
                     part_index: 1,

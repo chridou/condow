@@ -325,10 +325,10 @@ where
             condow.probe_factory.as_ref().map(|f| f.make(&location)),
         ) {
             (None, None) => {
-                machinery::download_range(condow.client, params.config, location, params.range, ())
+                machinery::download_chunks(condow.client, params.config, location, params.range, ())
                     .boxed()
             }
-            (Some(request_probe), None) => machinery::download_range(
+            (Some(request_probe), None) => machinery::download_chunks(
                 condow.client,
                 params.config,
                 location,
@@ -336,7 +336,7 @@ where
                 ProbeInternal::RequestProbe::<()>(request_probe),
             )
             .boxed(),
-            (None, Some(factory_probe)) => machinery::download_range(
+            (None, Some(factory_probe)) => machinery::download_chunks(
                 condow.client,
                 params.config,
                 location,
@@ -344,7 +344,7 @@ where
                 factory_probe,
             )
             .boxed(),
-            (Some(request_probe), Some(factory_probe)) => machinery::download_range(
+            (Some(request_probe), Some(factory_probe)) => machinery::download_chunks(
                 condow.client,
                 params.config,
                 location,
@@ -432,7 +432,7 @@ where
                 params.probe,
                 condow.probe_factory.as_ref().map(|f| f.make(&location)),
             ) {
-                (None, None) => machinery::download_range(
+                (None, None) => machinery::download_chunks(
                     condow.client,
                     params.config,
                     location,
@@ -440,7 +440,7 @@ where
                     (),
                 )
                 .boxed(),
-                (Some(request_probe), None) => machinery::download_range(
+                (Some(request_probe), None) => machinery::download_chunks(
                     condow.client,
                     params.config,
                     location,
@@ -448,7 +448,7 @@ where
                     ProbeInternal::RequestProbe::<()>(request_probe),
                 )
                 .boxed(),
-                (None, Some(factory_probe)) => machinery::download_range(
+                (None, Some(factory_probe)) => machinery::download_chunks(
                     condow.client,
                     params.config,
                     location,
@@ -456,7 +456,7 @@ where
                     factory_probe,
                 )
                 .boxed(),
-                (Some(request_probe), Some(factory_probe)) => machinery::download_range(
+                (Some(request_probe), Some(factory_probe)) => machinery::download_chunks(
                     condow.client,
                     params.config,
                     location,

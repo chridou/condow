@@ -5,15 +5,11 @@
 use futures::{Stream, StreamExt};
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::{
-    config::{Config, LogDownloadMessagesAsDebug},
-    errors::CondowError,
-    probe::Probe,
-};
+use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
 
-pub(crate) use concurrent::download_concurrently;
+pub(crate) use concurrent::download_chunks_concurrently;
 pub(crate) use part_chunks_stream::PartChunksStream;
-pub(crate) use sequential::download_sequentially;
+pub(crate) use sequential::download_chunks_sequentially;
 
 mod concurrent;
 mod sequential;
@@ -29,7 +25,7 @@ mod sequential;
 pub fn active_pull<St, T, P: Probe>(
     mut input: St,
     probe: P,
-    config: Config,
+    log_dl_msg_dbg: LogDownloadMessagesAsDebug,
 ) -> mpsc::UnboundedReceiver<Result<T, CondowError>>
 where
     St: Stream<Item = Result<T, CondowError>> + Send + 'static + Unpin,
@@ -41,7 +37,7 @@ where
         let panic_guard = PanicGuard {
             sender: sender.clone(),
             probe: Box::new(probe),
-            log_dl_msg_dbg: config.log_download_messages_as_debug,
+            log_dl_msg_dbg,
         };
 
         while let Some(message) = input.next().await {

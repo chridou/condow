@@ -8,12 +8,11 @@ use pin_project_lite::pin_project;
 
 use crate::{
     condow_client::CondowClient,
-    config::{Config, LogDownloadMessagesAsDebug},
+    config::LogDownloadMessagesAsDebug,
     errors::CondowError,
     machinery::{
-        download::PartChunksStream,
-        part_request::{PartRequest, PartRequestIterator},
-        DownloadSpanGuard,
+        configure_download::DownloadConfiguration, download::PartChunksStream,
+        part_request::PartRequest, DownloadSpanGuard,
     },
     probe::Probe,
     retry::ClientRetryWrapper,
@@ -26,28 +25,29 @@ use super::active_pull;
 /// Download the parts sequentially.
 ///
 /// The download is driven by the returned stream.
-pub(crate) fn download_sequentially<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
     probe.download_started();
 
-    let bytes_hint = part_requests.bytes_hint();
+    let ensure_active_pull = configuration.config.ensure_active_pull;
+    let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
+
+    let bytes_hint = configuration.bytes_hint();
     let poll_parts = DownloadPartsSeq::from_client(
         client,
-        location,
-        part_requests,
+        configuration.location,
+        configuration.part_requests,
         probe.clone(),
-        config.log_download_messages_as_debug,
+        log_dl_msg_dbg,
         download_span_guard,
     );
 
-    if *config.ensure_active_pull {
-        let active_stream = active_pull(poll_parts, probe, config);
+    if *ensure_active_pull {
+        let active_stream = active_pull(poll_parts, probe, log_dl_msg_dbg);
         ChunkStream::from_receiver(active_stream, bytes_hint)
     } else {
         ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)

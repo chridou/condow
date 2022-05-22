@@ -117,7 +117,7 @@ mod range {
                         for from_idx in [0u64, 101, 255, 256] {
                             let range = from_idx..;
 
-                            let result_stream = machinery::download_range(
+                            let result_stream = machinery::download_chunks(
                                 condow.client.clone(),
                                 condow.config.clone(),
                                 IgnoreLocation,
@@ -218,7 +218,7 @@ mod range {
                             let range = 0..=end_incl;
                             let expected_range_end = (end_incl as usize + 1).min(data.len());
 
-                            let result_stream = machinery::download_range(
+                            let result_stream = machinery::download_chunks(
                                 condow.client.clone(),
                                 condow.config.clone(),
                                 IgnoreLocation,
@@ -265,7 +265,7 @@ mod range {
                             let range = 0..end_excl;
                             let expected_range_end = (end_excl as usize).min(data.len());
 
-                            let result_stream = machinery::download_range(
+                            let result_stream = machinery::download_chunks(
                                 condow.client.clone(),
                                 condow.config.clone(),
                                 IgnoreLocation,
@@ -321,7 +321,7 @@ mod range {
                                     let expected_range_end =
                                         (end_incl as usize + 1).min(data.len());
 
-                                    let result_stream = machinery::download_range(
+                                    let result_stream = machinery::download_chunks(
                                         condow.client.clone(),
                                         condow.config.clone(),
                                         IgnoreLocation,
@@ -368,7 +368,7 @@ mod range {
                                     let range = 0..end_excl;
                                     let expected_range_end = (end_excl as usize).min(data.len());
 
-                                    let result_stream = machinery::download_range(
+                                    let result_stream = machinery::download_chunks(
                                         condow.client.clone(),
                                         condow.config.clone(),
                                         IgnoreLocation,
@@ -426,7 +426,7 @@ mod range {
                                         let expected_range_end =
                                             (end_incl as usize + 1).min(data.len());
 
-                                        let result_stream = machinery::download_range(
+                                        let result_stream = machinery::download_chunks(
                                             condow.client.clone(),
                                             condow.config.clone(),
                                             IgnoreLocation,
@@ -480,7 +480,7 @@ mod range {
                                         let expected_range_end =
                                             (end_excl as usize).min(data.len());
 
-                                        let result_stream = machinery::download_range(
+                                        let result_stream = machinery::download_chunks(
                                             condow.client.clone(),
                                             condow.config.clone(),
                                             IgnoreLocation,
