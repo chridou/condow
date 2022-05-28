@@ -5,10 +5,8 @@ use std::{
     task,
 };
 
-use bytes::Bytes;
 use futures::{
     future::{BoxFuture, FutureExt, TryFutureExt},
-    stream::{BoxStream, StreamExt},
     AsyncRead, AsyncSeek,
 };
 
@@ -19,9 +17,7 @@ use crate::{
 
 use super::BytesAsyncReader;
 
-type BytesStream = BoxStream<'static, Result<Bytes, CondowError>>;
-type AsyncReader = BytesAsyncReader<BytesStream>;
-type GetNewReaderFuture = BoxFuture<'static, Result<AsyncReader, CondowError>>;
+type GetNewReaderFuture = BoxFuture<'static, Result<BytesAsyncReader, CondowError>>;
 
 /// 8 MiBytes
 const FETCH_AHEAD_BYTES: u64 = Mebi(8).value();
@@ -69,7 +65,7 @@ enum State {
     Initial,
     /// Wait for a new stream to be created
     GetNewReaderFuture(GetNewReaderFuture),
-    PollingReader(AsyncReader),
+    PollingReader(BytesAsyncReader),
     Finished,
     Error,
 }
@@ -203,7 +199,7 @@ impl RandomAccessReader {
             downloader
                 .download_range(range)
                 .map_ok(|stream| {
-                    let stream = stream.bytes_stream().boxed();
+                    let stream = stream.into_bytes_stream();
                     super::BytesAsyncReader::new(stream)
                 })
                 .await

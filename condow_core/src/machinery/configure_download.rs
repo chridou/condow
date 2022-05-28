@@ -14,22 +14,19 @@ use super::part_request::PartRequestIterator;
 
 pub struct DownloadConfiguration<L> {
     pub(crate) location: L,
-    pub(crate) effective_range: InclusiveRange,
     pub(crate) config: Config,
     pub(crate) part_requests: PartRequestIterator,
 }
 
 impl<L> DownloadConfiguration<L> {
+    /// Returns the maximum concurrency for this download
     pub fn max_concurrency(&self) -> usize {
         self.config.max_concurrency.into_inner()
     }
 
+    /// Retrns a hint on the amount of bytes returned from this stream
     pub fn bytes_hint(&self) -> BytesHint {
         self.part_requests.bytes_hint()
-    }
-
-    pub fn num_parts(&self) -> u64 {
-        self.part_requests.parts_hint()
     }
 }
 
@@ -134,7 +131,6 @@ where
 
     Ok(Some(DownloadConfiguration {
         location,
-        effective_range,
         config,
         part_requests,
     }))

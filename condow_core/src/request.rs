@@ -6,7 +6,7 @@ use std::{str::FromStr, sync::Arc};
 
 use futures::{
     future::{self, BoxFuture},
-    AsyncRead, TryStreamExt,
+    TryStreamExt,
 };
 
 use crate::{
@@ -162,8 +162,8 @@ impl RequestNoLocation<IgnoreLocation> {
     /// Returns an [AsyncRead] which reads over the bytes of the stream
     ///
     /// Provided mainly for testing.
-    pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
-        let stream = self.download_chunks_ordered().await?.bytes_stream();
+    pub async fn reader(self) -> Result<BytesAsyncReader, CondowError> {
+        let stream = self.download_chunks_ordered().await?.into_bytes_stream();
         Ok(BytesAsyncReader::new(stream))
     }
 
@@ -257,8 +257,8 @@ where
     }
 
     /// Returns an [AsyncRead] which reads over the bytes of the stream
-    pub async fn reader(self) -> Result<impl AsyncRead, CondowError> {
-        let stream = self.download_chunks_ordered().await?.bytes_stream();
+    pub async fn reader(self) -> Result<BytesAsyncReader, CondowError> {
+        let stream = self.download_chunks_ordered().await?.into_bytes_stream();
         Ok(BytesAsyncReader::new(stream))
     }
 

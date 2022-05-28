@@ -28,7 +28,6 @@ mod retry_part_stream {
     //! Tests [RetryPartStream] including retry settings
 
     use std::{
-        fmt,
         sync::{
             atomic::{AtomicUsize, Ordering},
             Arc,
@@ -747,7 +746,6 @@ mod retry_resume_part_stream {
     //! No retries are tested/used for getting a [BytesStream]
 
     use std::{
-        fmt,
         ops::RangeInclusive,
         sync::{
             atomic::{AtomicUsize, Ordering},
@@ -756,7 +754,7 @@ mod retry_resume_part_stream {
         time::Duration,
     };
 
-    use futures::{channel::mpsc, FutureExt, StreamExt};
+    use futures::{FutureExt, StreamExt};
 
     use crate::retry::retry_stream::RetryResumePartStream;
     use crate::{
@@ -766,7 +764,7 @@ mod retry_resume_part_stream {
         config::RetryConfig,
         errors::CondowError,
         probe::Probe,
-        retry::tests::{NON_RETRYABLE, RETRYABLE},
+        retry::tests::RETRYABLE,
         InclusiveRange,
     };
 
@@ -1056,7 +1054,7 @@ mod retry_download_get_stream {
 
     use crate::{
         condow_client::IgnoreLocation, config::retry_stream::gen_retry_get_stream_fn,
-        errors::CondowErrorKind, reader::ReaderAdapter,
+        errors::CondowErrorKind,
     };
 
     use super::*;

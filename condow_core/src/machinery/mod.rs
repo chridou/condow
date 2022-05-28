@@ -1,5 +1,4 @@
 //! Streams for handling downloads
-use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 

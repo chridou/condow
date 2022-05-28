@@ -1,4 +1,4 @@
-use std::{fmt, sync::Arc, task::Poll};
+use std::{sync::Arc, task::Poll};
 
 use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;

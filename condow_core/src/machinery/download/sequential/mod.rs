@@ -1,7 +1,4 @@
-use std::sync::Arc;
-
 use futures::StreamExt;
-use tracing::Span;
 
 use crate::{
     condow_client::CondowClient,
@@ -69,8 +66,7 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
         configuration.part_requests,
         probe.clone(),
         log_dl_msg_dbg,
-        Arc::new(Span::none()),
-        //download_span_guard.shared_span(),
+        download_span_guard.shared_span(),
     );
 
     if *ensure_active_pull {

@@ -5,7 +5,7 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
+use std::{convert::Infallible, str::FromStr};
 
 use futures::{future::BoxFuture, FutureExt};
 

@@ -1,14 +1,14 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Error as AnyError};
-use futures::{channel::mpsc, Future, FutureExt, Stream, StreamExt};
-use tracing::{debug, warn, Instrument, Span};
+use futures::Future;
+use tracing::warn;
 
 use crate::{
     condow_client::CondowClient,
     errors::CondowError,
     probe::Probe,
-    streams::{BytesHint, BytesStream, BytesStreamItem},
+    streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
 
