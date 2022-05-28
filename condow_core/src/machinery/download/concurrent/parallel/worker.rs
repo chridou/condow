@@ -13,11 +13,10 @@ use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
 use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 
 use crate::{
-    components::part_request::PartRequest,
     condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
     errors::CondowError,
-    machinery::DownloadSpanGuard,
+    machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
 };
@@ -340,7 +339,6 @@ mod tests {
     use tracing::Span;
 
     use crate::{
-        components::part_request::PartRequestIterator,
         condow_client::{
             failing_client_simulator::FailingClientSimulatorBuilder, CondowClient, IgnoreLocation,
         },
@@ -351,6 +349,7 @@ mod tests {
                 worker::{DownloaderContext, SequentialDownloader},
                 KillSwitch,
             },
+            part_request::PartRequestIterator,
             DownloadSpanGuard,
         },
         streams::{BytesHint, Chunk, ChunkStream},

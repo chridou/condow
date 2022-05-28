@@ -14,6 +14,7 @@ use crate::{DownloadRange, InclusiveRange};
 
 mod configure_download;
 mod download;
+mod part_request;
 
 pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,

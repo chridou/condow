@@ -10,8 +10,12 @@ use futures::StreamExt;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    components::part_request::PartRequestIterator, condow_client::CondowClient, config::Config,
-    errors::CondowError, machinery::DownloadSpanGuard, probe::Probe, retry::ClientRetryWrapper,
+    condow_client::CondowClient,
+    config::Config,
+    errors::CondowError,
+    machinery::{part_request::PartRequestIterator, DownloadSpanGuard},
+    probe::Probe,
+    retry::ClientRetryWrapper,
     streams::ChunkStreamItem,
 };
 

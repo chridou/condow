@@ -4,7 +4,6 @@ use futures::StreamExt;
 use tracing::Span;
 
 use crate::{
-    components::bytes_sequential::PartsBytesStream,
     condow_client::CondowClient,
     machinery::{configure_download::DownloadConfiguration, DownloadSpanGuard},
     probe::Probe,
@@ -13,6 +12,11 @@ use crate::{
 };
 
 use super::active_pull;
+
+use parts_bytes_stream::PartsBytesStream;
+
+pub mod part_bytes_stream;
+pub mod parts_bytes_stream;
 
 /// Download the parts sequentially.
 ///
@@ -86,11 +90,10 @@ mod download_parts_seq {
     use pin_project_lite::pin_project;
 
     use crate::{
-        components::part_request::PartRequest,
         condow_client::CondowClient,
         config::LogDownloadMessagesAsDebug,
         errors::CondowError,
-        machinery::{download::PartChunksStream, DownloadSpanGuard},
+        machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
         probe::Probe,
         retry::ClientRetryWrapper,
         streams::{BytesStream, ChunkStreamItem},
@@ -271,11 +274,11 @@ mod download_parts_seq {
         use futures::StreamExt;
 
         use crate::{
-            components::part_request::PartRequestIterator,
             condow_client::{
                 failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation,
             },
             errors::{CondowError, CondowErrorKind},
+            machinery::part_request::PartRequestIterator,
             retry::ClientRetryWrapper,
             streams::BytesHint,
             test_utils::TestCondowClient,

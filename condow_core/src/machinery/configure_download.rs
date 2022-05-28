@@ -1,7 +1,6 @@
 use tracing::{debug, info_span, Instrument, Span};
 
 use crate::{
-    components::part_request::PartRequestIterator,
     condow_client::CondowClient,
     config::{Config, SequentialDownloadMode},
     errors::CondowError,
@@ -10,6 +9,8 @@ use crate::{
     streams::BytesHint,
     DownloadRange, InclusiveRange,
 };
+
+use super::part_request::PartRequestIterator;
 
 pub struct DownloadConfiguration<L> {
     pub(crate) location: L,
@@ -284,8 +285,12 @@ mod function_tests {
         use tracing::Span;
 
         use crate::{
-            components::part_request::PartRequestIterator, config::SequentialDownloadMode,
-            machinery::configure_download::reconfigure_parts_for_sequential, InclusiveRange,
+            config::SequentialDownloadMode,
+            machinery::{
+                configure_download::reconfigure_parts_for_sequential,
+                part_request::PartRequestIterator,
+            },
+            InclusiveRange,
         };
 
         #[test]

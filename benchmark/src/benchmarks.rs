@@ -22,7 +22,6 @@ pub async fn run(num_iterations: usize) -> Result<Benchmarks, anyhow::Error> {
     let scenarios = gen_scenarios();
     for scenario in scenarios {
         raw::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
-        components::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         bytes_stream::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         chunk_stream_unordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
         chunk_stream_ordered::run(&scenario, num_iterations, &mut benchmarks_collected).await?;
@@ -301,7 +300,13 @@ mod bytes_stream {
         for _ in 0..num_iterations {
             let start = Instant::now();
 
-            let bytes_read = downloader.blob().reconfigure(|config| config.disable_retries()).download().await?.count_bytes().await?;
+            let bytes_read = downloader
+                .blob()
+                .reconfigure(|config| config.disable_retries())
+                .download()
+                .await?
+                .count_bytes()
+                .await?;
 
             measurements.measured(start, Instant::now(), scenario.blob_size);
 
@@ -410,7 +415,8 @@ mod chunk_stream_unordered {
             let start = Instant::now();
 
             let bytes_read = downloader
-                .blob().reconfigure(|config| config.disable_retries())
+                .blob()
+                .reconfigure(|config| config.disable_retries())
                 .download_chunks_unordered()
                 .await?
                 .count_bytes()
@@ -497,180 +503,6 @@ mod chunk_stream_ordered {
                 .await?
                 .count_bytes()
                 .await?;
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
-}
-
-mod components {
-    //! Benchmarks for internal components
-    use std::sync::Arc;
-    use std::time::Instant;
-
-    use condow_core::components::bytes_sequential::{PartBytesStream, PartsBytesStream};
-    use condow_core::components::part_request::{PartRequest, PartRequestIterator};
-    use condow_core::condow_client::{CondowClient, IgnoreLocation};
-    use condow_core::config::ClientRetryWrapper;
-    use condow_core::streams::{BytesHint, BytesStream};
-    use condow_core::InclusiveRange;
-    use futures::{future, FutureExt, TryStreamExt};
-    use tracing::{info_span, Span};
-
-    use super::scenarios::Scenario;
-    use super::{Benchmark, Benchmarks};
-
-    pub async fn run(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        part_bytes_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
-        parts_bytes_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
-        parts_bytes_then_bytes_count_bytes(scenario, num_iterations, benchmarks_collected).await?;
-        Ok(())
-    }
-
-    async fn part_bytes_count_bytes(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        if *scenario.max_concurrency != 1 || *scenario.part_size != scenario.blob_size {
-            return Ok(());
-        }
-
-        let mut measurements = Benchmark::new("part_bytes_count_bytes", scenario);
-
-        let client = scenario.gen_client();
-
-        let expected_byte_count = scenario.blob_size;
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let part_request = PartRequest {
-                part_index: 0,
-                blob_range: InclusiveRange(0, scenario.blob_size - 1),
-                range_offset: 0,
-            };
-
-            let client = client.clone();
-            let get_part_stream =
-                { move |range: InclusiveRange| client.download(IgnoreLocation, range.into()) };
-
-            let span = info_span!("part_span");
-            let stream = PartBytesStream::new(&get_part_stream, part_request, (), &span);
-
-            let bytes_read = stream
-                .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
-                .await?;
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
-
-    async fn parts_bytes_count_bytes(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        if *scenario.max_concurrency != 1 {
-            return Ok(());
-        }
-
-        let mut measurements = Benchmark::new("parts_bytes_count_bytes", scenario);
-
-        let client = scenario.gen_client();
-
-        let expected_byte_count = scenario.blob_size;
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let span = info_span!("part_span");
-            let span = Arc::new(span);
-
-            let part_requests = PartRequestIterator::new(
-                InclusiveRange(0, scenario.blob_size - 1),
-                *scenario.part_size,
-            );
-
-            let client = client.clone();
-            let client = ClientRetryWrapper::new(client, Some(Default::default()));
-            let get_part_stream = {
-                move |range: InclusiveRange| {
-                    client.download(IgnoreLocation, range.into(), ()).boxed()
-                }
-            };
-
-            let stream =
-                PartsBytesStream::new(get_part_stream, part_requests, (), false, Arc::clone(&span));
-
-            let bytes_read = stream
-                .try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
-                .await?;
-
-            measurements.measured(start, Instant::now(), scenario.blob_size);
-
-            assert_eq!(bytes_read, expected_byte_count);
-        }
-
-        benchmarks_collected.add_measurements(measurements);
-
-        Ok(())
-    }
-
-    async fn parts_bytes_then_bytes_count_bytes(
-        scenario: &Scenario,
-        num_iterations: usize,
-        benchmarks_collected: &mut Benchmarks,
-    ) -> Result<(), anyhow::Error> {
-        if *scenario.max_concurrency != 1 {
-            return Ok(());
-        }
-
-        let mut measurements = Benchmark::new("parts_bytes_then_bytes_count_bytes", scenario);
-
-        let client = scenario.gen_client();
-
-        let expected_byte_count = scenario.blob_size;
-
-        for _ in 0..num_iterations {
-            let start = Instant::now();
-
-            let part_requests = PartRequestIterator::new(
-                InclusiveRange(0, scenario.blob_size - 1),
-                *scenario.part_size,
-            );
-
-            let client = client.clone();
-            let get_part_stream =
-                { move |range: InclusiveRange| client.download(IgnoreLocation, range.into()) };
-
-            let stream = PartsBytesStream::new(
-                get_part_stream,
-                part_requests,
-                (),
-                false,
-                Arc::new(Span::none()),
-            );
-
-            let bytes_stream = BytesStream::new(stream, BytesHint::new_exact(scenario.blob_size));
-
-            let bytes_read = bytes_stream.count_bytes().await?;
 
             measurements.measured(start, Instant::now(), scenario.blob_size);
 

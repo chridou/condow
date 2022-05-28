@@ -106,7 +106,6 @@ use streams::{ChunkStream, OrderedChunkStream};
 
 #[macro_use]
 pub(crate) mod helpers;
-pub mod components;
 mod condow;
 pub mod condow_client;
 pub mod config;
