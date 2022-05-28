@@ -198,18 +198,17 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     #[inline]
     fn stream_resume_attempt(
         &self,
-        location: &dyn fmt::Display,
         error: &CondowError,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {
         match self {
             ProbeInternal::RequestProbe(p) => {
-                p.stream_resume_attempt(location, error, orig_range, remaining_range)
+                p.stream_resume_attempt(error, orig_range, remaining_range)
             }
             ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe) => {
-                factory_probe.stream_resume_attempt(location, error, orig_range, remaining_range);
-                request_probe.stream_resume_attempt(location, error, orig_range, remaining_range);
+                factory_probe.stream_resume_attempt(error, orig_range, remaining_range);
+                request_probe.stream_resume_attempt(error, orig_range, remaining_range);
             }
         }
     }

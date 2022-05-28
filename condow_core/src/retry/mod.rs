@@ -14,7 +14,7 @@ use crate::{
 
 use retry_stream::RetryPartStream;
 
-mod retry_stream;
+pub(crate) mod retry_stream;
 
 #[cfg(test)]
 mod tests;
@@ -382,16 +382,8 @@ where
         async move {
             let (client, config) = inner.as_ref();
             if let Some(config) = config {
-                let get_part_stream = {
-                    let client = client.clone();
-                    let probe = probe.clone();
-                    move |range: InclusiveRange| {
-                        client.download(location.clone(), range.into()).boxed()
-                    }
-                };
-
                 let stream =
-                    RetryPartStream::new(Arc::new(get_part_stream), range, config.clone(), probe)
+                    RetryPartStream::from_client(client, location, range, config.clone(), probe)
                         .await?;
                 Ok(BytesStream::new(stream, BytesHint::new_exact(range.len())))
             } else {
@@ -452,6 +444,7 @@ where
     return Err(last_err);
 }
 
+/*
 /// Retries on attempts to get a stream.
 ///
 /// If a stream breaks with an [IoError] retries to get
@@ -687,3 +680,4 @@ where
 
     return Err(last_err);
 }
+*/

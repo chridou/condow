@@ -160,7 +160,6 @@ pub trait Probe: Send + Sync + 'static {
     #[inline]
     fn stream_resume_attempt(
         &self,
-        location: &dyn fmt::Display,
         error: &CondowError,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
@@ -366,7 +365,6 @@ mod simple_reporter {
 
         fn stream_resume_attempt(
             &self,
-            _location: &dyn fmt::Display,
             _error: &CondowError,
             _orig_range: InclusiveRange,
             _remaining_range: InclusiveRange,

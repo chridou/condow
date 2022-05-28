@@ -52,6 +52,21 @@ where
             state: RetryPartStreamState::Streaming(resumable_stream),
         })
     }
+
+    pub async fn from_client<C: CondowClient>(
+        client: &C,
+        location: C::Location,
+        initial_range: InclusiveRange,
+        config: RetryConfig,
+        probe: P,
+    ) -> Result<Self, CondowError> {
+        let get_part_stream = {
+            let client = client.clone();
+            move |range: InclusiveRange| client.download(location.clone(), range.into()).boxed()
+        };
+
+        Self::new(Arc::new(get_part_stream), initial_range, config, probe).await
+    }
 }
 
 impl<P> Stream for RetryPartStream<P>
@@ -92,18 +107,20 @@ where
 
 enum RetryResumePartStreamState {
     GettingStream(GetStreamFut, usize),
+    StreamingAfterResume(BytesStream, usize),
     Streaming(BytesStream),
     Finished,
 }
 
 pin_project! {
-struct RetryResumePartStream<P> {
-    get_stream_fn: GetStreamFn,
-    config: RetryConfig,
-    current_range: InclusiveRange,
-    state: RetryResumePartStreamState,
-    probe: Arc<P>,
-}
+    pub struct RetryResumePartStream<P> {
+        get_stream_fn: GetStreamFn,
+        config: RetryConfig,
+        current_range: InclusiveRange,
+        state: RetryResumePartStreamState,
+        probe: Arc<P>,
+        original_range: InclusiveRange,
+    }
 }
 
 impl<P> RetryResumePartStream<P>
@@ -123,6 +140,7 @@ where
             config,
             state: RetryResumePartStreamState::Streaming(bytes_stream),
             probe,
+            original_range: initial_range,
         }
     }
 }
@@ -153,10 +171,21 @@ where
                     Poll::Ready(Some(Ok(bytes)))
                 }
                 Poll::Ready(Some(Err(err))) => {
-                    if *this.config.max_stream_resume_attempts > 0 {
+                    if *this.config.max_stream_resume_attempts > 0 && err.is_retryable() {
+                        warn!(
+                            "streaming failed with error \"{err}\" - retrying on remaining \
+                            range {}",
+                            this.current_range
+                        );
+                        this.probe.stream_resume_attempt(
+                            &err,
+                            *this.original_range,
+                            *this.current_range,
+                        );
+
                         *this.state = GettingStream(
                             (this.get_stream_fn)(*this.current_range),
-                            *this.config.max_stream_resume_attempts,
+                            *this.config.max_stream_resume_attempts - 1,
                         );
                         cx.waker().wake_by_ref();
                         Poll::Pending
@@ -170,33 +199,62 @@ where
                     Poll::Pending
                 }
             },
-            Finished => Poll::Ready(None),
+            StreamingAfterResume(mut bytes_stream, attempts_left) => {
+                match bytes_stream.poll_next_unpin(cx) {
+                    Poll::Ready(Some(Ok(bytes))) => {
+                        this.current_range.advance(bytes.len() as u64);
+                        *this.state = Streaming(bytes_stream);
+                        Poll::Ready(Some(Ok(bytes)))
+                    }
+                    Poll::Ready(Some(Err(err))) => {
+                        if attempts_left > 0 && err.is_retryable() {
+                            warn!(
+                                "streaming failed with error \"{err}\" - retrying on remaining \
+                            range {}",
+                                this.current_range
+                            );
+                            this.probe.stream_resume_attempt(
+                                &err,
+                                *this.original_range,
+                                *this.current_range,
+                            );
+
+                            *this.state = GettingStream(
+                                (this.get_stream_fn)(*this.current_range),
+                                attempts_left - 1,
+                            );
+                            cx.waker().wake_by_ref();
+                            Poll::Pending
+                        } else {
+                            Poll::Ready(Some(Err(err)))
+                        }
+                    }
+                    Poll::Ready(None) => Poll::Ready(None),
+                    Poll::Pending => {
+                        *this.state = StreamingAfterResume(bytes_stream, attempts_left);
+                        Poll::Pending
+                    }
+                }
+            }
             GettingStream(mut get_stream_fut, attempts_left) => match get_stream_fut.poll_unpin(cx)
             {
                 Poll::Ready(Ok(bytes_stream)) => {
-                    *this.state = Streaming(bytes_stream);
+                    *this.state = StreamingAfterResume(bytes_stream, attempts_left);
                     cx.waker().wake_by_ref();
                     Poll::Pending
                 }
-                Poll::Ready(Err(err)) => {
-                    if attempts_left > 0 {
-                        *this.state = GettingStream(get_stream_fut, attempts_left - 1);
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    } else {
-                        Poll::Ready(Some(Err(err)))
-                    }
-                }
+                Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
                 Poll::Pending => {
                     *this.state = GettingStream(get_stream_fut, attempts_left);
                     Poll::Pending
                 }
             },
+            Finished => Poll::Ready(None),
         }
     }
 }
 
-pub fn gen_retry_get_stream_fn<P>(
+pub(crate) fn gen_retry_get_stream_fn<P>(
     get_stream_fn_no_retries: GetStreamFn,
     config: RetryConfig,
     probe: Arc<P>,
