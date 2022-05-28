@@ -8,14 +8,12 @@ use tracing::{info_span, Span};
 use crate::condow_client::CondowClient;
 use crate::config::{ClientRetryWrapper, Config};
 use crate::errors::CondowError;
-use crate::streams::ChunkStream;
+use crate::streams::{BytesStream, ChunkStream};
 use crate::Probe;
 use crate::{DownloadRange, InclusiveRange};
 
 mod configure_download;
 mod download;
-
-mod part_request;
 
 pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
@@ -59,6 +57,48 @@ pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P:
     Ok(stream)
 }
 
+pub(crate) async fn download_bytes<C: CondowClient, DR: Into<DownloadRange>, P: Probe + Clone>(
+    client: ClientRetryWrapper<C>,
+    config: Config,
+    location: C::Location,
+    range: DR,
+    probe: P,
+) -> Result<BytesStream, CondowError> {
+    let range = range.into();
+
+    let parent = Span::current();
+    // This span will track the lifetime of the whole download for all parts...
+    let download_span = info_span!(parent: &parent, "download", %location, %range);
+    let download_span_enter_guard = download_span.enter();
+    let download_guard = DownloadSpanGuard::new(download_span.clone());
+
+    let configuration = if let Some(configuration) = configure_download::configure(
+        location,
+        range,
+        config,
+        &client,
+        &probe,
+        download_guard.span(),
+    )
+    .await?
+    {
+        configuration
+    } else {
+        return Ok(BytesStream::empty());
+    };
+
+    let stream = if configuration.max_concurrency() <= 1 {
+        download::download_bytes_sequentially(client, configuration, probe, download_guard)
+    } else {
+        download::download_bytes_concurrently(client, configuration, probe, download_guard)
+    };
+
+    // Explicit drops for scope visualization
+    drop(download_span_enter_guard);
+
+    Ok(stream)
+}
+
 /// This struct contains a span which must be kept alive until whole download is completed
 /// which means that all parts have been downloaded (and pushed on the result stream).
 #[derive(Clone)]
@@ -71,6 +111,10 @@ impl DownloadSpanGuard {
 
     pub fn span(&self) -> &Span {
         &self.0
+    }
+
+    pub fn shared_span(&self) -> Arc<Span> {
+        Arc::clone(&self.0)
     }
 }
 
@@ -140,12 +184,12 @@ impl<P: Probe + Clone> Probe for ProbeInternal<P> {
     }
 
     #[inline]
-    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {
+    fn retry_attempt(&self, error: &CondowError, next_in: Duration) {
         match self {
-            ProbeInternal::RequestProbe(p) => p.retry_attempt(location, error, next_in),
+            ProbeInternal::RequestProbe(p) => p.retry_attempt(error, next_in),
             ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe) => {
-                factory_probe.retry_attempt(location, error, next_in);
-                request_probe.retry_attempt(location, error, next_in);
+                factory_probe.retry_attempt(error, next_in);
+                request_probe.retry_attempt(error, next_in);
             }
         }
     }

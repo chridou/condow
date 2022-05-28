@@ -35,7 +35,7 @@ use condow_core::config::Config;
 use condow_core::errors::http_status_to_error;
 pub use condow_core::*;
 use condow_core::{
-    condow_client::{CondowClient, DownloadSpec},
+    condow_client::CondowClient,
     errors::CondowError,
     streams::{BytesHint, BytesStream},
 };
@@ -77,16 +77,14 @@ impl CondowClient for HttpClient {
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
     ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
-        dbg!(spec);
+        dbg!(range);
         let client = self.client.clone();
         Box::pin(async move {
             // TODO: implement timeout support, e.g. head(url).timeout(config.timeout).send()
             let mut req = client.get(location);
-            if let DownloadSpec::Range(r) = spec {
-                req = req.header(RANGE, r.http_bytes_range_value());
-            }
+            req = req.header(RANGE, range.http_bytes_range_value());
             let res = req.send().await.map_err(reqwest_error_to_condow_error)?;
             let status = res.status();
             if status.is_success() {

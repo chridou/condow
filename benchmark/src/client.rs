@@ -6,11 +6,11 @@ use bytes::Bytes;
 use futures::{future::BoxFuture, stream, FutureExt, StreamExt};
 
 use condow_core::{
-    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    condow_client::{CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
     streams::{BytesHint, BytesStream},
-    Condow,
+    Condow, InclusiveRange,
 };
 
 /// A client for benchmarking which returns zero bytes only.
@@ -47,16 +47,13 @@ impl CondowClient for BenchmarkClient {
     fn download(
         &self,
         _location: Self::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
     ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
-        let bytes_to_send = match spec {
-            DownloadSpec::Complete => self.size,
-            DownloadSpec::Range(r) => {
-                if r.end_incl() >= self.size {
-                    return futures::future::err(CondowError::new_other("out of range")).boxed();
-                } else {
-                    r.len()
-                }
+        let bytes_to_send = {
+            if range.end_incl() >= self.size {
+                return futures::future::err(CondowError::new_other("out of range")).boxed();
+            } else {
+                range.len()
             }
         };
 

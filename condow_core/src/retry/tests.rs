@@ -37,9 +37,7 @@ mod retry_download {
     use futures::StreamExt;
 
     use crate::{
-        condow_client::{
-            failing_client_simulator::FailingClientSimulatorBuilder, DownloadSpec, IgnoreLocation,
-        },
+        condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
         config::RetryConfig,
         errors::CondowError,
         probe::Probe,
@@ -57,10 +55,14 @@ mod retry_download {
 
         let client_builder = get_builder().responses().success().never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
@@ -266,9 +268,14 @@ mod retry_download {
 
         let client_builder = get_builder().responses().failure(RETRYABLE).never();
 
-        let err = download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-            .await
-            .unwrap_err();
+        let err = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap_err();
 
         assert_eq!(err.kind(), RETRYABLE);
     }
@@ -284,10 +291,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 1, "num_retries");
         assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
@@ -301,9 +312,14 @@ mod retry_download {
 
         let client_builder = get_builder().responses().failure(NON_RETRYABLE).never();
 
-        let err = download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-            .await
-            .unwrap_err();
+        let err = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap_err();
 
         assert_eq!(err.kind(), NON_RETRYABLE);
     }
@@ -318,10 +334,14 @@ mod retry_download {
             .success_with_stream_failure(5)
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 0, "stream_resume_attempts");
@@ -339,10 +359,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
@@ -361,10 +385,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -384,10 +412,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 1, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -406,10 +438,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -428,10 +464,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
@@ -450,10 +490,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -473,10 +517,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 1, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -494,10 +542,14 @@ mod retry_download {
             .failure(NON_RETRYABLE)
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 0, "num_retries");
         assert_eq!(stream_resume_attempts, 1, "stream_resume_attempts");
@@ -520,10 +572,14 @@ mod retry_download {
             .success()
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 3, "num_retries");
         assert_eq!(stream_resume_attempts, 3, "stream_resume_attempts");
@@ -544,10 +600,14 @@ mod retry_download {
             .success_with_stream_failure(0) // no progress -> bang!
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 2, "num_retries");
         assert_eq!(stream_resume_attempts, 2, "stream_resume_attempts");
@@ -575,10 +635,14 @@ mod retry_download {
             .failures([RETRYABLE, RETRYABLE, NON_RETRYABLE])
             .never();
 
-        let (num_retries, stream_resume_attempts, received) =
-            download(client_builder, n_retries, n_resumes, DownloadSpec::Complete)
-                .await
-                .unwrap();
+        let (num_retries, stream_resume_attempts, received) = download(
+            client_builder,
+            n_retries,
+            n_resumes,
+            InclusiveRange(0, BLOB.len() as u64 - 1),
+        )
+        .await
+        .unwrap();
 
         assert_eq!(num_retries, 9, "num_retries");
         assert_eq!(stream_resume_attempts, 8, "stream_resume_attempts");
@@ -594,7 +658,7 @@ mod retry_download {
     }
 
     /// returns (num_retries, stream_resume_attempts, collected_bytes)
-    async fn download<S: Into<DownloadSpec>, B: Into<FailingClientSimulatorBuilder>>(
+    async fn download<S: Into<InclusiveRange>, B: Into<FailingClientSimulatorBuilder>>(
         client_builder: B,
         n_retries: usize,
         n_resumes: usize,
@@ -609,7 +673,10 @@ mod retry_download {
     }
 
     /// returns (num_retries, stream_resume_attempts, collected_bytes)
-    async fn download_with_config<S: Into<DownloadSpec>, B: Into<FailingClientSimulatorBuilder>>(
+    async fn download_with_config<
+        S: Into<InclusiveRange>,
+        B: Into<FailingClientSimulatorBuilder>,
+    >(
         client_builder: B,
         config: RetryConfig,
         download_spec: S,
@@ -620,12 +687,7 @@ mod retry_download {
         struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
         impl Probe for TestProbe {
-            fn retry_attempt(
-                &self,
-                _location: &dyn std::fmt::Display,
-                _error: &CondowError,
-                _next_in: Duration,
-            ) {
+            fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
                 // Count the number of retries
                 self.0.as_ref().fetch_add(1, Ordering::SeqCst);
             }
@@ -1097,12 +1159,7 @@ mod loop_retry_complete_stream {
         struct TestProbe(Arc<AtomicUsize>, Arc<AtomicUsize>);
 
         impl Probe for TestProbe {
-            fn retry_attempt(
-                &self,
-                _location: &dyn std::fmt::Display,
-                _error: &CondowError,
-                _next_in: Duration,
-            ) {
+            fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
                 // Count the number of retries
                 self.0.as_ref().fetch_add(1, Ordering::SeqCst);
             }
@@ -1177,7 +1234,7 @@ mod retry_download_get_stream {
 
     use futures::FutureExt;
 
-    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind};
+    use crate::{condow_client::IgnoreLocation, errors::CondowErrorKind, reader::ReaderAdapter};
 
     use super::*;
 
@@ -1351,7 +1408,7 @@ mod retry_download_get_stream {
             fn download(
                 &self,
                 _location: Self::Location,
-                _spec: DownloadSpec,
+                _range: InclusiveRange,
             ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
                 let mut fails = self.fails_reversed.lock().unwrap();
 
@@ -1373,12 +1430,7 @@ mod retry_download_get_stream {
         struct TestProbe(Arc<AtomicUsize>);
 
         impl Probe for TestProbe {
-            fn retry_attempt(
-                &self,
-                _location: &dyn std::fmt::Display,
-                _error: &CondowError,
-                _next_in: Duration,
-            ) {
+            fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
                 // Count the number of retries
                 self.0.as_ref().fetch_add(1, Ordering::SeqCst);
             }
@@ -1392,7 +1444,7 @@ mod retry_download_get_stream {
         match retry_download_get_stream(
             &client,
             IgnoreLocation,
-            DownloadSpec::Complete,
+            InclusiveRange(0, 42),
             &config,
             &probe.clone(),
         )
@@ -1601,7 +1653,7 @@ mod retry_get_size {
             fn download(
                 &self,
                 _location: Self::Location,
-                _spec: DownloadSpec,
+                _range: InclusiveRange,
             ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
                 unimplemented!()
             }
@@ -1616,12 +1668,7 @@ mod retry_get_size {
         struct TestProbe(Arc<AtomicUsize>);
 
         impl Probe for TestProbe {
-            fn retry_attempt(
-                &self,
-                _location: &dyn std::fmt::Display,
-                _error: &CondowError,
-                _next_in: Duration,
-            ) {
+            fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
                 // Count the number of retries
                 self.0.as_ref().fetch_add(1, Ordering::SeqCst);
             }

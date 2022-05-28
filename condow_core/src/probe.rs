@@ -151,7 +151,7 @@ pub trait Probe: Send + Sync + 'static {
 
     /// An error occurred but a retry will be attempted
     #[inline]
-    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+    fn retry_attempt(&self, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
     ///
@@ -360,12 +360,7 @@ mod simple_reporter {
             self.inner.is_failed.store(true, Ordering::SeqCst);
         }
 
-        fn retry_attempt(
-            &self,
-            _location: &dyn fmt::Display,
-            _error: &CondowError,
-            _next_in: Duration,
-        ) {
+        fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
             self.inner.n_retries.fetch_add(1, Ordering::SeqCst);
         }
 

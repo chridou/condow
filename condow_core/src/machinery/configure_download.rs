@@ -1,6 +1,7 @@
 use tracing::{debug, info_span, Instrument, Span};
 
 use crate::{
+    components::part_request::PartRequestIterator,
     condow_client::CondowClient,
     config::{Config, SequentialDownloadMode},
     errors::CondowError,
@@ -9,8 +10,6 @@ use crate::{
     streams::BytesHint,
     DownloadRange, InclusiveRange,
 };
-
-use super::part_request::PartRequestIterator;
 
 pub struct DownloadConfiguration<L> {
     pub(crate) location: L,
@@ -26,6 +25,10 @@ impl<L> DownloadConfiguration<L> {
 
     pub fn bytes_hint(&self) -> BytesHint {
         self.part_requests.bytes_hint()
+    }
+
+    pub fn num_parts(&self) -> u64 {
+        self.part_requests.parts_hint()
     }
 }
 
@@ -95,17 +98,17 @@ where
     debug!(
         parent: &configure_stream_span,
         "download {} parts",
-        part_requests.exact_size_hint()
+        part_requests.parts_hint()
     );
 
-    if part_requests.exact_size_hint() == 0 {
+    if part_requests.parts_hint() == 0 {
         panic!("n_parts must not be 0. This is a bug");
     }
 
     determine_effective_concurrency(
         &mut config,
         effective_range,
-        part_requests.exact_size_hint(),
+        part_requests.parts_hint(),
         &configure_stream_span,
     );
 
@@ -123,7 +126,7 @@ where
         "download started ({} bytes) with effective concurrency {} and {} part(s)",
         effective_range.len(),
         config.max_concurrency,
-        part_requests.exact_size_hint()
+        part_requests.parts_hint()
     ));
 
     drop(configure_stream_span);
@@ -192,7 +195,7 @@ fn reconfigure_parts_for_sequential(
     match download_mode {
         SequentialDownloadMode::KeepParts => part_requests,
         SequentialDownloadMode::MergeParts => {
-            if part_requests.exact_size_hint() > 1 {
+            if part_requests.parts_hint() > 1 {
                 debug!(parent: span, "switching to single part download");
                 PartRequestIterator::new(effective_range, effective_range.len())
             } else {
@@ -204,7 +207,7 @@ fn reconfigure_parts_for_sequential(
             debug!(
                 parent: span,
                 "repartition to {} part(s) with approx. {} bytes each",
-                part_requests.exact_size_hint(),
+                part_requests.parts_hint(),
                 part_size
             );
 
@@ -281,12 +284,8 @@ mod function_tests {
         use tracing::Span;
 
         use crate::{
-            config::SequentialDownloadMode,
-            machinery::{
-                configure_download::reconfigure_parts_for_sequential,
-                part_request::PartRequestIterator,
-            },
-            InclusiveRange,
+            components::part_request::PartRequestIterator, config::SequentialDownloadMode,
+            machinery::configure_download::reconfigure_parts_for_sequential, InclusiveRange,
         };
 
         #[test]
@@ -294,7 +293,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::KeepParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 1000);
-            assert_eq!(iter_orig.exact_size_hint(), 1, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 1, "wrong size");
             let expected: Vec<_> = iter_orig.clone_continue().collect();
 
             let result = reconfigure_parts_for_sequential(
@@ -313,7 +312,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::KeepParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 500);
-            assert_eq!(iter_orig.exact_size_hint(), 2, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 2, "wrong size");
             let expected: Vec<_> = iter_orig.clone_continue().collect();
 
             let result = reconfigure_parts_for_sequential(
@@ -332,7 +331,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::KeepParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 400);
-            assert_eq!(iter_orig.exact_size_hint(), 3, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 3, "wrong size");
             let expected: Vec<_> = iter_orig.clone_continue().collect();
 
             let result = reconfigure_parts_for_sequential(
@@ -351,7 +350,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::MergeParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 1000);
-            assert_eq!(iter_orig.exact_size_hint(), 1, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 1, "wrong size");
             let expected: Vec<_> = iter_orig.clone_continue().collect();
 
             let result = reconfigure_parts_for_sequential(
@@ -370,7 +369,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::MergeParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 500);
-            assert_eq!(iter_orig.exact_size_hint(), 2, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 2, "wrong size");
 
             let result = reconfigure_parts_for_sequential(
                 effective_range,
@@ -393,7 +392,7 @@ mod function_tests {
             let download_mode = SequentialDownloadMode::MergeParts;
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 400);
-            assert_eq!(iter_orig.exact_size_hint(), 3, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 3, "wrong size");
 
             let result = reconfigure_parts_for_sequential(
                 effective_range,
@@ -418,7 +417,7 @@ mod function_tests {
             };
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 1000);
-            assert_eq!(iter_orig.exact_size_hint(), 1, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 1, "wrong size");
 
             let mut result = reconfigure_parts_for_sequential(
                 effective_range,
@@ -427,7 +426,7 @@ mod function_tests {
                 &Span::none(),
             );
 
-            assert_eq!(result.exact_size_hint(), 2);
+            assert_eq!(result.parts_hint(), 2);
             let request_1 = result.next().unwrap();
             let request_2 = result.next().unwrap();
 
@@ -447,7 +446,7 @@ mod function_tests {
             };
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 1000);
-            assert_eq!(iter_orig.exact_size_hint(), 1, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 1, "wrong size");
 
             let mut result = reconfigure_parts_for_sequential(
                 effective_range,
@@ -456,7 +455,7 @@ mod function_tests {
                 &Span::none(),
             );
 
-            assert_eq!(result.exact_size_hint(), 1);
+            assert_eq!(result.parts_hint(), 1);
             let request_1 = result.next().unwrap();
 
             assert_eq!(request_1.part_index, 0);
@@ -471,7 +470,7 @@ mod function_tests {
             };
             let effective_range = (0..=999).into();
             let iter_orig = PartRequestIterator::new(effective_range, 1000);
-            assert_eq!(iter_orig.exact_size_hint(), 1, "wrong size");
+            assert_eq!(iter_orig.parts_hint(), 1, "wrong size");
 
             let mut result = reconfigure_parts_for_sequential(
                 effective_range,
@@ -480,7 +479,7 @@ mod function_tests {
                 &Span::none(),
             );
 
-            assert_eq!(result.exact_size_hint(), 1);
+            assert_eq!(result.parts_hint(), 1);
             let request_1 = result.next().unwrap();
 
             assert_eq!(request_1.part_index, 0);

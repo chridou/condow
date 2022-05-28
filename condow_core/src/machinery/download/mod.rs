@@ -7,9 +7,9 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
 
-pub(crate) use concurrent::download_chunks_concurrently;
+pub(crate) use concurrent::{download_bytes_concurrently, download_chunks_concurrently};
 pub(crate) use part_chunks_stream::PartChunksStream;
-pub(crate) use sequential::download_chunks_sequentially;
+pub(crate) use sequential::{download_bytes_sequentially, download_chunks_sequentially};
 
 mod concurrent;
 mod sequential;
@@ -80,9 +80,9 @@ pub mod part_chunks_stream {
     use tracing::{debug_span, Span};
 
     use crate::{
+        components::part_request::PartRequest,
         condow_client::CondowClient,
         errors::CondowError,
-        machinery::part_request::PartRequest,
         probe::Probe,
         retry::ClientRetryWrapper,
         streams::{BytesStream, Chunk, ChunkStreamItem},
@@ -288,11 +288,11 @@ pub mod part_chunks_stream {
         use tracing::Span;
 
         use crate::{
+            components::part_request::PartRequest,
             condow_client::{
                 failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation,
             },
             errors::{CondowError, CondowErrorKind},
-            machinery::part_request::PartRequest,
             retry::ClientRetryWrapper,
             streams::BytesHint,
             test_utils::TestCondowClient,

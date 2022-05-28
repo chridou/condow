@@ -82,6 +82,10 @@ impl InclusiveRange {
         self.0..self.1 + 1
     }
 
+    pub fn advance(&mut self, by: u64) {
+        self.0 += by
+    }
+
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
     ///
     /// ```

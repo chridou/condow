@@ -14,13 +14,18 @@ use crate::{
     reader::BytesAsyncReader, streams::BytesStream, ChunkStream, DownloadRange, OrderedChunkStream,
 };
 
-/// A function which downloads from the given location and the given [Params].
-///
-/// This is to make the request objects independent from the actual mechanism
-/// used to download.
-type DownloadFn<L> = Box<
-    dyn FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>> + Send + 'static,
->;
+pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
+    fn bytes<'a>(
+        &'a self,
+        location: L,
+        params: Params,
+    ) -> BoxFuture<'a, Result<BytesStream, CondowError>>;
+    fn chunks<'a>(
+        &'a self,
+        location: L,
+        params: Params,
+    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>>;
+}
 
 /// A request for a download where the location is not yet known
 ///
@@ -29,19 +34,17 @@ type DownloadFn<L> = Box<
 /// This can only directly download if the type of the location is [IgnoreLocation]
 /// which probably ony makes sense while testing.
 pub struct RequestNoLocation<L> {
-    download_fn: DownloadFn<L>,
+    adapter: Box<dyn RequestAdapter<L>>,
     params: Params,
 }
 
 impl<L> RequestNoLocation<L> {
-    pub(crate) fn new<F>(download_fn: F, config: Config) -> Self
+    pub(crate) fn new<A>(adapter: A, config: Config) -> Self
     where
-        F: FnOnce(L, Params) -> BoxFuture<'static, Result<ChunkStream, CondowError>>
-            + Send
-            + 'static,
+        A: RequestAdapter<L>,
     {
         Self {
-            download_fn: Box::new(download_fn),
+            adapter: Box::new(adapter),
             params: Params {
                 probe: None,
                 range: (..).into(),
@@ -53,7 +56,7 @@ impl<L> RequestNoLocation<L> {
     /// Specify the location to download the Blob from
     pub fn at<LL: Into<L>>(self, location: LL) -> Request<L> {
         Request {
-            download_fn: self.download_fn,
+            adapter: self.adapter,
             location: location.into(),
             params: self.params,
         }
@@ -68,7 +71,7 @@ impl<L> RequestNoLocation<L> {
         LL::Error: std::error::Error + Send + Sync + 'static,
     {
         Ok(Request {
-            download_fn: self.download_fn,
+            adapter: self.adapter,
             location: location.try_into().map_err(|err| {
                 CondowError::new_other(format!("invalid location - {err}")).with_source(err)
             })?,
@@ -85,7 +88,7 @@ impl<L> RequestNoLocation<L> {
         <L as FromStr>::Err: std::error::Error + Send + Sync + 'static,
     {
         Ok(Request {
-            download_fn: self.download_fn,
+            adapter: self.adapter,
             location: location.parse().map_err(|err| {
                 CondowError::new_other(format!("invalid location: {location}")).with_source(err)
             })?,
@@ -180,12 +183,15 @@ impl RequestNoLocation<IgnoreLocation> {
 ///
 /// The default is to download the complete BLOB.
 pub struct Request<L> {
-    download_fn: DownloadFn<L>,
+    adapter: Box<dyn RequestAdapter<L>>,
     location: L,
     params: Params,
 }
 
-impl<L> Request<L> {
+impl<L> Request<L>
+where
+    L: Send + Sync + 'static,
+{
     /// Specify the location to download the Blob from
     pub fn at<LL: Into<L>>(mut self, location: LL) -> Self {
         self.location = location.into();
@@ -215,7 +221,11 @@ impl<L> Request<L> {
 
     /// Download chunks of bytes
     pub async fn download(self) -> Result<BytesStream, CondowError> {
-        todo!()
+        self.params
+            .config
+            .validate()
+            .map_err(|err| CondowError::new_other("invalid configuration").with_source(err))?;
+        self.adapter.bytes(self.location, self.params).await
     }
 
     /// Download as an [OrderedChunkStream]
@@ -229,7 +239,7 @@ impl<L> Request<L> {
             .config
             .validate()
             .map_err(|err| CondowError::new_other("invalid configuration").with_source(err))?;
-        (self.download_fn)(self.location, self.params).await
+        self.adapter.chunks(self.location, self.params).await
     }
 
     /// Downloads into a freshly allocated [Vec]

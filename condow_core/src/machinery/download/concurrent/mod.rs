@@ -61,7 +61,7 @@ pub(crate) fn download_bytes_concurrently<C: CondowClient, P: Probe + Clone>(
 
     unordered_chunks
         .try_into_ordered_chunk_stream()
-        .expect("chunk strem to be fresh")
+        .expect("chunk stream to be fresh")
         .into_bytes_stream()
 }
 

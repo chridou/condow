@@ -8,10 +8,11 @@ use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::{
+    components::part_request::PartRequest,
     condow_client::CondowClient,
     config::LogDownloadMessagesAsDebug,
     errors::CondowError,
-    machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
+    machinery::{download::PartChunksStream, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
     streams::{BytesStream, ChunkStreamItem},
@@ -296,9 +297,9 @@ mod tests {
     use futures::StreamExt;
 
     use crate::{
+        components::part_request::PartRequestIterator,
         condow_client::{failing_client_simulator::FailingClientSimulatorBuilder, IgnoreLocation},
         errors::{CondowError, CondowErrorKind},
-        machinery::part_request::PartRequestIterator,
         retry::ClientRetryWrapper,
         streams::BytesHint,
         test_utils::TestCondowClient,

@@ -12,12 +12,13 @@ use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    condow_client::{CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
     reader::{RandomAccessReader, ReaderAdapter},
+    request::{Params, RequestAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
-    DownloadRange, Downloads, Params, RequestNoLocation,
+    DownloadRange, Downloads, InclusiveRange, RequestNoLocation,
 };
 
 use self::stream_penderizer::{Penderizer, PenderizerModule};
@@ -123,7 +124,7 @@ impl CondowClient for TestCondowClient {
     fn download(
         &self,
         _location: Self::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
     ) -> BoxFuture<'static, Result<crate::streams::BytesStream, crate::errors::CondowError>> {
         let should_be_pending = if let Some(module) = &self.pending_on_requests_module {
             module.lock().unwrap().return_pending()
@@ -138,12 +139,9 @@ impl CondowClient for TestCondowClient {
                 tokio::task::yield_now().await;
             }
 
-            let range = match spec {
-                DownloadSpec::Complete => 0..me.data.len(),
-                DownloadSpec::Range(r) => {
-                    let r = r.to_std_range_excl();
-                    r.start as usize..r.end as usize
-                }
+            let range = {
+                let r = range.to_std_range_excl();
+                r.start as usize..r.end as usize
             };
 
             if range.end > me.data.len() {
@@ -488,15 +486,53 @@ impl Downloads for TestDownloader {
     type Location = IgnoreLocation;
 
     fn blob(&self) -> RequestNoLocation<IgnoreLocation> {
-        let me = self.clone();
+        #[derive(Clone)]
+        struct Adapter {
+            client: TestDownloader,
+        }
 
-        let download_fn = move |_: IgnoreLocation, params: Params| {
-            let result = make_a_stream(&me.blob, params.range, me.pattern.lock().unwrap().clone());
+        impl<L> RequestAdapter<L> for Adapter
+        where
+            L: Send + Sync + 'static,
+        {
+            fn bytes(
+                &self,
+                location: L,
+                params: Params,
+            ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+                let me = self.clone();
+                async move {
+                    let stream = me
+                        .chunks(location, params)
+                        .await?
+                        .try_into_ordered_chunk_stream()?
+                        .into_bytes_stream();
+                    Ok(stream)
+                }
+                .boxed()
+            }
 
-            futures::future::ready(result).boxed()
-        };
+            fn chunks(
+                &self,
+                _location: L,
+                params: Params,
+            ) -> BoxFuture<'static, Result<ChunkStream, CondowError>> {
+                let stream = make_a_stream(
+                    &self.client.blob,
+                    params.range,
+                    self.client.pattern.lock().unwrap().clone(),
+                )
+                .unwrap();
+                future::ok(stream).boxed()
+            }
+        }
 
-        RequestNoLocation::new(download_fn, Config::default())
+        RequestNoLocation::new(
+            Adapter {
+                client: self.clone(),
+            },
+            Config::default(),
+        )
     }
 
     fn get_size<'a>(

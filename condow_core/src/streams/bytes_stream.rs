@@ -6,6 +6,7 @@ use std::{
 use bytes::Bytes;
 use futures::{
     channel::mpsc as futures_mpsc,
+    future,
     stream::{self, BoxStream},
     Stream, StreamExt, TryStreamExt,
 };
@@ -120,14 +121,22 @@ impl BytesStream {
     pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
         self.map_err(From::from)
     }
+
+    /// Counts the number of bytes downloaded
+    ///
+    /// Provided mainly for testing.
+    pub async fn count_bytes(self) -> Result<u64, CondowError> {
+        self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
+            .await
+    }
 }
 
 impl Stream for BytesStream {
     type Item = BytesStreamItem;
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.project();
+        let mut this = self.project();
 
-        match this.source.poll_next(cx) {
+        match this.source.as_mut().poll_next(cx) {
             Poll::Ready(Some(next)) => match next {
                 Ok(bytes) => {
                     this.bytes_hint.reduce_by(bytes.len() as u64);
@@ -151,7 +160,7 @@ pin_project! {
         ChunksOrdered{#[pin] stream: OrderedChunkStream},
         TokioChannel{#[pin] receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>},
         FuturesChannel{#[pin] receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>},
-         Empty,
+        Empty,
     }
 }
 
@@ -163,7 +172,7 @@ impl Stream for SourceFlavour {
         let this = self.project();
 
         match this {
-            SourceFlavourProj::DynStream { stream } => stream.poll_next(cx),
+            SourceFlavourProj::DynStream { mut stream } => stream.as_mut().poll_next(cx),
             SourceFlavourProj::ChunksOrdered { stream } => match stream.poll_next(cx) {
                 Poll::Ready(Some(res)) => Poll::Ready(Some(res.map(|chunk| chunk.bytes))),
                 Poll::Ready(None) => Poll::Ready(None),

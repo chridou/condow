@@ -28,11 +28,7 @@ use futures::future::BoxFuture;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use condow_core::{
-    condow_client::{CondowClient, DownloadSpec},
-    errors::CondowError,
-    streams::BytesStream,
-};
+use condow_core::{condow_client::CondowClient, errors::CondowError, streams::BytesStream};
 
 pub use condow_core::*;
 
@@ -63,36 +59,33 @@ impl CondowClient for FsClient {
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
     ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let f = async move {
-            let bytes = match spec {
-                DownloadSpec::Complete => fs::read(location.as_str()).await?,
-                DownloadSpec::Range(range) => {
-                    let mut file = fs::File::open(location.as_str()).await?;
-                    file.seek(SeekFrom::Start(range.start())).await?;
+            let bytes = {
+                let mut file = fs::File::open(location.as_str()).await?;
+                file.seek(SeekFrom::Start(range.start())).await?;
 
-                    let n_bytes_to_read = range.len();
+                let n_bytes_to_read = range.len();
 
-                    if n_bytes_to_read > usize::MAX as u64 {
-                        return Err(CondowError::new_other(
-                            "usize overflow while casting from u64",
-                        ));
-                    }
-
-                    let mut buffer = vec![0; n_bytes_to_read as usize];
-
-                    let n_bytes_read = file.read_exact(&mut buffer).await?;
-
-                    if n_bytes_read as u64 != n_bytes_to_read {
-                        return Err(CondowError::new_io(format!(
-                            "not enough bytes read (expected {} got {})",
-                            n_bytes_to_read, n_bytes_read
-                        )));
-                    }
-
-                    buffer
+                if n_bytes_to_read > usize::MAX as u64 {
+                    return Err(CondowError::new_other(
+                        "usize overflow while casting from u64",
+                    ));
                 }
+
+                let mut buffer = vec![0; n_bytes_to_read as usize];
+
+                let n_bytes_read = file.read_exact(&mut buffer).await?;
+
+                if n_bytes_read as u64 != n_bytes_to_read {
+                    return Err(CondowError::new_io(format!(
+                        "not enough bytes read (expected {} got {})",
+                        n_bytes_to_read, n_bytes_read
+                    )));
+                }
+
+                buffer
             };
 
             let bytes = Bytes::from(bytes);

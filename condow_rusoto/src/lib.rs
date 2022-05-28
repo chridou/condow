@@ -310,7 +310,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
     ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let client = self.0.clone();
         let f = async move {
@@ -318,7 +318,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
             let get_object_request = GetObjectRequest {
                 bucket: bucket.into_inner(),
                 key: object_key.into_inner(),
-                range: spec.http_bytes_range_value(),
+                range: Some(range.http_bytes_range_value()),
                 ..Default::default()
             };
 

@@ -97,21 +97,17 @@
 //! [condow_fs]:https://docs.rs/condow_fs
 //! [InMemoryClient]:condow_client::InMemoryClient
 //! [EnsureActivePull]:config::EnsureActivePull
-use std::{str::FromStr, sync::Arc};
-
-use anyhow::Error as AnyError;
 use futures::{future::BoxFuture, FutureExt};
 
-use condow_client::CondowClient;
-use config::{ClientRetryWrapper, Config};
 use errors::CondowError;
-use machinery::ProbeInternal;
-use probe::{Probe, ProbeFactory};
-use reader::{CondowAdapter, RandomAccessReader};
+use probe::Probe;
+use reader::RandomAccessReader;
 use streams::{ChunkStream, OrderedChunkStream};
 
 #[macro_use]
 pub(crate) mod helpers;
+pub mod components;
+mod condow;
 pub mod condow_client;
 pub mod config;
 mod download_range;
@@ -123,8 +119,9 @@ mod request;
 mod retry;
 pub mod streams;
 
+pub use condow::Condow;
 pub use download_range::*;
-pub use request::*;
+pub use request::{Request, RequestNoLocation};
 
 #[cfg(test)]
 pub mod test_utils;
@@ -134,6 +131,27 @@ pub mod test_utils;
 /// This trait is not object safe. If you want to use dynamic dispatch you
 /// might consider the trait [DownloadsUntyped] which is object safe
 /// and accepts string slices as a location.
+///  ```
+/// # use std::sync::Arc;
+/// use condow_core::{Condow, Downloads, config::Config};
+/// use condow_core::condow_client::InMemoryClient;
+///
+/// # #[tokio::main]
+/// # async fn main() {
+/// // First we need a client... Let's make the type of the location simply `u32`s
+/// let client = InMemoryClient::<i32>::new_static(b"a remote BLOB");
+///
+/// // ... and a configuration for Condow
+/// let config = Config::default();
+///
+/// let condow = Condow::new(client, config).unwrap();
+///
+/// assert_eq!(Downloads::get_size(&condow, 42).await.unwrap(), 13);
+///
+/// let blob = Downloads::blob(&condow).at(42).download_into_vec().await.unwrap();
+/// assert_eq!(blob, b"a remote BLOB");
+/// # }
+/// ```
 pub trait Downloads: Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
@@ -244,271 +262,6 @@ pub trait DownloadsUntyped: Send + Sync + 'static {
     where
         Self: Sized;
 }
-
-/// The CONcurrent DOWnloader
-///
-/// Downloads BLOBs by splitting the download into parts
-/// which are downloaded concurrently.
-///
-/// It is recommended to use one of the traits [Downloads] or
-/// [DownloadsUntyped] instead of [Condow] itself since this
-/// struct might get more type parameters in the future.
-///
-/// ## Wording
-///
-/// * `Range`: A range to be downloaded of a BLOB (Can also be the complete BLOB)
-/// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
-/// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make up a part.
-pub struct Condow<C, PF = ()> {
-    client: ClientRetryWrapper<C>,
-    config: Config,
-    probe_factory: Option<Arc<PF>>,
-}
-
-impl<C: CondowClient, PF: ProbeFactory> Clone for Condow<C, PF> {
-    fn clone(&self) -> Self {
-        Self {
-            client: self.client.clone(),
-            config: self.config.clone(),
-            probe_factory: self.probe_factory.clone(),
-        }
-    }
-}
-
-impl<C> Condow<C>
-where
-    C: CondowClient,
-{
-    /// Create a new CONcurrent DOWnloader.
-    ///
-    /// Fails if the [Config] is not valid.
-    pub fn new(client: C, config: Config) -> Result<Condow<C, ()>, AnyError> {
-        let config = config.validated()?;
-        Ok(Condow {
-            client: ClientRetryWrapper::new(client, config.retries.clone()),
-            config,
-            probe_factory: None,
-        })
-    }
-}
-
-impl<C, PF> Condow<C, PF>
-where
-    C: CondowClient,
-    PF: ProbeFactory,
-{
-    /// Set a factory for [Probe]s which will add a [Probe] to each request
-    ///
-    /// The [ProbeFactory] is intended to share state with the [Probe] to
-    /// add instrumentation
-    pub fn probe_factory<PPF: ProbeFactory>(self, factory: PPF) -> Condow<C, PPF> {
-        self.probe_factory_shared(Arc::new(factory))
-    }
-
-    /// Set a factory for [Probe]s which will add a [Probe] to each request
-    ///
-    /// The [ProbeFactory] is intended to share state with the [Probe] to
-    /// add instrumentation
-    pub fn probe_factory_shared<PPF: ProbeFactory>(self, factory: Arc<PPF>) -> Condow<C, PPF> {
-        Condow {
-            client: self.client,
-            config: self.config,
-            probe_factory: Some(factory),
-        }
-    }
-
-    /// Download a BLOB via the returned request object
-    pub fn blob(&self) -> RequestNoLocation<C::Location> {
-        let condow = self.clone();
-        let download_fn = move |location: <C as CondowClient>::Location, params: Params| match (
-            params.probe,
-            condow.probe_factory.as_ref().map(|f| f.make(&location)),
-        ) {
-            (None, None) => {
-                machinery::download_chunks(condow.client, params.config, location, params.range, ())
-                    .boxed()
-            }
-            (Some(request_probe), None) => machinery::download_chunks(
-                condow.client,
-                params.config,
-                location,
-                params.range,
-                ProbeInternal::RequestProbe::<()>(request_probe),
-            )
-            .boxed(),
-            (None, Some(factory_probe)) => machinery::download_chunks(
-                condow.client,
-                params.config,
-                location,
-                params.range,
-                factory_probe,
-            )
-            .boxed(),
-            (Some(request_probe), Some(factory_probe)) => machinery::download_chunks(
-                condow.client,
-                params.config,
-                location,
-                params.range,
-                ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
-            )
-            .boxed(),
-        };
-
-        RequestNoLocation::new(download_fn, self.config.clone())
-    }
-
-    /// Get the size of a BLOB at the given location
-    pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
-        self.client.get_size(location.into(), &()).await
-    }
-
-    /// Creates a [RandomAccessReader] for the given location
-    pub async fn reader<L: Into<C::Location>>(
-        &self,
-        location: L,
-    ) -> Result<RandomAccessReader, CondowError> {
-        RandomAccessReader::new(CondowAdapter::new(self.clone(), location.into())).await
-    }
-
-    /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length<L: Into<C::Location>>(
-        &self,
-        location: L,
-        length: u64,
-    ) -> RandomAccessReader {
-        RandomAccessReader::new_with_length(
-            CondowAdapter::new(self.clone(), location.into()),
-            length,
-        )
-    }
-}
-
-impl<C, PF> Downloads for Condow<C, PF>
-where
-    C: CondowClient,
-    PF: ProbeFactory,
-{
-    type Location = C::Location;
-
-    fn blob(&self) -> RequestNoLocation<Self::Location> {
-        self.blob()
-    }
-
-    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
-        Box::pin(self.get_size(location))
-    }
-
-    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader
-    where
-        Self: Sized,
-    {
-        self.reader_with_length(location, length)
-    }
-}
-
-impl<C, PF> DownloadsUntyped for Condow<C, PF>
-where
-    C: CondowClient,
-    C::Location: FromStr,
-    <C::Location as FromStr>::Err: std::error::Error + Sync + Send + 'static,
-    PF: ProbeFactory,
-{
-    fn blob(&self) -> RequestNoLocation<&str> {
-        let condow = self.clone();
-
-        let download_fn = move |location: &str, params: Params| {
-            let location = match location.parse::<C::Location>() {
-                Ok(loc) => loc,
-                Err(parse_err) => {
-                    return futures::future::err(
-                        CondowError::new_other(format!("invalid location: {location}"))
-                            .with_source(parse_err),
-                    )
-                    .boxed();
-                }
-            };
-
-            match (
-                params.probe,
-                condow.probe_factory.as_ref().map(|f| f.make(&location)),
-            ) {
-                (None, None) => machinery::download_chunks(
-                    condow.client,
-                    params.config,
-                    location,
-                    params.range,
-                    (),
-                )
-                .boxed(),
-                (Some(request_probe), None) => machinery::download_chunks(
-                    condow.client,
-                    params.config,
-                    location,
-                    params.range,
-                    ProbeInternal::RequestProbe::<()>(request_probe),
-                )
-                .boxed(),
-                (None, Some(factory_probe)) => machinery::download_chunks(
-                    condow.client,
-                    params.config,
-                    location,
-                    params.range,
-                    factory_probe,
-                )
-                .boxed(),
-                (Some(request_probe), Some(factory_probe)) => machinery::download_chunks(
-                    condow.client,
-                    params.config,
-                    location,
-                    params.range,
-                    ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
-                )
-                .boxed(),
-            }
-        };
-
-        RequestNoLocation::new(download_fn, self.config.clone())
-    }
-
-    fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
-        let location = match location.parse::<C::Location>() {
-            Ok(loc) => loc,
-            Err(parse_err) => {
-                return futures::future::err(
-                    CondowError::new_other(format!("invalid location: {location}"))
-                        .with_source(parse_err),
-                )
-                .boxed();
-            }
-        };
-
-        Box::pin(self.get_size(location))
-    }
-
-    fn reader_with_length(
-        &self,
-        location: &str,
-        length: u64,
-    ) -> Result<RandomAccessReader, CondowError>
-    where
-        Self: Sized,
-    {
-        let location = match location.parse::<C::Location>() {
-            Ok(loc) => loc,
-            Err(parse_err) => {
-                return Err(
-                    CondowError::new_other(format!("invalid location: {location}"))
-                        .with_source(parse_err),
-                )
-            }
-        };
-
-        Ok(self.reader_with_length(location, length))
-    }
-}
-
-#[cfg(test)]
-mod condow_tests;
 
 #[test]
 fn downloads_untyped_is_object_safe_must_compile() {
