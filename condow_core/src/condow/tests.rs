@@ -525,47 +525,56 @@ mod probe_events {
         //! We test different levels of concurrency since there are special
         //! implementations and each of them has to trifgger the events.
 
+        let sequential_modes = [
+            SequentialDownloadMode::KeepParts,
+            SequentialDownloadMode::MergeParts,
+            SequentialDownloadMode::Repartition {
+                part_size: 5.into(),
+            },
+        ];
         let n_concurencies = [1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
 
-        for n_concurrency in n_concurencies {
-            let client = TestCondowClient::new().max_chunk_size(10);
-            let config = Config::default()
-                .part_size_bytes(5)
-                .sequential_download_mode(SequentialDownloadMode::KeepParts)
-                .max_concurrency(n_concurrency);
-            let condow = Condow::new(client.clone(), config).unwrap();
+        for sequential_download_mode in sequential_modes {
+            for n_concurrency in n_concurencies {
+                let client = TestCondowClient::new().max_chunk_size(10);
+                let config = Config::default()
+                    .part_size_bytes(5)
+                    .sequential_download_mode(SequentialDownloadMode::KeepParts)
+                    .max_concurrency(n_concurrency);
+                let condow = Condow::new(client.clone(), config).unwrap();
 
-            let probe = TestProbe::new();
-            let result = condow
-                .blob()
-                .range(0..100)
-                .probe(Arc::new(probe.clone()))
-                .download_into_vec()
-                .await
-                .unwrap();
+                let probe = TestProbe::new();
+                let result = condow
+                    .blob()
+                    .range(0..100)
+                    .probe(Arc::new(probe.clone()))
+                    .download_into_vec()
+                    .await
+                    .unwrap();
 
-            assert_eq!(result, client.data_slice()[0..100]);
+                assert_eq!(result, client.data_slice()[0..100]);
 
-            assert_eq!(
-                probe.downloads_open(),
-                0,
-                "downloads open - n_conc: {n_concurrency}"
-            );
-            assert_eq!(
+                assert_eq!(
+                    probe.downloads_open(),
+                    0,
+                    "downloads open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+                assert_eq!(
                 probe.downloads_started(),
                 1,
-                "downloads started - n_conc: {n_concurrency}"
+                "downloads started - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
             );
-            assert_eq!(
-                probe.parts_open(),
-                0,
-                "parts open - n_conc: {n_concurrency}"
-            );
-            assert_eq!(
-                probe.parts_received(),
-                20,
-                "parts received - n_conc: {n_concurrency}"
-            );
+                assert_eq!(
+                    probe.parts_open(),
+                    0,
+                    "parts open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+                assert_eq!(
+                    probe.parts_received(),
+                    20,
+                    "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+            }
         }
     }
 
