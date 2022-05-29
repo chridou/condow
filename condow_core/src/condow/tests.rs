@@ -539,7 +539,7 @@ mod probe_events {
                 let client = TestCondowClient::new().max_chunk_size(10);
                 let config = Config::default()
                     .part_size_bytes(5)
-                    .sequential_download_mode(SequentialDownloadMode::KeepParts)
+                    .sequential_download_mode(sequential_download_mode)
                     .max_concurrency(n_concurrency);
                 let condow = Condow::new(client.clone(), config).unwrap();
 
@@ -560,20 +560,30 @@ mod probe_events {
                     "downloads open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
                 );
                 assert_eq!(
-                probe.downloads_started(),
-                1,
-                "downloads started - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
-            );
+                    probe.downloads_started(),
+                    1,
+                    "downloads started - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
                 assert_eq!(
                     probe.parts_open(),
                     0,
                     "parts open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
                 );
-                assert_eq!(
-                    probe.parts_received(),
-                    20,
-                    "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
-                );
+                if sequential_download_mode == SequentialDownloadMode::MergeParts
+                    && n_concurrency == 1
+                {
+                    assert_eq!(
+                        probe.parts_received(),
+                        1,
+                        "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        probe.parts_received(),
+                        20,
+                        "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                    );
+                }
             }
         }
     }
