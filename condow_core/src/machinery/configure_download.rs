@@ -121,7 +121,7 @@ where
     }
 
     config.log_download_messages_as_debug.log(format!(
-        "download started ({} bytes) with effective concurrency {} and {} part(s)",
+        "download {} bytes with effective concurrency {} and {} part(s)",
         effective_range.len(),
         config.max_concurrency,
         part_requests.parts_hint()

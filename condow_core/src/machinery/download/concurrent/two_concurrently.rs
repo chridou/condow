@@ -75,7 +75,6 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
     {
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
 
-        probe.download_started();
         let active_streams = match (part_requests.next(), part_requests.next()) {
             (None, _) => {
                 probe.download_completed(Duration::ZERO);

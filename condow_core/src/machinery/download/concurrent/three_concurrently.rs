@@ -79,8 +79,6 @@ impl<P: Probe + Clone> ThreePartsConcurrently<P> {
             + Send
             + 'static,
     {
-        probe.download_started();
-
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
 
         let active_streams = match (

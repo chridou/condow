@@ -1,3 +1,4 @@
+//! Components for sequential downloads
 use futures::StreamExt;
 
 use crate::{
@@ -24,8 +25,6 @@ pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    probe.download_started();
-
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
 
@@ -53,8 +52,6 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> BytesStream {
-    probe.download_started();
-
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
 

@@ -1,4 +1,4 @@
-//! Spawns multiple [SequentialDownloader]s to download parts
+//! Components for concurrent downloads
 
 use futures::StreamExt;
 

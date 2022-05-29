@@ -45,6 +45,8 @@ pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P:
         return Ok(ChunkStream::empty());
     };
 
+    probe.download_started();
+
     let stream = if configuration.max_concurrency() <= 1 {
         download::download_chunks_sequentially(client, configuration, probe, download_guard)
     } else {
@@ -86,6 +88,8 @@ pub(crate) async fn download_bytes<C: CondowClient, DR: Into<DownloadRange>, P: 
     } else {
         return Ok(BytesStream::empty());
     };
+
+    probe.download_started();
 
     let stream = if configuration.max_concurrency() <= 1 {
         download::download_bytes_sequentially(client, configuration, probe, download_guard)

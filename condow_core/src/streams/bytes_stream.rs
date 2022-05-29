@@ -20,6 +20,9 @@ pub type BytesStreamItem = Result<Bytes, CondowError>;
 
 pin_project! {
     /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
+    ///
+    /// This stream is fused. It will always return `None` after `None` or an error was
+    /// returned.
     pub struct BytesStream {
         #[pin]
         source: SourceFlavour,

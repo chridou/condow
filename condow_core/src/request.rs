@@ -49,6 +49,7 @@ impl<L> RequestNoLocation<L> {
                 probe: None,
                 range: (..).into(),
                 config,
+                trusted_size: None,
             },
         }
     }
@@ -99,6 +100,15 @@ impl<L> RequestNoLocation<L> {
     /// Specify the range to download
     pub fn range<DR: Into<DownloadRange>>(mut self, range: DR) -> Self {
         self.params.range = range.into();
+        self
+    }
+
+    /// Specify the total size of the BLOB.
+    ///
+    /// This will prevent condow from querying the size of the BLOB.
+    /// The supplied value must be correct.
+    pub fn trusted_size(mut self, size: u64) -> Self {
+        self.params.trusted_size = Some(size);
         self
     }
 
@@ -204,6 +214,15 @@ where
         self
     }
 
+    /// Specify the total size of the BLOB.
+    ///
+    /// This will prevent condow from querying the size of the BLOB.
+    /// The supplied value must be correct.
+    pub fn trusted_size(mut self, size: u64) -> Self {
+        self.params.trusted_size = Some(size);
+        self
+    }
+
     /// Attach a [Probe] to the download
     pub fn probe(mut self, probe: Arc<dyn Probe>) -> Self {
         self.params.probe = Some(probe);
@@ -278,4 +297,5 @@ pub(crate) struct Params {
     pub probe: Option<Arc<dyn Probe>>,
     pub range: DownloadRange,
     pub config: Config,
+    pub trusted_size: Option<u64>,
 }
