@@ -9,7 +9,6 @@ use crate::{
     errors::CondowError,
     machinery::{self, ProbeInternal},
     probe::ProbeFactory,
-    reader::RandomAccessReader,
     request::{Params, RequestAdapter},
     streams::{BytesStream, ChunkStream},
     Downloads, DownloadsUntyped, RequestNoLocation,

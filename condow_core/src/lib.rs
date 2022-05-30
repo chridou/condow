@@ -97,11 +97,10 @@
 //! [condow_fs]:https://docs.rs/condow_fs
 //! [InMemoryClient]:condow_client::InMemoryClient
 //! [EnsureActivePull]:config::EnsureActivePull
-use futures::{future::BoxFuture, FutureExt};
+use futures::future::BoxFuture;
 
 use errors::CondowError;
 use probe::Probe;
-use reader::RandomAccessReader;
 use streams::{ChunkStream, OrderedChunkStream};
 
 #[macro_use]

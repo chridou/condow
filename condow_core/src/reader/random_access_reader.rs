@@ -478,6 +478,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_from_range_no_seek() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = Vec::new();
+        let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+        assert_eq!(bytes_read, 3);
+        assert_eq!(buf, [2, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn read_from_range_seek_from_start() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        reader.seek(SeekFrom::Start(1)).await.unwrap();
+        let mut buf = vec![0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![3, 4]);
+    }
+
+    #[tokio::test]
+    async fn read_from_range_seek_from_end() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        reader.seek(SeekFrom::End(-2)).await.unwrap();
+        let mut buf = vec![0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![3, 4]);
+    }
+
+    #[tokio::test]
     async fn fetch_ahead() {
         for n in 1..255 {
             let modes = [
