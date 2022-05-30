@@ -125,13 +125,14 @@ impl RandomAccessReader {
     }
 
     fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
-        let len = match self.fetch_ahead_mode {
+        let bytes_to_fetch = match self.fetch_ahead_mode {
             FetchAheadMode::None => dest_buf_len,
             FetchAheadMode::Bytes(n_bytes) => dest_buf_len.max(n_bytes),
-            FetchAheadMode::ToEnd => self.bounds.end_incl(),
+            FetchAheadMode::ToEnd => self.bounds.len(),
         };
 
-        let end_incl = (self.pos + len - 1).min(self.bounds.end_incl());
+        let end_incl =
+            (self.bounds.start() + self.pos + bytes_to_fetch - 1).min(self.bounds.end_incl());
 
         let range = (self.bounds.start() + self.pos)..=end_incl;
 
@@ -189,11 +190,11 @@ impl AsyncRead for RandomAccessReader {
                 match Pin::new(&mut reader).poll_read(cx, dest_buf) {
                     task::Poll::Ready(Ok(bytes_written)) => {
                         assert!(
-                            !(self.pos > self.bounds.end_incl()),
+                            !(self.pos > self.bounds.len()),
                             "Position can not be larger than length"
                         );
                         self.pos += bytes_written as u64;
-                        if self.pos == self.bounds.end_incl() {
+                        if self.pos == self.bounds.len() {
                             assert!(!(bytes_written == 0), "Still bytes left");
                             self.state = State::Finished;
                             task::Poll::Ready(Ok(bytes_written))
@@ -241,13 +242,13 @@ impl AsyncSeek for RandomAccessReader {
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset,
             SeekFrom::End(offset) => {
-                if offset < 0 && -offset as u64 > this.bounds.end_incl() {
+                if offset < 0 && -offset as u64 > this.bounds.len() {
                     // This would go before the start
                     // and is an error by the specification of SeekFrom::End
                     let err = CondowError::new_invalid_range("Seek before start");
                     return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
                 }
-                (this.bounds.end_incl() as i64 + offset) as u64
+                (this.bounds.len() as i64 + offset) as u64
             }
             SeekFrom::Current(offset) => {
                 if offset < 0 && -offset as u64 > this.pos {
@@ -296,6 +297,26 @@ mod tests {
             assert_eq!(bytes_read, expected.len(), "n bytes read ({} items)", n);
             assert_eq!(buf, expected, "bytes read ({} items)", n);
         }
+    }
+
+    #[tokio::test]
+    async fn check_read_1() {
+        let expected = [0u8];
+
+        let downloader = TestDownloader::new(1);
+
+        let mut reader = downloader
+            .blob()
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = Vec::new();
+        let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+        assert_eq!(bytes_read, 1);
+        assert_eq!(buf, expected);
     }
 
     #[tokio::test]

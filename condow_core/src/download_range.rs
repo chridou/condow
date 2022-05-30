@@ -61,6 +61,7 @@ impl InclusiveRange {
     /// assert_eq!(range.len(), 6);
     /// ```
     #[allow(clippy::len_without_is_empty)]
+    #[inline]
     pub fn len(&self) -> u64 {
         if self.1 < self.0 {
             return 0;
@@ -82,6 +83,7 @@ impl InclusiveRange {
         self.0..self.1 + 1
     }
 
+    #[inline]
     pub fn advance(&mut self, by: u64) {
         self.0 += by
     }

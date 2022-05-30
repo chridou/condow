@@ -527,8 +527,8 @@ impl Downloads for TestDownloader {
 
             fn size<'a>(
                 &'a self,
-                location: L,
-                params: Params,
+                _location: L,
+                _params: Params,
             ) -> BoxFuture<'a, Result<u64, CondowError>> {
                 self.client.get_size(IgnoreLocation)
             }
