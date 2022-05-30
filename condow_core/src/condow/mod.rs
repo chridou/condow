@@ -9,7 +9,7 @@ use crate::{
     errors::CondowError,
     machinery::{self, ProbeInternal},
     probe::ProbeFactory,
-    reader::{CondowAdapter, RandomAccessReader},
+    reader::RandomAccessReader,
     request::{Params, RequestAdapter},
     streams::{BytesStream, ChunkStream},
     Downloads, DownloadsUntyped, RequestNoLocation,
@@ -99,26 +99,6 @@ where
     pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
         self.client.get_size(location.into(), &()).await
     }
-
-    /// Creates a [RandomAccessReader] for the given location
-    pub async fn reader<L: Into<C::Location>>(
-        &self,
-        location: L,
-    ) -> Result<RandomAccessReader, CondowError> {
-        RandomAccessReader::new(CondowAdapter::new(self.clone(), location.into())).await
-    }
-
-    /// Creates a [RandomAccessReader] for the given location
-    pub fn reader_with_length<L: Into<C::Location>>(
-        &self,
-        location: L,
-        length: u64,
-    ) -> RandomAccessReader {
-        RandomAccessReader::new_with_length(
-            CondowAdapter::new(self.clone(), location.into()),
-            length,
-        )
-    }
 }
 
 impl<C, PF> Downloads for Condow<C, PF>
@@ -134,13 +114,6 @@ where
 
     fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
-    }
-
-    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader
-    where
-        Self: Sized,
-    {
-        self.reader_with_length(location, length)
     }
 }
 
@@ -171,27 +144,6 @@ where
         };
 
         Box::pin(self.get_size(location))
-    }
-
-    fn reader_with_length(
-        &self,
-        location: &str,
-        length: u64,
-    ) -> Result<RandomAccessReader, CondowError>
-    where
-        Self: Sized,
-    {
-        let location = match location.parse::<C::Location>() {
-            Ok(loc) => loc,
-            Err(parse_err) => {
-                return Err(
-                    CondowError::new_other(format!("invalid location: {location}"))
-                        .with_source(parse_err),
-                )
-            }
-        };
-
-        Ok(self.reader_with_length(location, length))
     }
 }
 
@@ -229,6 +181,10 @@ where
         params: Params,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         get_chunk_stream(self.condow.clone(), location, params).boxed()
+    }
+
+    fn size<'a>(&'a self, location: L, params: Params) -> BoxFuture<'a, Result<u64, CondowError>> {
+        get_size(self.condow.clone(), location, params).boxed()
     }
 }
 
@@ -292,6 +248,25 @@ where
 
         self.typed_adapter.chunks(location, params).boxed()
     }
+
+    fn size<'a>(
+        &'a self,
+        location: &str,
+        params: Params,
+    ) -> BoxFuture<'a, Result<u64, CondowError>> {
+        let location = match location.parse::<C::Location>() {
+            Ok(loc) => loc,
+            Err(parse_err) => {
+                return futures::future::err(
+                    CondowError::new_other(format!("invalid location: {location}"))
+                        .with_source(parse_err),
+                )
+                .boxed();
+            }
+        };
+
+        self.typed_adapter.size(location, params).boxed()
+    }
 }
 
 async fn get_chunk_stream<C, PF>(
@@ -314,7 +289,7 @@ where
                 location,
                 params.range,
                 (),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -325,7 +300,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::RequestProbe::<()>(request_probe),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -336,7 +311,7 @@ where
                 location,
                 params.range,
                 factory_probe,
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -347,7 +322,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -374,7 +349,7 @@ where
                 location,
                 params.range,
                 (),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -385,7 +360,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::RequestProbe::<()>(request_probe),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -396,7 +371,7 @@ where
                 location,
                 params.range,
                 factory_probe,
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
         }
@@ -407,9 +382,42 @@ where
                 location,
                 params.range,
                 ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
-                params.trusted_size,
+                params.trusted_blob_size,
             )
             .await
+        }
+    }
+}
+
+async fn get_size<C, PF>(
+    condow: Condow<C, PF>,
+    location: C::Location,
+    params: Params,
+) -> Result<u64, CondowError>
+where
+    C: CondowClient,
+    PF: ProbeFactory,
+{
+    match (
+        params.probe,
+        condow.probe_factory.as_ref().map(|f| f.make(&location)),
+    ) {
+        (None, None) => condow.client.get_size(location, &()).await,
+        (Some(request_probe), None) => {
+            condow
+                .client
+                .get_size(location, &ProbeInternal::RequestProbe::<()>(request_probe))
+                .await
+        }
+        (None, Some(factory_probe)) => condow.client.get_size(location, &factory_probe).await,
+        (Some(request_probe), Some(factory_probe)) => {
+            condow
+                .client
+                .get_size(
+                    location,
+                    &ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
+                )
+                .await
         }
     }
 }

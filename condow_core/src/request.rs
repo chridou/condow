@@ -6,12 +6,17 @@ use std::{str::FromStr, sync::Arc};
 
 use futures::{
     future::{self, BoxFuture},
-    TryStreamExt,
+    FutureExt, TryStreamExt,
 };
 
 use crate::{
-    condow_client::IgnoreLocation, config::Config, errors::CondowError, probe::Probe,
-    reader::BytesAsyncReader, streams::BytesStream, ChunkStream, DownloadRange, OrderedChunkStream,
+    condow_client::IgnoreLocation,
+    config::Config,
+    errors::CondowError,
+    probe::Probe,
+    reader::{BytesAsyncReader, FetchAheadMode, RandomAccessReader},
+    streams::BytesStream,
+    ChunkStream, DownloadRange, InclusiveRange, OrderedChunkStream,
 };
 
 pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
@@ -25,6 +30,7 @@ pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
         location: L,
         params: Params,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>>;
+    fn size<'a>(&'a self, location: L, params: Params) -> BoxFuture<'a, Result<u64, CondowError>>;
 }
 
 /// A request for a download where the location is not yet known
@@ -49,7 +55,7 @@ impl<L> RequestNoLocation<L> {
                 probe: None,
                 range: (..).into(),
                 config,
-                trusted_size: None,
+                trusted_blob_size: None,
             },
         }
     }
@@ -107,8 +113,8 @@ impl<L> RequestNoLocation<L> {
     ///
     /// This will prevent condow from querying the size of the BLOB.
     /// The supplied value must be correct.
-    pub fn trusted_size(mut self, size: u64) -> Self {
-        self.params.trusted_size = Some(size);
+    pub fn trusted_blob_size(mut self, size: u64) -> Self {
+        self.params.trusted_blob_size = Some(size);
         self
     }
 
@@ -177,6 +183,15 @@ impl RequestNoLocation<IgnoreLocation> {
         Ok(BytesAsyncReader::new(stream))
     }
 
+    /// Returns a builder for a [RandomAccessReader] which implements [AsyncRead] and [AsyncSeek].
+    ///
+    /// To create a random access reader the size of the BLOB must be known.
+    /// If `trusted_blob_size` is set that value will be used. Otherwise a request
+    /// to get the size of the BLOB is made.
+    pub fn random_access_reader(self) -> RandomAccessReaderBuilder<IgnoreLocation> {
+        self.at(IgnoreLocation).random_access_reader()
+    }
+
     /// Pulls the bytes into the void
     ///
     /// Provided mainly for testing.
@@ -218,8 +233,8 @@ where
     ///
     /// This will prevent condow from querying the size of the BLOB.
     /// The supplied value must be correct.
-    pub fn trusted_size(mut self, size: u64) -> Self {
-        self.params.trusted_size = Some(size);
+    pub fn trusted_blob_size(mut self, size: u64) -> Self {
+        self.params.trusted_blob_size = Some(size);
         self
     }
 
@@ -277,8 +292,22 @@ where
 
     /// Returns an [AsyncRead] which reads over the bytes of the stream
     pub async fn reader(self) -> Result<BytesAsyncReader, CondowError> {
-        let stream = self.download_chunks_ordered().await?.into_bytes_stream();
+        let stream = self.download().await?;
         Ok(BytesAsyncReader::new(stream))
+    }
+
+    /// Returns a builder for a [RandomAccessReader] which implements [AsyncRead] and [AsyncSeek].
+    ///
+    /// To create a random access reader the size of the BLOB must be known.
+    /// If `trusted_blob_size` is set that value will be used. Otherwise a request
+    /// to get the size of the BLOB is made.
+    pub fn random_access_reader(self) -> RandomAccessReaderBuilder<L> {
+        RandomAccessReaderBuilder {
+            adapter: self.adapter,
+            location: self.location,
+            params: self.params,
+            fetch_ahead_mode: FetchAheadMode::default(),
+        }
     }
 
     /// Pulls the bytes into the void
@@ -291,11 +320,107 @@ where
     }
 }
 
+pub struct RandomAccessReaderBuilder<L> {
+    adapter: Box<dyn RequestAdapter<L>>,
+    location: L,
+    params: Params,
+    fetch_ahead_mode: FetchAheadMode,
+}
+
+impl<L> RandomAccessReaderBuilder<L>
+where
+    L: Clone + Send + Sync + 'static,
+{
+    /// Specify the location to download the Blob from
+    pub fn at<LL: Into<L>>(mut self, location: LL) -> Self {
+        self.location = location.into();
+        self
+    }
+
+    /// Specify the range to the reader operates on.
+    ///
+    /// The reader to be created can only operate within th ebounds of this range.
+    /// By default the whole BLOB is expected to be read from.
+    pub fn range<DR: Into<DownloadRange>>(mut self, range: DR) -> Self {
+        self.params.range = range.into();
+        self
+    }
+
+    /// Specify the total size of the BLOB.
+    ///
+    /// This will prevent condow from querying the size of the BLOB.
+    /// The supplied value must be correct.
+    pub fn trusted_blob_size(mut self, size: u64) -> Self {
+        self.params.trusted_blob_size = Some(size);
+        self
+    }
+
+    /// Attach a [Probe] to the reader
+    pub fn probe(mut self, probe: Arc<dyn Probe>) -> Self {
+        self.params.probe = Some(probe);
+        self
+    }
+
+    /// Override the configuration downloads
+    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    where
+        F: FnOnce(Config) -> Config,
+    {
+        self.params.config = reconfigure(self.params.config);
+        self
+    }
+
+    /// Returns an [AsyncRead] + [AsyncSeek] which reads over the bytes of the BLOB(-range)
+    pub async fn finish(self) -> Result<RandomAccessReader, CondowError> {
+        let blob_len = if let Some(trusted_size) = self.params.trusted_blob_size {
+            trusted_size
+        } else {
+            self.adapter
+                .size(self.location.clone(), self.params.clone())
+                .await?
+        };
+
+        let bounds = if let Some(incl_range) = self.params.range.incl_range_from_size(blob_len) {
+            incl_range
+        } else {
+            return Err(CondowError::new_invalid_range(
+                self.params.range.to_string(),
+            ));
+        };
+
+        let fetch_ahead_mode = self.fetch_ahead_mode;
+
+        let adapter = Arc::new(self.adapter);
+        let params = self.params;
+        let location = self.location;
+        let get_stream_fn = move |range: InclusiveRange| {
+            let mut params = params.clone();
+            let location = location.clone();
+            let adapter = Arc::clone(&adapter);
+
+            params.range = range.into();
+            async move {
+                Ok(BytesAsyncReader::new(
+                    adapter.bytes(location, params).await?,
+                ))
+            }
+            .boxed()
+        };
+
+        Ok(RandomAccessReader::new(
+            get_stream_fn,
+            bounds,
+            fetch_ahead_mode,
+        ))
+    }
+}
+
 /// Internal struct to keep common parameters independen of
 /// the dispatch mechanism together
+#[derive(Clone)]
 pub(crate) struct Params {
     pub probe: Option<Arc<dyn Probe>>,
     pub range: DownloadRange,
     pub config: Config,
-    pub trusted_size: Option<u64>,
+    pub trusted_blob_size: Option<u64>,
 }

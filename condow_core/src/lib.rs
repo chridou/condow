@@ -159,32 +159,6 @@ pub trait Downloads: Send + Sync + 'static {
 
     /// Get the size of a BLOB at the given location
     fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>>;
-
-    /// Creates a [RandomAccessReader] for the given location
-    ///
-    /// This function will query the size of the BLOB. If the size is already known
-    /// call [Downloads::reader_with_length]
-    fn reader<'a>(
-        &'a self,
-        location: Self::Location,
-    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
-    where
-        Self: Sized + Sync,
-    {
-        let me = self;
-        async move {
-            let length = me.get_size(location.clone()).await?;
-            Ok(me.reader_with_length(location, length))
-        }
-        .boxed()
-    }
-
-    /// Creates a [RandomAccessReader] for the given location
-    ///
-    /// This function will create a new reader immediately
-    fn reader_with_length(&self, location: Self::Location, length: u64) -> RandomAccessReader
-    where
-        Self: Sized;
 }
 
 /// Downloads from a location specified by a &[str].
@@ -227,39 +201,6 @@ pub trait DownloadsUntyped: Send + Sync + 'static {
     ///
     /// A location which can not be parsed causes method to fail.
     fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
-
-    /// Creates a [RandomAccessReader] for the given location
-    ///
-    /// This function will query the size of the BLOB. If the size is already known
-    /// call [Downloads::reader_with_length]
-    ///
-    /// A location which can not be parsed causes method to fail.
-    fn reader<'a>(
-        &'a self,
-        location: &'a str,
-    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
-    where
-        Self: Sized + Sync,
-    {
-        async move {
-            let length = self.get_size(location).await?;
-            self.reader_with_length(location, length)
-        }
-        .boxed()
-    }
-
-    /// Creates a [RandomAccessReader] for the given location
-    ///
-    /// This function will create a new reader immediately
-    ///
-    /// A location which can not be parsed causes method to fail.
-    fn reader_with_length(
-        &self,
-        location: &str,
-        length: u64,
-    ) -> Result<RandomAccessReader, CondowError>
-    where
-        Self: Sized;
 }
 
 #[test]
@@ -272,17 +213,6 @@ fn downloads_untyped_is_object_safe_must_compile() {
         }
 
         fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
-            todo!()
-        }
-
-        fn reader_with_length(
-            &self,
-            _location: &str,
-            _length: u64,
-        ) -> Result<RandomAccessReader, CondowError>
-        where
-            Self: Sized,
-        {
             todo!()
         }
     }

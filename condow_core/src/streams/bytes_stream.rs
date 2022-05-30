@@ -125,6 +125,72 @@ impl BytesStream {
         self.map_err(From::from)
     }
 
+    /// Writes all bytes left on the stream into the provided buffer
+    ///
+    /// Fails if the buffer is too small or there was an error on the stream.
+    pub async fn write_buffer(mut self, buffer: &mut [u8]) -> Result<usize, CondowError> {
+        if (buffer.len() as u64) < self.bytes_hint.lower_bound() {
+            return Err(CondowError::new_other(format!(
+                "buffer to small ({}). at least {} bytes required",
+                buffer.len(),
+                self.bytes_hint.lower_bound()
+            )));
+        }
+
+        let mut offset = 0;
+        while let Some(next) = self.next().await {
+            let bytes = next?;
+
+            let end_excl = offset + bytes.len();
+            if end_excl > buffer.len() {
+                return Err(CondowError::new_other(format!(
+                    "write attempt beyond buffer end (buffer len = {}). \
+                        attempted to write at index {}",
+                    buffer.len(),
+                    end_excl
+                )));
+            }
+
+            buffer[offset..end_excl].copy_from_slice(&bytes[..]);
+
+            offset = end_excl;
+        }
+
+        Ok(offset)
+    }
+
+    /// Creates a `Vec<u8>` filled with the bytes from the stream.
+    ///
+    /// Fails if the stream was already iterated.
+    ///
+    /// Since the parts and therefore the chunks are not ordered we can
+    /// not know, whether we can fill the `Vec` in a contiguous way.
+    /// Creates a `Vec<u8>` filled with the rest of the bytes from the stream.
+    ///
+    /// Fails if there is an error on the stream
+    pub async fn into_vec(mut self) -> Result<Vec<u8>, CondowError> {
+        if let Some(total_bytes) = self.bytes_hint.exact() {
+            if total_bytes > usize::MAX as u64 {
+                return Err(CondowError::new_other(
+                    "usize overflow while casting from u64",
+                ));
+            }
+
+            let mut buffer = vec![0; total_bytes as usize];
+            let _ = self.write_buffer(buffer.as_mut()).await?;
+            Ok(buffer)
+        } else {
+            let mut buffer = Vec::with_capacity(self.bytes_hint.lower_bound() as usize);
+
+            while let Some(next) = self.next().await {
+                let bytes = next?;
+
+                buffer.extend(bytes);
+            }
+
+            Ok(buffer)
+        }
+    }
     /// Counts the number of bytes downloaded
     ///
     /// Provided mainly for testing.

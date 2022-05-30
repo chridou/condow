@@ -15,7 +15,6 @@ use crate::{
     condow_client::{CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
-    reader::{RandomAccessReader, ReaderAdapter},
     request::{Params, RequestAdapter},
     streams::{BytesHint, BytesStream, Chunk, ChunkStream, ChunkStreamItem, OrderedChunkStream},
     DownloadRange, Downloads, InclusiveRange, RequestNoLocation,
@@ -525,6 +524,14 @@ impl Downloads for TestDownloader {
                 .unwrap();
                 future::ok(stream).boxed()
             }
+
+            fn size<'a>(
+                &'a self,
+                location: L,
+                params: Params,
+            ) -> BoxFuture<'a, Result<u64, CondowError>> {
+                self.client.get_size(IgnoreLocation)
+            }
         }
 
         RequestNoLocation::new(
@@ -542,45 +549,23 @@ impl Downloads for TestDownloader {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
-
-    fn reader_with_length(&self, _location: IgnoreLocation, length: u64) -> RandomAccessReader
-    where
-        Self: Sized,
-    {
-        RandomAccessReader::new_with_length(self.clone(), length)
-    }
-
-    fn reader<'a>(
-        &'a self,
-        location: Self::Location,
-    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
-    where
-        Self: Sized + Sync,
-    {
-        let me = self;
-        async move {
-            let length = Downloads::get_size(me, location.clone()).await?;
-            Ok(me.reader_with_length(location, length))
-        }
-        .boxed()
-    }
 }
 
-impl ReaderAdapter for TestDownloader {
-    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
-        <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
-    }
+// impl ReaderAdapter for TestDownloader {
+//     fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
+//         <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
+//     }
 
-    fn download_range<'a>(
-        &'a self,
-        range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
-        <TestDownloader as Downloads>::blob(self)
-            .range(range)
-            .download_chunks_ordered()
-            .boxed()
-    }
-}
+//     fn download_range<'a>(
+//         &'a self,
+//         range: DownloadRange,
+//     ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
+//         <TestDownloader as Downloads>::blob(self)
+//             .range(range)
+//             .download_chunks_ordered()
+//             .boxed()
+//     }
+// }
 
 fn make_a_stream(
     blob: &Mutex<Vec<u8>>,
@@ -835,7 +820,9 @@ async fn check_test_downloader_as_reader_adapter() {
     let downloader = TestDownloader::new_with_blob(sample.clone());
 
     let result = downloader
-        .download_range((..).into())
+        .blob()
+        .range(..)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -844,7 +831,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample, "1A");
 
     let result = downloader
-        .download_range((0..101).into())
+        .blob()
+        .range(0..101)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -853,7 +842,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample, "1B");
 
     let result = downloader
-        .download_range((0..=100).into())
+        .blob()
+        .range(0..=100)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -862,7 +853,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample, "1C");
 
     let result = downloader
-        .download_range((1..100).into())
+        .blob()
+        .range(1..100)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -871,7 +864,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample[1..100], "2");
 
     let result = downloader
-        .download_range((1..=100).into())
+        .blob()
+        .range(1..=100)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -880,7 +875,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample[1..=100], "3");
 
     let result = downloader
-        .download_range((..=33).into())
+        .blob()
+        .range(..=33)
+        .download()
         .await
         .unwrap()
         .into_vec()
@@ -889,7 +886,9 @@ async fn check_test_downloader_as_reader_adapter() {
     assert_eq!(result, sample[..=33], "4");
 
     let result = downloader
-        .download_range((..40).into())
+        .blob()
+        .range(..40)
+        .download()
         .await
         .unwrap()
         .into_vec()
