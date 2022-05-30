@@ -21,6 +21,7 @@ pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P:
     location: C::Location,
     range: DR,
     probe: P,
+    trusted_size: Option<u64>,
 ) -> Result<ChunkStream, CondowError> {
     let range = range.into();
 
@@ -33,6 +34,7 @@ pub(crate) async fn download_chunks<C: CondowClient, DR: Into<DownloadRange>, P:
     let configuration = if let Some(configuration) = configure_download::configure(
         location,
         range,
+        trusted_size,
         config,
         &client,
         &probe,
@@ -65,6 +67,7 @@ pub(crate) async fn download_bytes<C: CondowClient, DR: Into<DownloadRange>, P: 
     location: C::Location,
     range: DR,
     probe: P,
+    trusted_size: Option<u64>,
 ) -> Result<BytesStream, CondowError> {
     let range = range.into();
 
@@ -77,6 +80,7 @@ pub(crate) async fn download_bytes<C: CondowClient, DR: Into<DownloadRange>, P: 
     let configuration = if let Some(configuration) = configure_download::configure(
         location,
         range,
+        trusted_size,
         config,
         &client,
         &probe,

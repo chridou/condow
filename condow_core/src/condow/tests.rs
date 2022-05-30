@@ -123,6 +123,7 @@ mod range {
                                 IgnoreLocation,
                                 range.clone(),
                                 (),
+                                None,
                             )
                             .await
                             .unwrap();
@@ -224,6 +225,7 @@ mod range {
                                 IgnoreLocation,
                                 range.clone(),
                                 (),
+                                None,
                             )
                             .await
                             .unwrap();
@@ -271,6 +273,7 @@ mod range {
                                 IgnoreLocation,
                                 range.clone(),
                                 (),
+                                None,
                             )
                             .await
                             .unwrap();
@@ -327,6 +330,7 @@ mod range {
                                         IgnoreLocation,
                                         range,
                                         (),
+                                        None,
                                     )
                                     .await
                                     .unwrap();
@@ -374,6 +378,7 @@ mod range {
                                         IgnoreLocation,
                                         range,
                                         (),
+                                        None,
                                     )
                                     .await
                                     .unwrap();
@@ -432,6 +437,7 @@ mod range {
                                             IgnoreLocation,
                                             range,
                                             (),
+                                            None,
                                         )
                                         .await
                                         .unwrap();
@@ -486,6 +492,7 @@ mod range {
                                             IgnoreLocation,
                                             range,
                                             (),
+                                            None,
                                         )
                                         .await
                                         .unwrap();

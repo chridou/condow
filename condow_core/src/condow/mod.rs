@@ -308,8 +308,15 @@ where
         condow.probe_factory.as_ref().map(|f| f.make(&location)),
     ) {
         (None, None) => {
-            machinery::download_chunks(condow.client, params.config, location, params.range, ())
-                .await
+            machinery::download_chunks(
+                condow.client,
+                params.config,
+                location,
+                params.range,
+                (),
+                params.trusted_size,
+            )
+            .await
         }
         (Some(request_probe), None) => {
             machinery::download_chunks(
@@ -318,6 +325,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::RequestProbe::<()>(request_probe),
+                params.trusted_size,
             )
             .await
         }
@@ -328,6 +336,7 @@ where
                 location,
                 params.range,
                 factory_probe,
+                params.trusted_size,
             )
             .await
         }
@@ -338,6 +347,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
+                params.trusted_size,
             )
             .await
         }
@@ -358,8 +368,15 @@ where
         condow.probe_factory.as_ref().map(|f| f.make(&location)),
     ) {
         (None, None) => {
-            machinery::download_bytes(condow.client, params.config, location, params.range, ())
-                .await
+            machinery::download_bytes(
+                condow.client,
+                params.config,
+                location,
+                params.range,
+                (),
+                params.trusted_size,
+            )
+            .await
         }
         (Some(request_probe), None) => {
             machinery::download_bytes(
@@ -368,6 +385,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::RequestProbe::<()>(request_probe),
+                params.trusted_size,
             )
             .await
         }
@@ -378,6 +396,7 @@ where
                 location,
                 params.range,
                 factory_probe,
+                params.trusted_size,
             )
             .await
         }
@@ -388,6 +407,7 @@ where
                 location,
                 params.range,
                 ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
+                params.trusted_size,
             )
             .await
         }

@@ -22,8 +22,15 @@ mod download_chunks {
             .condow(config)
             .unwrap();
 
-        let result =
-            download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+        let result = download_chunks(
+            condow.client,
+            condow.config,
+            IgnoreLocation,
+            0..100,
+            (),
+            None,
+        )
+        .await;
 
         let stream = result.unwrap();
 
@@ -50,8 +57,15 @@ mod download_chunks {
             .condow(config)
             .unwrap();
 
-        let result =
-            download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+        let result = download_chunks(
+            condow.client,
+            condow.config,
+            IgnoreLocation,
+            0..100,
+            (),
+            None,
+        )
+        .await;
 
         let stream = result.unwrap();
 
@@ -79,8 +93,15 @@ mod download_chunks {
             .condow(config)
             .unwrap();
 
-        let result =
-            download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+        let result = download_chunks(
+            condow.client,
+            condow.config,
+            IgnoreLocation,
+            0..100,
+            (),
+            None,
+        )
+        .await;
 
         let stream = result.unwrap();
 
@@ -110,8 +131,15 @@ mod download_chunks {
                 .condow(config)
                 .unwrap();
 
-            let result =
-                download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+            let result = download_chunks(
+                condow.client,
+                condow.config,
+                IgnoreLocation,
+                0..100,
+                (),
+                None,
+            )
+            .await;
 
             let stream = result.unwrap();
 
@@ -145,8 +173,15 @@ mod download_chunks {
                 .condow(config)
                 .unwrap();
 
-            let result =
-                download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+            let result = download_chunks(
+                condow.client,
+                condow.config,
+                IgnoreLocation,
+                0..100,
+                (),
+                None,
+            )
+            .await;
 
             let stream = result.unwrap();
 
@@ -178,8 +213,15 @@ mod download_chunks {
                 .condow(config)
                 .unwrap();
 
-            let result =
-                download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+            let result = download_chunks(
+                condow.client,
+                condow.config,
+                IgnoreLocation,
+                0..100,
+                (),
+                None,
+            )
+            .await;
 
             let stream = result.unwrap();
 
@@ -213,8 +255,15 @@ mod download_chunks {
                 .condow(config)
                 .unwrap();
 
-            let result =
-                download_chunks(condow.client, condow.config, IgnoreLocation, 0..100, ()).await;
+            let result = download_chunks(
+                condow.client,
+                condow.config,
+                IgnoreLocation,
+                0..100,
+                (),
+                None,
+            )
+            .await;
 
             let stream = result.unwrap();
 

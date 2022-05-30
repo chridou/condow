@@ -33,6 +33,7 @@ impl<L> DownloadConfiguration<L> {
 pub(crate) async fn configure<R, C, P>(
     location: C::Location,
     range: R,
+    trusted_size: Option<u64>,
     mut config: Config,
     client: &ClientRetryWrapper<C>,
     probe: &P,
@@ -57,10 +58,15 @@ where
     let (effective_range, _bytes_hint) = match range {
         DownloadRange::Open(or) => {
             debug!(parent: &configure_stream_span, "open range");
-            let size = client
-                .get_size(location.clone(), probe)
-                .instrument(configure_stream_span.clone())
-                .await?;
+            let size = if let Some(trusted_size) = trusted_size {
+                trusted_size
+            } else {
+                debug!(parent: &configure_stream_span, "get size for open range");
+                client
+                    .get_size(location.clone(), probe)
+                    .instrument(configure_stream_span.clone())
+                    .await?
+            };
             if let Some(range) = or.incl_range_from_size(size) {
                 (range, BytesHint::new_exact(range.len()))
             } else {
@@ -70,11 +76,15 @@ where
         DownloadRange::Closed(cl) => {
             debug!(parent: &configure_stream_span, "closed range");
             if config.always_get_size.into_inner() {
-                debug!(parent: &configure_stream_span, "get size enforced");
-                let size = client
-                    .get_size(location.clone(), probe)
-                    .instrument(configure_stream_span.clone())
-                    .await?;
+                let size = if let Some(trusted_size) = trusted_size {
+                    trusted_size
+                } else {
+                    debug!(parent: &configure_stream_span, "get size enforced");
+                    client
+                        .get_size(location.clone(), probe)
+                        .instrument(configure_stream_span.clone())
+                        .await?
+                };
                 if let Some(range) = cl.incl_range_from_size(size) {
                     (range, BytesHint::new_exact(range.len()))
                 } else {
