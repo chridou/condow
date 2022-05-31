@@ -218,3 +218,45 @@ fn downloads_untyped_is_object_safe_must_compile() {
 
     let _: Box<dyn DownloadsUntyped> = Box::new(Foo);
 }
+
+#[cfg(test)]
+mod trait_tests {
+    use std::sync::Arc;
+
+    use crate::{
+        condow_client::InMemoryClient, config::Config, Condow, Downloads, DownloadsUntyped,
+    };
+
+    #[tokio::test]
+    async fn untyped_downloader_is_usable() {
+        let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
+        let config = Config::default();
+        let condow = Condow::new(client, config).unwrap();
+        let downloader: Arc<dyn DownloadsUntyped> = Arc::new(condow);
+        assert_eq!(downloader.get_size("42").await.unwrap(), 13);
+        assert!(downloader.get_size("x").await.is_err());
+        let blob = downloader
+            .blob()
+            .at("42")
+            .download_into_vec()
+            .await
+            .unwrap();
+        assert_eq!(blob, b"a remote BLOB");
+    }
+
+    #[tokio::test]
+    async fn typed_downloader_is_usable() {
+        let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
+        let config = Config::default();
+        let condow = Condow::new(client, config).unwrap();
+        let downloader: Arc<dyn Downloads<Location = u32>> = Arc::new(condow);
+        assert_eq!(downloader.get_size(42).await.unwrap(), 13);
+        let blob = downloader
+            .blob()
+            .at(42u32)
+            .download_into_vec()
+            .await
+            .unwrap();
+        assert_eq!(blob, b"a remote BLOB");
+    }
+}
