@@ -202,30 +202,87 @@ pub trait DownloadsUntyped: Send + Sync + 'static {
     fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
 }
 
-#[test]
-fn downloads_untyped_is_object_safe_must_compile() {
-    struct Foo;
-
-    impl DownloadsUntyped for Foo {
-        fn blob(&self) -> RequestNoLocation<&str> {
-            todo!()
-        }
-
-        fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
-            todo!()
-        }
-    }
-
-    let _: Box<dyn DownloadsUntyped> = Box::new(Foo);
-}
-
 #[cfg(test)]
 mod trait_tests {
     use std::sync::Arc;
 
+    use futures::future::BoxFuture;
+
     use crate::{
-        condow_client::InMemoryClient, config::Config, Condow, Downloads, DownloadsUntyped,
+        condow_client::InMemoryClient, config::Config, errors::CondowError,
+        request::RequestAdapter, Condow, Downloads, DownloadsUntyped, RequestNoLocation,
     };
+
+    #[test]
+    fn downloads_untyped_is_object_safe_must_compile() {
+        struct Foo;
+
+        impl DownloadsUntyped for Foo {
+            fn blob(&self) -> RequestNoLocation<&str> {
+                todo!()
+            }
+
+            fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+                todo!()
+            }
+        }
+
+        let _: Box<dyn DownloadsUntyped> = Box::new(Foo);
+    }
+
+    #[tokio::test]
+    async fn downloads_untyped_can_create_a_request() {
+        struct Foo;
+
+        impl DownloadsUntyped for Foo {
+            fn blob(&self) -> RequestNoLocation<&str> {
+                struct FooAdapter;
+
+                impl RequestAdapter<&str> for FooAdapter {
+                    fn bytes<'a>(
+                        &'a self,
+                        _location: &str,
+                        _params: crate::request::Params,
+                    ) -> BoxFuture<'a, Result<crate::streams::BytesStream, CondowError>>
+                    {
+                        todo!()
+                    }
+
+                    fn chunks<'a>(
+                        &'a self,
+                        _location: &str,
+                        _params: crate::request::Params,
+                    ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>>
+                    {
+                        todo!()
+                    }
+
+                    fn size<'a>(
+                        &'a self,
+                        _location: &str,
+                        _params: crate::request::Params,
+                    ) -> BoxFuture<'a, Result<u64, CondowError>> {
+                        todo!()
+                    }
+                }
+
+                RequestNoLocation::new(FooAdapter, Default::default())
+            }
+
+            fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+                todo!()
+            }
+        }
+
+        let downloads_untyped: Box<dyn DownloadsUntyped> = Box::new(Foo);
+
+        let _request = downloads_untyped
+            .blob()
+            .at("42")
+            .download_into_vec()
+            .await
+            .unwrap();
+    }
 
     #[tokio::test]
     async fn untyped_downloader_is_usable() {
