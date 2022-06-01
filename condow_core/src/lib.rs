@@ -148,6 +148,14 @@ pub mod test_utils;
 ///
 /// let blob = Downloads::blob(&condow).at(42).download_into_vec().await.unwrap();
 /// assert_eq!(blob, b"a remote BLOB");
+///
+/// // The trait can also be used dynamically:
+///
+/// let downloads_dyn_dispatch: Arc<dyn Downloads<Location = i32>> = Arc::new(condow);
+///
+/// let blob = downloads_dyn_dispatch.blob().at(42).download_into_vec().await.unwrap();
+/// assert_eq!(blob, b"a remote BLOB");
+///
 /// # }
 /// ```
 pub trait Downloads: Send + Sync + 'static {
@@ -183,23 +191,23 @@ pub trait Downloads: Send + Sync + 'static {
 /// let downloader: Arc<dyn DownloadsUntyped> = Arc::new(condow);
 ///
 /// // "42" parses as `u32`
-/// assert_eq!(downloader.get_size("42").await.unwrap(), 13);
+/// assert_eq!(downloader.get_size("42".to_string()).await.unwrap(), 13);
 ///
 /// // "x" does not
-/// assert!(downloader.get_size("x").await.is_err());
+/// assert!(downloader.get_size("x".to_string()).await.is_err());
 ///
-/// let blob = downloader.blob().at("42").download_into_vec().await.unwrap();
+/// let blob = downloader.blob().at("42".to_string()).download_into_vec().await.unwrap();
 /// assert_eq!(blob, b"a remote BLOB");
 /// # }
 /// ```
 pub trait DownloadsUntyped: Send + Sync + 'static {
     /// Download a BLOB via the returned request object
-    fn blob(&self) -> RequestNoLocation<&str>;
+    fn blob(&self) -> RequestNoLocation<String>;
 
     /// Get the size of a BLOB at the given location
     ///
     /// A location which can not be parsed causes method to fail.
-    fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>>;
+    fn get_size<'a>(&'a self, location: String) -> BoxFuture<'a, Result<u64, CondowError>>;
 }
 
 #[cfg(test)]
@@ -209,8 +217,8 @@ mod trait_tests {
     use futures::future::BoxFuture;
 
     use crate::{
-        condow_client::InMemoryClient, config::Config, errors::CondowError,
-        request::RequestAdapter, Condow, Downloads, DownloadsUntyped, RequestNoLocation,
+        condow_client::InMemoryClient, config::Config, errors::CondowError, Condow, Downloads,
+        DownloadsUntyped, RequestNoLocation,
     };
 
     #[test]
@@ -218,91 +226,42 @@ mod trait_tests {
         struct Foo;
 
         impl DownloadsUntyped for Foo {
-            fn blob(&self) -> RequestNoLocation<&str> {
+            fn blob(&self) -> RequestNoLocation<String> {
                 todo!()
             }
 
-            fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+            fn get_size<'a>(
+                &'a self,
+                _location: String,
+            ) -> BoxFuture<'a, Result<u64, CondowError>> {
                 todo!()
             }
         }
 
-        let _: Box<dyn DownloadsUntyped> = Box::new(Foo);
+        let _downloads_untyped: Box<dyn DownloadsUntyped> = Box::new(Foo);
     }
 
-    #[tokio::test]
-    async fn downloads_untyped_can_create_a_request() {
+    #[test]
+    fn downloads_typed_is_object_safe_must_compile() {
         struct Foo;
 
-        impl DownloadsUntyped for Foo {
-            fn blob(&self) -> RequestNoLocation<&str> {
-                struct FooAdapter;
+        impl Downloads for Foo {
+            type Location = i32;
 
-                impl RequestAdapter<&str> for FooAdapter {
-                    fn bytes<'a>(
-                        &'a self,
-                        _location: &str,
-                        _params: crate::request::Params,
-                    ) -> BoxFuture<'a, Result<crate::streams::BytesStream, CondowError>>
-                    {
-                        todo!()
-                    }
-
-                    fn chunks<'a>(
-                        &'a self,
-                        _location: &str,
-                        _params: crate::request::Params,
-                    ) -> BoxFuture<'a, Result<crate::streams::ChunkStream, CondowError>>
-                    {
-                        todo!()
-                    }
-
-                    fn size<'a>(
-                        &'a self,
-                        _location: &str,
-                        _params: crate::request::Params,
-                    ) -> BoxFuture<'a, Result<u64, CondowError>> {
-                        todo!()
-                    }
-                }
-
-                RequestNoLocation::new(FooAdapter, Default::default())
+            fn blob(&self) -> RequestNoLocation<i32> {
+                todo!()
             }
 
-            fn get_size<'a>(&'a self, _location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+            fn get_size<'a>(&'a self, _location: i32) -> BoxFuture<'a, Result<u64, CondowError>> {
                 todo!()
             }
         }
 
-        let downloads_untyped: Box<dyn DownloadsUntyped> = Box::new(Foo);
-
-        let _request = downloads_untyped
-            .blob()
-            .at("42")
-            .download_into_vec()
-            .await
-            .unwrap();
+        let _downloads_untyped: Box<dyn Downloads<Location = i32>> = Box::new(Foo);
     }
 
     #[tokio::test]
-    async fn untyped_downloader_is_usable() {
-        let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
-        let config = Config::default();
-        let condow = Condow::new(client, config).unwrap();
-        let downloader: Arc<dyn DownloadsUntyped> = Arc::new(condow);
-        assert_eq!(downloader.get_size("42").await.unwrap(), 13);
-        assert!(downloader.get_size("x").await.is_err());
-        let blob = downloader
-            .blob()
-            .at("42")
-            .download_into_vec()
-            .await
-            .unwrap();
-        assert_eq!(blob, b"a remote BLOB");
-    }
-
-    #[tokio::test]
-    async fn typed_downloader_is_usable() {
+    async fn typed_downloader_is_usable_for_download() {
         let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
         let config = Config::default();
         let condow = Condow::new(client, config).unwrap();
@@ -315,5 +274,21 @@ mod trait_tests {
             .await
             .unwrap();
         assert_eq!(blob, b"a remote BLOB");
+    }
+
+    #[tokio::test]
+    async fn typed_downloader_is_usable_for_reader() {
+        let client = InMemoryClient::<u32>::new_static(b"a remote BLOB");
+        let config = Config::default();
+        let condow = Condow::new(client, config).unwrap();
+        let downloader: Arc<dyn Downloads<Location = u32>> = Arc::new(condow);
+        assert_eq!(downloader.get_size(42).await.unwrap(), 13);
+        let _reader = downloader
+            .blob()
+            .at(42u32)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
     }
 }

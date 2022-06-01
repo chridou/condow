@@ -38,7 +38,7 @@ pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
 /// The default is to download the complete BLOB.
 ///
 /// This can only directly download if the type of the location is [IgnoreLocation]
-/// which probably ony makes sense while testing.
+/// which probably only makes sense while testing.
 pub struct RequestNoLocation<L> {
     adapter: Box<dyn RequestAdapter<L>>,
     params: Params,
@@ -125,9 +125,9 @@ impl<L> RequestNoLocation<L> {
     }
 
     /// Override the configuration for this request
-    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    pub fn reconfigure<F>(mut self, mut reconfigure: F) -> Self
     where
-        F: FnOnce(Config) -> Config,
+        F: FnMut(Config) -> Config,
     {
         self.params.config = reconfigure(self.params.config);
         self
@@ -245,9 +245,9 @@ where
     }
 
     /// Override the configuration for this request
-    pub fn reconfigure<F>(mut self, reconfigure: F) -> Self
+    pub fn reconfigure<F>(mut self, mut reconfigure: F) -> Self
     where
-        F: FnOnce(Config) -> Config,
+        F: FnMut(Config) -> Config,
     {
         self.params.config = reconfigure(self.params.config);
         self
@@ -423,4 +423,141 @@ pub(crate) struct Params {
     pub range: DownloadRange,
     pub config: Config,
     pub trusted_blob_size: Option<u64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use futures::{future::BoxFuture, FutureExt};
+
+    use crate::{
+        condow_client::InMemoryClient,
+        config::{ClientRetryWrapper, Config},
+        errors::CondowError,
+        machinery,
+        request::{Params, RequestAdapter},
+        streams::{BytesStream, ChunkStream},
+        RequestNoLocation,
+    };
+
+    #[tokio::test]
+    async fn request_adapter_typed_compiles() {
+        let client = InMemoryClient::<i32>::new_static(b"a remote BLOB");
+        let config = Config::default();
+        let client = ClientRetryWrapper::new(client, config.retries.clone());
+
+        struct FooAdapter {
+            client: ClientRetryWrapper<InMemoryClient<i32>>,
+        }
+
+        impl RequestAdapter<i32> for FooAdapter {
+            fn bytes<'a>(
+                &'a self,
+                location: i32,
+                params: Params,
+            ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
+                machinery::download_bytes(
+                    self.client.clone(),
+                    params.config,
+                    location,
+                    params.range,
+                    (),
+                    None,
+                )
+                .boxed()
+            }
+
+            fn chunks<'a>(
+                &'a self,
+                _location: i32,
+                _params: Params,
+            ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+                unimplemented!()
+            }
+
+            fn size<'a>(
+                &'a self,
+                location: i32,
+                _params: Params,
+            ) -> BoxFuture<'a, Result<u64, CondowError>> {
+                self.client.get_size(location, &()).boxed()
+            }
+        }
+
+        let adapter = FooAdapter { client };
+
+        let params = Params {
+            probe: None,
+            range: (1..=10).into(),
+            config,
+            trusted_blob_size: None,
+        };
+
+        let request = RequestNoLocation {
+            adapter: Box::new(adapter),
+            params,
+        };
+
+        let _bytes = request.at(42).download().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_adapter_str_compiles() {
+        let client = InMemoryClient::<i32>::new_static(b"a remote BLOB");
+        let config = Config::default();
+        let client = ClientRetryWrapper::new(client, config.retries.clone());
+
+        struct FooAdapter {
+            client: ClientRetryWrapper<InMemoryClient<i32>>,
+        }
+
+        impl RequestAdapter<&str> for FooAdapter {
+            fn bytes<'a>(
+                &'a self,
+                location: &str,
+                params: Params,
+            ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
+                machinery::download_bytes(
+                    self.client.clone(),
+                    params.config,
+                    location.parse().unwrap(),
+                    params.range,
+                    (),
+                    None,
+                )
+                .boxed()
+            }
+
+            fn chunks<'a>(
+                &'a self,
+                _location: &str,
+                _params: Params,
+            ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+                unimplemented!()
+            }
+
+            fn size<'a>(
+                &'a self,
+                location: &str,
+                _params: Params,
+            ) -> BoxFuture<'a, Result<u64, CondowError>> {
+                self.client.get_size(location.parse().unwrap(), &()).boxed()
+            }
+        }
+
+        let adapter = FooAdapter { client };
+
+        let params = Params {
+            probe: None,
+            range: (1..=10).into(),
+            config,
+            trusted_blob_size: None,
+        };
+
+        let request = RequestNoLocation {
+            adapter: Box::new(adapter),
+            params,
+        };
+
+        let _bytes = request.at("42").download().await.unwrap();
+    }
 }

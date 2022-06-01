@@ -123,14 +123,14 @@ where
     <C::Location as FromStr>::Err: std::error::Error + Sync + Send + 'static,
     PF: ProbeFactory,
 {
-    fn blob(&self) -> RequestNoLocation<&str> {
+    fn blob(&self) -> RequestNoLocation<String> {
         let condow = self.clone();
         let adapter = CondowDownloadAdapterUntyped::new(condow);
 
         RequestNoLocation::new(adapter, self.config.clone())
     }
 
-    fn get_size<'a>(&'a self, location: &str) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size<'a>(&'a self, location: String) -> BoxFuture<'a, Result<u64, CondowError>> {
         let location = match location.parse::<C::Location>() {
             Ok(loc) => loc,
             Err(parse_err) => {
@@ -203,16 +203,16 @@ where
     }
 }
 
-impl<C, PF> RequestAdapter<&str> for CondowDownloadAdapterUntyped<C, PF>
+impl<C, PF> RequestAdapter<String> for CondowDownloadAdapterUntyped<C, PF>
 where
     C: CondowClient,
     PF: ProbeFactory,
-    C::Location: FromStr,
+    C::Location: FromStr + Send + Sync + 'static,
     <C::Location as FromStr>::Err: std::error::Error + Send + Sync + 'static,
 {
     fn bytes<'a>(
         &'a self,
-        location: &str,
+        location: String,
         params: Params,
     ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
         let location = match location.parse::<C::Location>() {
@@ -231,7 +231,7 @@ where
 
     fn chunks<'a>(
         &'a self,
-        location: &str,
+        location: String,
         params: Params,
     ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
         let location = match location.parse::<C::Location>() {
@@ -250,7 +250,7 @@ where
 
     fn size<'a>(
         &'a self,
-        location: &str,
+        location: String,
         params: Params,
     ) -> BoxFuture<'a, Result<u64, CondowError>> {
         let location = match location.parse::<C::Location>() {
