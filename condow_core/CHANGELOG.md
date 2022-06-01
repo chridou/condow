@@ -4,9 +4,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.18.0 - unreleased
+
+This reease involves major breaking changes with the API.
+
+### REMOVED
+
+- Create `AsyncRead+AsyncSeek` directly via traits. Use the request builder of the `blob` methods.
+
+### ADDED
+
+- All download access via a `RequestBuilder` which can be obtained via methods named `blob()` on all download APIs
+- The `download` does so for byte streams by default. To retrieve chunks use the dedicated methods.
+- Custom `BytesStream` struct
+
+### FIXED
+
+- Performance issue caused by the retry mechanism
+
+### CHANGED
+
+- Iternally have 2 paths for chunks and bytes downloads. In the sequential case byte streams can just be passed through.
+
 ## 0.17.4 - 2022-05-20
 
-### CHANGD
+### CHANGED
 
 - with concurrency 4 only 1 task is used.
 
