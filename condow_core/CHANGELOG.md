@@ -27,6 +27,7 @@ See documentation for examples of new API usage.
 ### CHANGED
 
 - Iternally have 2 paths for chunks and bytes downloads. In the sequential case byte streams can just be passed through.
+- Invalid ranges are not adjusted anymore but cause errors instead
 
 ## 0.17.4 - 2022-05-20
 
