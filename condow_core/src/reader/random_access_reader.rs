@@ -394,6 +394,10 @@ mod tests {
             .await
             .unwrap();
 
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![0, 1, 2]);
+
         reader.seek(SeekFrom::Start(1)).await.unwrap();
         let mut buf = vec![0, 0, 0];
         reader.read_exact(&mut buf).await.unwrap();
@@ -524,6 +528,10 @@ mod tests {
             .finish()
             .await
             .unwrap();
+
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![2, 3, 4]);
 
         reader.seek(SeekFrom::Start(1)).await.unwrap();
         let mut buf = vec![0, 0];

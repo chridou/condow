@@ -67,9 +67,13 @@
 //!
 //! // get an `AsyncRead`+`AsyncSeek` implementation
 //! use futures::AsyncSeekExt;
-//! let mut reader = condow.blob().at("a location").trusted_blob_size(13).random_access_reader().finish().await.unwrap();
+//! let mut reader = condow.blob()
+//!     .at("a location")
+//!     .trusted_blob_size(13)
+//!     .random_access_reader()
+//!     .finish().await.unwrap();
 //! let mut buf = Vec::new();
-//! reader.seek(std::io::SeekFrom::Start(2));
+//! reader.seek(std::io::SeekFrom::Start(2)).await.unwrap();
 //! reader.read_to_end(&mut buf).await.unwrap();
 //! assert_eq!(buf, b"remote BLOB");
 //! # }
