@@ -80,11 +80,11 @@ enum State {
 /// Contract:
 /// `get_size`and `download_range` must point to the same location.
 pub trait ReaderAdapter: Send + Sync + 'static {
-    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>>;
-    fn download_range<'a>(
-        &'a self,
+    fn get_size(&self) -> BoxFuture<Result<u64, CondowError>>;
+    fn download_range(
+        &self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>>;
+    ) -> BoxFuture<Result<OrderedChunkStream, CondowError>>;
 }
 
 /// A [ReaderAdapter] for [Condow] tied to a specific location
@@ -104,14 +104,14 @@ where
     C: CondowClient,
     PF: ProbeFactory,
 {
-    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self) -> BoxFuture<Result<u64, CondowError>> {
         self.condow.get_size(self.location.clone()).boxed()
     }
 
-    fn download_range<'a>(
-        &'a self,
+    fn download_range(
+        &self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
+    ) -> BoxFuture<Result<OrderedChunkStream, CondowError>> {
         self.condow
             .blob()
             .range(range)
@@ -185,7 +185,7 @@ impl RandomAccessReader {
     ///
     /// The offset is from the start of the BLOB.
     pub fn pos(&self) -> u64 {
-        return self.pos;
+        self.pos
     }
 
     fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
@@ -228,7 +228,7 @@ impl AsyncRead for RandomAccessReader {
         cx: &mut task::Context<'_>,
         dest_buf: &mut [u8],
     ) -> task::Poll<IoResult<usize>> {
-        if dest_buf.len() == 0 {
+        if dest_buf.is_empty() {
             return task::Poll::Ready(Ok(0));
         }
 
@@ -262,12 +262,12 @@ impl AsyncRead for RandomAccessReader {
                 match Pin::new(&mut reader).poll_read(cx, dest_buf) {
                     task::Poll::Ready(Ok(bytes_written)) => {
                         assert!(
-                            !(self.pos > self.length),
+                            self.pos <= self.length,
                             "Position can not be larger than length"
                         );
                         self.pos += bytes_written as u64;
                         if self.pos == self.length {
-                            assert!(!(bytes_written == 0), "Still bytes left");
+                            assert_ne!(bytes_written, 0, "Still bytes left");
                             self.state = State::Finished;
                             task::Poll::Ready(Ok(bytes_written))
                         } else if bytes_written == 0 {

@@ -186,7 +186,7 @@ where
                         Poll::Ready(Some(Ok(chunk)))
                     }
                     Poll::Ready(Some(Err(err))) => {
-                        let err: CondowError = err.into();
+                        let err: CondowError = err;
                         this.probe
                             .download_failed(Some(this.download_started_at.elapsed()));
                         this.log_dl_msg_dbg.log(format!("download failed: {err}"));

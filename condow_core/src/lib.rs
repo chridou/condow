@@ -141,16 +141,13 @@ pub trait Downloads: Send + Sync + 'static {
     fn blob(&self) -> RequestNoLocation<Self::Location>;
 
     /// Get the size of a BLOB at the given location
-    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>>;
+    fn get_size(&self, location: Self::Location) -> BoxFuture<Result<u64, CondowError>>;
 
     /// Creates a [RandomAccessReader] for the given location
     ///
     /// This function will query the size of the BLOB. If the size is already known
     /// call [Downloads::reader_with_length]
-    fn reader<'a>(
-        &'a self,
-        location: Self::Location,
-    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
+    fn reader(&self, location: Self::Location) -> BoxFuture<Result<RandomAccessReader, CondowError>>
     where
         Self: Sized + Sync,
     {
@@ -394,7 +391,7 @@ where
         self.blob()
     }
 
-    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self, location: Self::Location) -> BoxFuture<Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
     }
 

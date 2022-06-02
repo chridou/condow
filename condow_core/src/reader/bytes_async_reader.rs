@@ -33,7 +33,7 @@ where
         cx: &mut task::Context<'_>,
         dest_buf: &mut [u8],
     ) -> task::Poll<IoResult<usize>> {
-        if dest_buf.len() == 0 {
+        if dest_buf.is_empty() {
             return task::Poll::Ready(Ok(0));
         }
 
