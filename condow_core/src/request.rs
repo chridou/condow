@@ -375,20 +375,40 @@ where
 
     /// Returns an [AsyncRead] + [AsyncSeek] which reads over the bytes of the BLOB(-range)
     pub async fn finish(self) -> Result<RandomAccessReader, CondowError> {
-        let blob_len = if let Some(trusted_size) = self.params.trusted_blob_size {
-            trusted_size
-        } else {
-            self.adapter
-                .size(self.location.clone(), self.params.clone())
-                .await?
-        };
+        let bounds = match self.params.range {
+            DownloadRange::Open(or) => {
+                let size = if let Some(trusted_size) = self.params.trusted_blob_size {
+                    trusted_size
+                } else {
+                    self.adapter
+                        .size(self.location.clone(), self.params.clone())
+                        .await?
+                };
+                if let Some(range) = or.incl_range_from_size(size)? {
+                    range
+                } else {
+                    return Err(CondowError::new_invalid_range(format!(
+                        "{or} with blob size {size}"
+                    )));
+                }
+            }
+            DownloadRange::Closed(cl) => {
+                let range = if let Some(range) = cl.incl_range() {
+                    range
+                } else {
+                    return Err(CondowError::new_invalid_range(format!("{cl}")));
+                };
 
-        let bounds = if let Some(incl_range) = self.params.range.incl_range_from_size(blob_len) {
-            incl_range
-        } else {
-            return Err(CondowError::new_invalid_range(
-                self.params.range.to_string(),
-            ));
+                range.validate()?;
+
+                if let Some(trusted_size) = self.params.trusted_blob_size {
+                    if range.end_incl() >= trusted_size {
+                        return Err(CondowError::new_invalid_range(format!("{cl}")));
+                    }
+                }
+
+                range
+            }
         };
 
         let fetch_ahead_mode = self.fetch_ahead_mode;

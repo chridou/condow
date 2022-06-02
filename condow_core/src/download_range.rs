@@ -51,6 +51,17 @@ impl InclusiveRange {
         self.1
     }
 
+    pub fn validate(&self) -> Result<(), CondowError> {
+        if self.end_incl() < self.start() {
+            Err(CondowError::new_invalid_range(format!(
+                "End must not be smaller than start: {}",
+                self
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Returns the length of the range
     ///
     /// ```
@@ -305,63 +316,25 @@ impl ClosedRange {
         Some(self)
     }
 
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
-        if size == 0 {
-            return None;
-        }
-
-        let max_inclusive = size - 1;
-        let inclusive = match self {
-            Self::FromTo(a, b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(InclusiveRange(a, (max_inclusive).min(b - 1)))
-            }
-            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, (max_inclusive).min(b))),
-            Self::To(b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(InclusiveRange(0, (max_inclusive).min(b - 1)))
-            }
-            Self::ToInclusive(b) => Some(InclusiveRange(0, (max_inclusive).min(b))),
-        };
-
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
-
-        inclusive
-    }
-
     pub fn incl_range(self) -> Option<InclusiveRange> {
         let inclusive = match self {
             Self::FromTo(a, b) => {
-                if b == 0 {
+                if a == b {
                     return None;
                 }
-                Some(InclusiveRange(a, b - 1))
+                InclusiveRange(a, b - 1)
             }
-            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, b)),
+            Self::FromToInclusive(a, b) => InclusiveRange(a, b),
             Self::To(b) => {
                 if b == 0 {
                     return None;
                 }
-                Some(InclusiveRange(0, b - 1))
+                InclusiveRange(0, b - 1)
             }
-            Self::ToInclusive(b) => Some(InclusiveRange(0, b)),
+            Self::ToInclusive(b) => InclusiveRange(0, b),
         };
 
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
-
-        inclusive
+        Some(inclusive)
     }
 }
 
@@ -420,24 +393,20 @@ pub enum OpenRange {
 }
 
 impl OpenRange {
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Result<Option<InclusiveRange>, CondowError> {
         if size == 0 {
-            return None;
+            return Ok(None);
         }
 
         let max_inclusive = size - 1;
         let inclusive = match self {
-            Self::From(a) => Some(InclusiveRange(a, max_inclusive)),
-            Self::Full => Some(InclusiveRange(0, max_inclusive)),
+            Self::From(a) => InclusiveRange(a, max_inclusive),
+            Self::Full => InclusiveRange(0, max_inclusive),
         };
 
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
+        inclusive.validate()?;
 
-        inclusive
+        Ok(Some(inclusive))
     }
 }
 
@@ -518,10 +487,16 @@ impl DownloadRange {
         }
     }
 
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Result<Option<InclusiveRange>, CondowError> {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
-            DownloadRange::Closed(r) => r.incl_range_from_size(size),
+            DownloadRange::Closed(r) => {
+                let inclusive = r.incl_range();
+                if let Some(inclusive) = inclusive {
+                    inclusive.validate()?
+                }
+                Ok(inclusive)
+            }
         }
     }
 

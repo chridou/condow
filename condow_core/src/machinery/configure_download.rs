@@ -55,7 +55,7 @@ where
         return Ok(None);
     };
 
-    let (effective_range, _bytes_hint) = match range {
+    let effective_range = match range {
         DownloadRange::Open(or) => {
             debug!(parent: &configure_stream_span, "open range");
             let size = if let Some(trusted_size) = trusted_size {
@@ -67,34 +67,29 @@ where
                     .instrument(configure_stream_span.clone())
                     .await?
             };
-            if let Some(range) = or.incl_range_from_size(size) {
-                (range, BytesHint::new_exact(range.len()))
+            if let Some(range) = or.incl_range_from_size(size)? {
+                range
             } else {
                 return Ok(None);
             }
         }
         DownloadRange::Closed(cl) => {
             debug!(parent: &configure_stream_span, "closed range");
-            if config.always_get_size.into_inner() {
-                let size = if let Some(trusted_size) = trusted_size {
-                    trusted_size
-                } else {
-                    debug!(parent: &configure_stream_span, "get size enforced");
-                    client
-                        .get_size(location.clone(), probe)
-                        .instrument(configure_stream_span.clone())
-                        .await?
-                };
-                if let Some(range) = cl.incl_range_from_size(size) {
-                    (range, BytesHint::new_exact(range.len()))
-                } else {
-                    return Ok(None);
-                }
-            } else if let Some(range) = cl.incl_range() {
-                (range, BytesHint::new_at_max(range.len()))
+            let range = if let Some(range) = cl.incl_range() {
+                range
             } else {
                 return Ok(None);
+            };
+
+            range.validate()?;
+
+            if let Some(trusted_size) = trusted_size {
+                if range.end_incl() >= trusted_size {
+                    return Err(CondowError::new_invalid_range(format!("{cl}")));
+                }
             }
+
+            range
         }
     };
 

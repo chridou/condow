@@ -573,7 +573,7 @@ fn make_a_stream(
     pattern: Vec<Option<usize>>,
 ) -> Result<ChunkStream, CondowError> {
     let blob_guard = blob.lock().unwrap();
-    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len() as u64) {
+    let range_incl = if let Some(range) = range.incl_range_from_size(blob_guard.len() as u64)? {
         range
     } else {
         return Err(CondowError::new_invalid_range("invalid range"));

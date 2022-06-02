@@ -7,10 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## 0.18.0 - unreleased
 
 This reease involves major breaking changes with the API.
+See documentation for examples of new API usage.
 
 ### REMOVED
 
 - Create `AsyncRead+AsyncSeek` directly via traits. Use the request builder of the `blob` methods.
+- `AlwaysGetSize` configuration parameter
 
 ### ADDED
 

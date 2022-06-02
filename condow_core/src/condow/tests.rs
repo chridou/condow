@@ -85,58 +85,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
-        use crate::condow_client::IgnoreLocation;
-        use crate::machinery;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
-
-        #[tokio::test]
-        async fn from_always_get_size() {
-            let buffer_size = 10;
-
-            let data = Arc::new(create_test_data());
-
-            for chunk_size in [1, 3, 5] {
-                let client = TestCondowClient {
-                    data: Arc::clone(&data),
-                    max_jitter_ms: 0,
-                    include_size_hint: true,
-                    max_chunk_size: chunk_size,
-                    ..TestCondowClient::default()
-                };
-
-                for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize, 2, 3, 4, 10] {
-                        let config = Config::default()
-                            .buffer_size(buffer_size)
-                            .max_buffers_full_delay_ms(0)
-                            .part_size_bytes(part_size)
-                            .always_get_size(true) // case to test
-                            .max_concurrency(n_concurrency);
-                        let condow = Condow::new(client.clone(), config).unwrap();
-
-                        for from_idx in [0u64, 101, 255, 256] {
-                            let range = from_idx..;
-
-                            let result_stream = machinery::download_chunks(
-                                condow.client.clone(),
-                                condow.config.clone(),
-                                IgnoreLocation,
-                                range.clone(),
-                                (),
-                                None,
-                            )
-                            .await
-                            .unwrap();
-
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            let check_range = (from_idx as usize).min(data.len())..;
-                            assert_eq!(&result, &data[check_range]);
-                        }
-                    }
-                }
-            }
-        }
 
         #[tokio::test]
         async fn from_when_required_get_size() {
@@ -159,7 +108,6 @@ mod range {
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
-                            .always_get_size(false) // case to test
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 

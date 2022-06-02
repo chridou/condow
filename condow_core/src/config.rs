@@ -69,12 +69,6 @@ pub struct Config {
     ///
     /// Default is 10ms
     pub max_buffers_full_delay_ms: MaxBuffersFullDelayMs,
-    /// If `true` [Condow](super::Condow) will also request the
-    /// size information of a BLOB to verify the range supplied
-    /// by a user.
-    ///
-    /// The default is `true`.
-    pub always_get_size: AlwaysGetSize,
     /// If set to `true` download related messages are logged at `DEBUG` level. Otherwise at `INFO` level.
     ///
     /// The affectd messages are:
@@ -170,12 +164,6 @@ impl Config {
         max_buffers_full_delay_ms: T,
     ) -> Self {
         self.max_buffers_full_delay_ms = max_buffers_full_delay_ms.into();
-        self
-    }
-
-    /// Set whether a size request should always be made
-    pub fn always_get_size<T: Into<AlwaysGetSize>>(mut self, always_get_size: T) -> Self {
-        self.always_get_size = always_get_size.into();
         self
     }
 
@@ -297,10 +285,6 @@ impl Config {
             found_any = true;
             self.max_buffers_full_delay_ms = max_buffers_full_delay_ms;
         }
-        if let Some(always_get_size) = AlwaysGetSize::try_from_env_prefixed(prefix.as_ref())? {
-            found_any = true;
-            self.always_get_size = always_get_size;
-        }
 
         if let Some(log_download_messages_as_debug) =
             LogDownloadMessagesAsDebug::try_from_env_prefixed(prefix.as_ref())?
@@ -329,7 +313,6 @@ impl Default for Config {
             ensure_active_pull: Default::default(),
             buffer_size: Default::default(),
             max_buffers_full_delay_ms: Default::default(),
-            always_get_size: Default::default(),
             log_download_messages_as_debug: Default::default(),
             retries: Some(Default::default()),
         }
@@ -679,18 +662,6 @@ impl FromStr for MinBytesForConcurrentDownload {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         s.parse::<UnitPrefix>()
             .map(|up| MinBytesForConcurrentDownload(up.value()))
-    }
-}
-
-new_type! {
-    #[doc="Behaviour for get size requests"]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub copy struct AlwaysGetSize(bool, env="ALWAYS_GET_SIZE");
-}
-
-impl Default for AlwaysGetSize {
-    fn default() -> Self {
-        AlwaysGetSize(true)
     }
 }
 
