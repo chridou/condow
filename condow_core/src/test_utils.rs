@@ -188,6 +188,7 @@ impl CondowClient for TestCondowClient {
     }
 }
 
+/// returns 255 items
 pub fn create_test_data() -> Vec<u8> {
     let mut data: Vec<u8> = Vec::new();
 
@@ -195,6 +196,9 @@ pub fn create_test_data() -> Vec<u8> {
         let bytes = n.to_be_bytes();
         data.extend_from_slice(bytes.as_ref());
     }
+
+    assert_eq!(data.len(), 255);
+
     data
 }
 

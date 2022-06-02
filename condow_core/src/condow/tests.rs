@@ -111,20 +111,17 @@ mod range {
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for from_idx in [0u64, 101, 255, 256] {
+                        for from_idx in [0u64, 101, 254, 255] {
                             let range = from_idx..;
 
-                            let result_stream = condow
-                                .blob()
-                                .range(range)
-                                .download_chunks_unordered()
-                                .await
-                                .unwrap();
+                            let result = condow.blob().range(range).download_into_vec().await;
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            let check_range = (from_idx as usize).min(data.len())..;
-                            assert_eq!(&result, &data[check_range]);
+                            if (from_idx as usize) < data.len() {
+                                let check_range = (from_idx as usize).min(data.len())..;
+                                assert_eq!(&result.unwrap(), &data[check_range]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -178,9 +175,12 @@ mod range {
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            assert_eq!(&result, &data[0..expected_range_end]);
+                            let result = result_stream.into_vec().await;
+                            if (end_incl as usize) < data.len() {
+                                assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -226,9 +226,12 @@ mod range {
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            assert_eq!(&result, &data[0..expected_range_end]);
+                            let result = result_stream.into_vec().await;
+                            if (end_excl as usize) <= data.len() {
+                                assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -283,9 +286,12 @@ mod range {
                                     .await
                                     .unwrap();
 
-                                    let result = result_stream.into_vec().await.unwrap();
-
-                                    assert_eq!(&result, &data[0..expected_range_end]);
+                                    let result = result_stream.into_vec().await;
+                                    if (end_incl as usize) < data.len() {
+                                        assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                                    } else {
+                                        assert!(result.is_err());
+                                    }
                                 }
                             }
                         }
@@ -331,9 +337,12 @@ mod range {
                                     .await
                                     .unwrap();
 
-                                    let result = result_stream.into_vec().await.unwrap();
-
-                                    assert_eq!(&result, &data[0..expected_range_end]);
+                                    let result = result_stream.into_vec().await;
+                                    if (end_excl as usize) <= data.len() {
+                                        assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                                    } else {
+                                        assert!(result.is_err());
+                                    }
                                 }
                             }
                         }
@@ -390,12 +399,15 @@ mod range {
                                         .await
                                         .unwrap();
 
-                                        let result = result_stream.into_vec().await.unwrap();
-
-                                        assert_eq!(
-                                            &result,
-                                            &data[start as usize..expected_range_end]
-                                        );
+                                        let result = result_stream.into_vec().await;
+                                        if (end_incl as usize) < data.len() {
+                                            assert_eq!(
+                                                &result.unwrap(),
+                                                &data[start as usize..expected_range_end]
+                                            );
+                                        } else {
+                                            assert!(result.is_err());
+                                        }
                                     }
                                 }
                             }
@@ -445,12 +457,15 @@ mod range {
                                         .await
                                         .unwrap();
 
-                                        let result = result_stream.into_vec().await.unwrap();
-
-                                        assert_eq!(
-                                            &result,
-                                            &data[start as usize..expected_range_end]
-                                        );
+                                        let result = result_stream.into_vec().await;
+                                        if (end_excl as usize) <= data.len() {
+                                            assert_eq!(
+                                                &result.unwrap(),
+                                                &data[start as usize..expected_range_end]
+                                            );
+                                        } else {
+                                            assert!(result.is_err());
+                                        }
                                     }
                                 }
                             }

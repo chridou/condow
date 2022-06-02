@@ -62,7 +62,7 @@ async fn download_to_end() {
     let data = condow
         .blob()
         .at(get_test_file_path())
-        .range(..=26)
+        .range(..=25)
         .download_chunks_ordered()
         .await
         .unwrap()
