@@ -37,6 +37,9 @@ pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
 ///
 /// The default is to download the complete BLOB.
 ///
+/// A location to download from must be provided to actually download
+/// from a remote location.
+///
 /// This can only directly download if the type of the location is [IgnoreLocation]
 /// which probably only makes sense while testing.
 pub struct RequestNoLocation<L> {
