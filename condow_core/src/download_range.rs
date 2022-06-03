@@ -287,15 +287,15 @@ impl ClosedRange {
         }
     }
 
-    pub fn is_empty(self) -> bool {
-        self.len() == 0 // is this efficient enough?
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0 // efficient enough since not on the hot path
     }
 
-    pub fn len(self) -> u64 {
+    pub fn len(&self) -> u64 {
         match self {
             Self::FromTo(a, b) => b - a,
             Self::FromToInclusive(a, b) => b - a + 1,
-            Self::To(last_excl) => last_excl,
+            Self::To(last_excl) => *last_excl,
             Self::ToInclusive(last_incl) => last_incl + 1,
         }
     }
