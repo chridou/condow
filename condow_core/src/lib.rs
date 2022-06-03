@@ -269,7 +269,7 @@ mod trait_tests {
                 todo!()
             }
 
-            fn get_size<'a>(&'a self, _location: i32) -> BoxFuture<'a, Result<u64, CondowError>> {
+            fn get_size(&self, _location: i32) -> BoxFuture<'_, Result<u64, CondowError>> {
                 todo!()
             }
         }
