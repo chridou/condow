@@ -276,7 +276,7 @@ where
 
             // Retries if the first attempt failed
             let mut delays = config.iterator();
-            while let Some(delay) = delays.next() {
+            for delay in delays.by_ref() {
                 warn!("get stream request failed with \"{last_err}\" - retry in {delay:?}");
                 probe.retry_attempt(&last_err, delay);
 
@@ -289,7 +289,7 @@ where
                 };
             }
 
-            return Err(last_err);
+            Err(last_err)
         }
         .boxed()
     });

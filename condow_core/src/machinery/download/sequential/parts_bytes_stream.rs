@@ -113,7 +113,7 @@ where
             let probe = probe.clone();
             move |range: InclusiveRange| {
                 client
-                    .download(location.clone(), range.into(), probe.clone())
+                    .download(location.clone(), range, probe.clone())
                     .boxed()
             }
         };
@@ -152,7 +152,6 @@ where
                         Poll::Ready(Some(Ok(bytes)))
                     }
                     Poll::Ready(Some(Err(err))) => {
-                        let err: CondowError = err.into();
                         this.probe
                             .download_failed(Some(this.download_started_at.elapsed()));
                         this.log_dl_msg_dbg.log(format!("download failed: {err}"));
@@ -165,7 +164,7 @@ where
                                 this.get_part_stream,
                                 part_request,
                                 this.probe.clone(),
-                                &this.parent_span,
+                                this.parent_span,
                             );
                             *this.state = State::Streaming(stream);
                             cx.waker().wake_by_ref(); // Bytes Stream returned "Ready" and will not wake us up!

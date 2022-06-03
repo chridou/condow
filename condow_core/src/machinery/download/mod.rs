@@ -122,7 +122,7 @@ pub mod part_chunks_stream {
                 let probe = probe.clone();
                 move |range: InclusiveRange| {
                     client
-                        .download(location.clone(), range.into(), probe.clone())
+                        .download(location.clone(), range, probe.clone())
                         .boxed()
                 }
             };
@@ -251,7 +251,6 @@ pub mod part_chunks_stream {
                             Poll::Ready(Some(Ok(chunk)))
                         }
                         Poll::Ready(Some(Err(err))) => {
-                            let err: CondowError = err.into();
                             this.probe.part_failed(
                                 &err,
                                 this.part_request.part_index,

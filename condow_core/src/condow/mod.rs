@@ -111,7 +111,7 @@ where
         self.blob()
     }
 
-    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self, location: Self::Location) -> BoxFuture<'_, Result<u64, CondowError>> {
         Box::pin(self.get_size(location))
     }
 }
@@ -130,7 +130,7 @@ where
         RequestNoLocation::new(adapter, self.config.clone())
     }
 
-    fn get_size<'a>(&'a self, location: String) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self, location: String) -> BoxFuture<'_, Result<u64, CondowError>> {
         let location = match location.parse::<C::Location>() {
             Ok(loc) => loc,
             Err(parse_err) => {
@@ -166,23 +166,23 @@ where
     PF: ProbeFactory,
     L: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static,
 {
-    fn bytes<'a>(
-        &'a self,
+    fn bytes(
+        &self,
         location: L,
         params: Params,
-    ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'_, Result<BytesStream, CondowError>> {
         get_bytes_stream(self.condow.clone(), location, params).boxed()
     }
 
-    fn chunks<'a>(
-        &'a self,
+    fn chunks(
+        &self,
         location: L,
         params: Params,
-    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+    ) -> BoxFuture<'_, Result<ChunkStream, CondowError>> {
         get_chunk_stream(self.condow.clone(), location, params).boxed()
     }
 
-    fn size<'a>(&'a self, location: L, params: Params) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn size(&self, location: L, params: Params) -> BoxFuture<'_, Result<u64, CondowError>> {
         get_size(self.condow.clone(), location, params).boxed()
     }
 }
@@ -210,11 +210,11 @@ where
     C::Location: FromStr + Send + Sync + 'static,
     <C::Location as FromStr>::Err: std::error::Error + Send + Sync + 'static,
 {
-    fn bytes<'a>(
-        &'a self,
+    fn bytes(
+        &self,
         location: String,
         params: Params,
-    ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'_, Result<BytesStream, CondowError>> {
         let location = match location.parse::<C::Location>() {
             Ok(loc) => loc,
             Err(parse_err) => {
@@ -229,11 +229,11 @@ where
         self.typed_adapter.bytes(location, params).boxed()
     }
 
-    fn chunks<'a>(
-        &'a self,
+    fn chunks(
+        &self,
         location: String,
         params: Params,
-    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+    ) -> BoxFuture<'_, Result<ChunkStream, CondowError>> {
         let location = match location.parse::<C::Location>() {
             Ok(loc) => loc,
             Err(parse_err) => {
@@ -248,11 +248,7 @@ where
         self.typed_adapter.chunks(location, params).boxed()
     }
 
-    fn size<'a>(
-        &'a self,
-        location: String,
-        params: Params,
-    ) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn size(&self, location: String, params: Params) -> BoxFuture<'_, Result<u64, CondowError>> {
         let location = match location.parse::<C::Location>() {
             Ok(loc) => loc,
             Err(parse_err) => {

@@ -1073,12 +1073,7 @@ mod retry_download_get_stream {
         for kind in ERROR_KINDS {
             let errors = vec![kind; n_errors];
             let result = run_get_stream(errors, n_retries).await;
-            // FIXME: if statement has identical if and else
-            let expected = if kind.is_retryable() {
-                Err((0, kind))
-            } else {
-                Err((0, kind))
-            };
+            let expected = Err((0, kind)); // no retries => always fails
 
             assert_eq!(result, expected);
         }
@@ -1316,12 +1311,7 @@ mod retry_get_size {
         for kind in ERROR_KINDS {
             let errors = vec![kind; n_errors];
             let result = run_get_size(errors, n_retries).await;
-            // FIXME: if statement has identical if and else
-            let expected = if kind.is_retryable() {
-                Err((0, kind))
-            } else {
-                Err((0, kind))
-            };
+            let expected = Err((0, kind)); // no retries => always fails
 
             assert_eq!(result, expected);
         }

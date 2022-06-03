@@ -49,7 +49,7 @@ where
             let probe = probe.clone();
             move |range: InclusiveRange| {
                 client
-                    .download(location.clone(), range.into(), probe.clone())
+                    .download(location.clone(), range, probe.clone())
                     .boxed()
             }
         };
@@ -168,7 +168,6 @@ where
                         Poll::Ready(Some(Ok(bytes)))
                     }
                     Poll::Ready(Some(Err(err))) => {
-                        let err: CondowError = err.into();
                         this.probe.part_failed(
                             &err,
                             this.part_request.part_index,

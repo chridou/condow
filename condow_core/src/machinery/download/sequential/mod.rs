@@ -186,7 +186,7 @@ mod download_parts_seq {
                 let probe = probe.clone();
                 move |range: InclusiveRange| {
                     client
-                        .download(location.clone(), range.into(), probe.clone())
+                        .download(location.clone(), range, probe.clone())
                         .boxed()
                 }
             };
@@ -225,7 +225,6 @@ mod download_parts_seq {
                             Poll::Ready(Some(Ok(chunk)))
                         }
                         Poll::Ready(Some(Err(err))) => {
-                            let err: CondowError = err.into();
                             this.probe
                                 .download_failed(Some(this.download_started_at.elapsed()));
                             this.log_dl_msg_dbg.log(format!("download failed: {err}"));

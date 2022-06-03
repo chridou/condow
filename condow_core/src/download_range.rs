@@ -515,8 +515,9 @@ impl DownloadRange {
     pub fn is_empty(&self) -> Option<bool> {
         match self {
             DownloadRange::Open(_) => None,
-        DownloadRange::Closed(r) => Some(r.is_empty()),
-       }   }
+            DownloadRange::Closed(r) => Some(r.is_empty()),
+        }
+    }
 }
 
 impl fmt::Display for DownloadRange {

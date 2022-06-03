@@ -20,11 +20,8 @@ use crate::{
 };
 
 pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
-    fn bytes(
-        &self,
-        location: L,
-        params: Params,
-    ) -> BoxFuture<'_, Result<BytesStream, CondowError>>;
+    fn bytes(&self, location: L, params: Params)
+        -> BoxFuture<'_, Result<BytesStream, CondowError>>;
     fn chunks(
         &self,
         location: L,
@@ -490,7 +487,7 @@ mod tests {
             }
 
             fn chunks(
-                & self,
+                &self,
                 _location: i32,
                 _params: Params,
             ) -> BoxFuture<'_, Result<ChunkStream, CondowError>> {

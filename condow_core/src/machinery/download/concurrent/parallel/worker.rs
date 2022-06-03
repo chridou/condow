@@ -290,7 +290,6 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
                 offset_in_range += n_bytes as u64;
             }
             Err(err) => {
-                let err = err.into();
                 context.probe.part_failed(
                     &err,
                     range_request.part_index,

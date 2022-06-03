@@ -190,12 +190,12 @@ impl AsyncRead for RandomAccessReader {
                 match Pin::new(&mut reader).poll_read(cx, dest_buf) {
                     task::Poll::Ready(Ok(bytes_written)) => {
                         assert!(
-                            !(self.pos > self.bounds.len()),
+                            self.pos <= self.bounds.len(),
                             "Position can not be larger than length"
                         );
                         self.pos += bytes_written as u64;
                         if self.pos == self.bounds.len() {
-                            assert!(!(bytes_written == 0), "Still bytes left");
+                            assert!(bytes_written != 0, "Still bytes left");
                             self.state = State::Finished;
                             task::Poll::Ready(Ok(bytes_written))
                         } else if bytes_written == 0 {

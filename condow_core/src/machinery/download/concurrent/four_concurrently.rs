@@ -216,7 +216,7 @@ impl<P: Probe + Clone> FourPartsConcurrently<P> {
             let probe = probe.clone();
             move |range: InclusiveRange| {
                 client
-                    .download(location.clone(), range.into(), probe.clone())
+                    .download(location.clone(), range, probe.clone())
                     .boxed()
             }
         };
