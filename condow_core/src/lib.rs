@@ -185,7 +185,7 @@ pub trait Downloads: Send + Sync + 'static {
     fn blob(&self) -> RequestNoLocation<Self::Location>;
 
     /// Get the size of a BLOB at the given location
-    fn get_size<'a>(&'a self, location: Self::Location) -> BoxFuture<'a, Result<u64, CondowError>>;
+    fn get_size(&self, location: Self::Location) -> BoxFuture<'_, Result<u64, CondowError>>;
 }
 
 /// Downloads from a location specified by a &[str].
@@ -227,7 +227,7 @@ pub trait DownloadsUntyped: Send + Sync + 'static {
     /// Get the size of a BLOB at the given location
     ///
     /// A location which can not be parsed causes method to fail.
-    fn get_size<'a>(&'a self, location: String) -> BoxFuture<'a, Result<u64, CondowError>>;
+    fn get_size(&self, location: String) -> BoxFuture<'_, Result<u64, CondowError>>;
 }
 
 #[cfg(test)]

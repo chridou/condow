@@ -287,6 +287,10 @@ impl ClosedRange {
         }
     }
 
+    pub fn is_empty(self) -> bool {
+        self.len() == 0 // is this efficient enough?
+    }
+
     pub fn len(self) -> u64 {
         match self {
             Self::FromTo(a, b) => b - a,
@@ -501,12 +505,18 @@ impl DownloadRange {
     }
 
     /// Returns the length in bytes for ranges where an end is defined
-    pub fn len(self) -> Option<u64> {
+    pub fn len(&self) -> Option<u64> {
         match self {
             DownloadRange::Open(_) => None,
             DownloadRange::Closed(r) => Some(r.len()),
         }
     }
+
+    pub fn is_empty(&self) -> Option<bool> {
+        match self {
+            DownloadRange::Open(_) => None,
+        DownloadRange::Closed(r) => Some(r.is_empty()),
+       }   }
 }
 
 impl fmt::Display for DownloadRange {

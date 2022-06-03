@@ -169,7 +169,7 @@ mod in_memory {
         ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
             trace!("in-memory-client: download");
 
-            download(&self.blob.as_slice(), self.chunk_size, range)
+            download(self.blob.as_slice(), self.chunk_size, range)
         }
     }
 
@@ -225,7 +225,7 @@ mod in_memory {
         pub fn as_slice(&self) -> &[u8] {
             match self {
                 Blob::Static(b) => b,
-                Blob::Owned(b) => &b,
+                Blob::Owned(b) => b,
             }
         }
     }
@@ -562,7 +562,7 @@ pub mod failing_client_simulator {
         pub fn as_slice(&self) -> &[u8] {
             match self {
                 Blob::Static(b) => b,
-                Blob::Owned(b) => &b,
+                Blob::Owned(b) => b,
             }
         }
     }
@@ -840,7 +840,7 @@ pub mod failing_client_simulator {
                 if let Some(error_action) = self.error.take() {
                     match error_action {
                         ErrorAction::Err(msg) => {
-                            let err = CondowError::new_io(format!("{msg}"));
+                            let err = CondowError::new_io(msg);
                             return task::Poll::Ready(Some(Err(err)));
                         }
                         ErrorAction::Panic(msg) => panic!("{}", msg),

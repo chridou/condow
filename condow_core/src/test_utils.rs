@@ -176,7 +176,7 @@ impl CondowClient for TestCondowClient {
             });
 
             let stream: BytesStream = if let Some(pending_module) = me.pending_on_stream_module {
-                let stream_with_pending = Penderizer::new(stream, pending_module.clone());
+                let stream_with_pending = Penderizer::new(stream, pending_module);
                 BytesStream::new(stream_with_pending.boxed(), bytes_hint)
             } else {
                 BytesStream::new(stream.boxed(), bytes_hint)
@@ -529,11 +529,11 @@ impl Downloads for TestDownloader {
                 future::ok(stream).boxed()
             }
 
-            fn size<'a>(
-                &'a self,
+            fn size(
+                &self,
                 _location: L,
                 _params: Params,
-            ) -> BoxFuture<'a, Result<u64, CondowError>> {
+            ) -> BoxFuture<'_, Result<u64, CondowError>> {
                 self.client.get_size(IgnoreLocation)
             }
         }
@@ -546,30 +546,11 @@ impl Downloads for TestDownloader {
         )
     }
 
-    fn get_size<'a>(
-        &'a self,
-        _location: IgnoreLocation,
-    ) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self, _location: IgnoreLocation) -> BoxFuture<Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
 }
-
-// impl ReaderAdapter for TestDownloader {
-//     fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
-//         <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
-//     }
-
-//     fn download_range<'a>(
-//         &'a self,
-//         range: DownloadRange,
-//     ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
-//         <TestDownloader as Downloads>::blob(self)
-//             .range(range)
-//             .download_chunks_ordered()
-//             .boxed()
-//     }
-// }
 
 fn make_a_stream(
     blob: &Mutex<Vec<u8>>,
@@ -713,14 +694,13 @@ pub mod stream_penderizer {
         }
 
         pub fn return_pending(&mut self) -> bool {
-            let pending = if self.pendings_done < self.consecutive_pendings {
+            if self.pendings_done < self.consecutive_pendings {
                 self.pendings_done += 1;
                 true
             } else {
                 self.pendings_done = 0;
                 false
-            };
-            pending
+            }
         }
     }
 

@@ -733,11 +733,11 @@ mod retry_part_stream {
             }
         }
 
-        return Ok((
+        Ok((
             probe.0.load(Ordering::SeqCst),
             probe.1.load(Ordering::SeqCst),
             Ok(received),
-        ));
+        ))
     }
 }
 mod retry_resume_part_stream {
@@ -1073,6 +1073,7 @@ mod retry_download_get_stream {
         for kind in ERROR_KINDS {
             let errors = vec![kind; n_errors];
             let result = run_get_stream(errors, n_retries).await;
+            // FIXME: if statement has identical if and else
             let expected = if kind.is_retryable() {
                 Err((0, kind))
             } else {
@@ -1315,6 +1316,7 @@ mod retry_get_size {
         for kind in ERROR_KINDS {
             let errors = vec![kind; n_errors];
             let result = run_get_size(errors, n_retries).await;
+            // FIXME: if statement has identical if and else
             let expected = if kind.is_retryable() {
                 Err((0, kind))
             } else {

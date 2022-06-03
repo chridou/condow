@@ -240,7 +240,7 @@ impl<P: Probe + Clone> Stream for FourPartsConcurrently<P> {
     ) -> std::task::Poll<Option<Self::Item>> {
         use Poll::*;
 
-        let mut this = self.project();
+        let this = self.project();
 
         // We need to get ownership of the state. So we have to reassign it in each match
         // arm unless we want to be in "Finished" state.
@@ -255,7 +255,7 @@ impl<P: Probe + Clone> Stream for FourPartsConcurrently<P> {
                 right,
             } => {
                 let (poll_result, next_state) =
-                    match poll_four(left, mid_left, mid_right, right, &mut this.baggage, cx) {
+                    match poll_four(left, mid_left, mid_right, right, this.baggage, cx) {
                         Ok(ok) => ok,
                         Err(err) => {
                             this.baggage

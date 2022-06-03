@@ -209,7 +209,7 @@ impl ProbeFactory for () {
     type Probe = ();
 
     fn make(&self, _location: &dyn fmt::Display) -> Self::Probe {
-        ()
+        // noop
     }
 }
 

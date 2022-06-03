@@ -496,14 +496,8 @@ new_type! {
     #[doc="This is not always the case since some low concurrency downloads require the strem to be actively pulled."]
     #[doc="This also allows for detection of panics."]
     #[doc="The default is `false` which means this feature is turned off."]
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub copy struct EnsureActivePull(bool, env="ENSURE_ACTIVE_PULL");
-}
-
-impl Default for EnsureActivePull {
-    fn default() -> Self {
-        EnsureActivePull(false)
-    }
 }
 
 new_type! {
@@ -980,8 +974,10 @@ impl From<Gibi> for u64 {
 /// let res = "".parse::<UnitPrefix>();
 /// assert!(res.is_err());
 /// ```
-#[derive(Debug, Clone, Copy, Eq, Ord)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub enum UnitPrefix {
+    // FIXME: Ord above is derived, while OrdPartial is not
+    // see https://rust-lang.github.io/rust-clippy/master/index.html#derive_ord_xor_partial_ord
     Unit(u64),
     Kilo(u64),
     Mega(u64),
@@ -1067,5 +1063,11 @@ impl PartialEq for UnitPrefix {
 impl PartialOrd for UnitPrefix {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.value().partial_cmp(&other.value())
+    }
+}
+
+impl Ord for UnitPrefix {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.value().cmp(&other.value())
     }
 }

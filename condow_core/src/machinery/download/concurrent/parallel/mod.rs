@@ -44,7 +44,7 @@ impl<P: Probe + Clone> ParallelDownloader<P> {
         let started_at = Instant::now();
         let kill_switch = KillSwitch::new();
         let counter = Arc::new(AtomicUsize::new(0));
-        let config = Arc::new(config.clone());
+        let config = Arc::new(config);
         let downloaders: Vec<_> = (0..*config.max_concurrency)
             .map(|_| {
                 SequentialDownloader::new(

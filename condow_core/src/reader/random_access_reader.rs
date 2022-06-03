@@ -121,7 +121,7 @@ impl RandomAccessReader {
     ///
     /// The offset is from the start of the BLOB.
     pub fn pos(&self) -> u64 {
-        return self.pos;
+        self.pos
     }
 
     fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
@@ -156,7 +156,7 @@ impl AsyncRead for RandomAccessReader {
         cx: &mut task::Context<'_>,
         dest_buf: &mut [u8],
     ) -> task::Poll<IoResult<usize>> {
-        if dest_buf.len() == 0 {
+        if dest_buf.is_empty() {
             return task::Poll::Ready(Ok(0));
         }
 

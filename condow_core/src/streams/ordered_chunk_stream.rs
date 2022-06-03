@@ -254,6 +254,7 @@ impl Stream for OrderedChunkStream {
 const MAX_BUFFER_RESERVOIR_SIZE: usize = 128;
 const INITIAL_BUFFER_CAPACITY: usize = 32;
 
+#[derive(Default)]
 struct BufferReservoir {
     queues: Vec<VecDeque<Chunk>>,
 }
@@ -273,12 +274,6 @@ impl BufferReservoir {
         if self.queues.len() < MAX_BUFFER_RESERVOIR_SIZE {
             self.queues.push(queue)
         }
-    }
-}
-
-impl Default for BufferReservoir {
-    fn default() -> Self {
-        Self { queues: Vec::new() }
     }
 }
 

@@ -188,7 +188,7 @@ impl RetryConfig {
     /// The maximum number of attempts to resume a byte stream from the same offset.
     ///
     /// Setting this to 0 will disable resumes. Enabling them has a small overhead
-    /// since the current progress on a byte stream must be tracked.    
+    /// since the current progress on a byte stream must be tracked.
     pub fn max_stream_resume_attempts<T: Into<RetryMaxStreamResumeAttempts>>(
         mut self,
         max_stream_resume_attempts: T,
@@ -428,7 +428,7 @@ where
 
     // Retries if the first attempt failed
     let mut delays = config.iterator();
-    while let Some(delay) = delays.next() {
+    for delay in delays.by_ref() {
         warn!("get size request failed with \"{last_err}\" - retry in {delay:?}");
         probe.retry_attempt(&last_err, delay);
 
@@ -441,5 +441,5 @@ where
         };
     }
 
-    return Err(last_err);
+    Err(last_err)
 }

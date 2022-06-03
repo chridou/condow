@@ -20,17 +20,17 @@ use crate::{
 };
 
 pub(crate) trait RequestAdapter<L>: Send + Sync + 'static {
-    fn bytes<'a>(
-        &'a self,
+    fn bytes(
+        &self,
         location: L,
         params: Params,
-    ) -> BoxFuture<'a, Result<BytesStream, CondowError>>;
-    fn chunks<'a>(
-        &'a self,
+    ) -> BoxFuture<'_, Result<BytesStream, CondowError>>;
+    fn chunks(
+        &self,
         location: L,
         params: Params,
-    ) -> BoxFuture<'a, Result<ChunkStream, CondowError>>;
-    fn size<'a>(&'a self, location: L, params: Params) -> BoxFuture<'a, Result<u64, CondowError>>;
+    ) -> BoxFuture<'_, Result<ChunkStream, CondowError>>;
+    fn size(&self, location: L, params: Params) -> BoxFuture<'_, Result<u64, CondowError>>;
 }
 
 /// A request for a download where the location is not yet known
@@ -473,11 +473,11 @@ mod tests {
         }
 
         impl RequestAdapter<i32> for FooAdapter {
-            fn bytes<'a>(
-                &'a self,
+            fn bytes(
+                &self,
                 location: i32,
                 params: Params,
-            ) -> BoxFuture<'a, Result<BytesStream, CondowError>> {
+            ) -> BoxFuture<'_, Result<BytesStream, CondowError>> {
                 machinery::download_bytes(
                     self.client.clone(),
                     params.config,
@@ -489,19 +489,19 @@ mod tests {
                 .boxed()
             }
 
-            fn chunks<'a>(
-                &'a self,
+            fn chunks(
+                & self,
                 _location: i32,
                 _params: Params,
-            ) -> BoxFuture<'a, Result<ChunkStream, CondowError>> {
+            ) -> BoxFuture<'_, Result<ChunkStream, CondowError>> {
                 unimplemented!()
             }
 
-            fn size<'a>(
-                &'a self,
+            fn size(
+                &self,
                 location: i32,
                 _params: Params,
-            ) -> BoxFuture<'a, Result<u64, CondowError>> {
+            ) -> BoxFuture<'_, Result<u64, CondowError>> {
                 self.client.get_size(location, &()).boxed()
             }
         }

@@ -62,7 +62,7 @@ where
     ) -> Result<Self, CondowError> {
         let get_part_stream = {
             let client = client.clone();
-            move |range: InclusiveRange| client.download(location.clone(), range.into()).boxed()
+            move |range: InclusiveRange| client.download(location.clone(), range).boxed()
         };
 
         Self::new(Arc::new(get_part_stream), initial_range, config, probe).await
