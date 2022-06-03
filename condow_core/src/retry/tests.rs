@@ -997,7 +997,7 @@ mod retry_resume_part_stream {
 
         let original_range: InclusiveRange = range.into();
         let initial_stream = client
-            .download(IgnoreLocation, original_range.into())
+            .download(IgnoreLocation, original_range)
             .await
             .unwrap();
 
