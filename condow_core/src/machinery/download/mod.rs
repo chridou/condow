@@ -226,6 +226,18 @@ pub mod part_chunks_stream {
                     match streaming_state.bytes_stream.poll_next_unpin(cx) {
                         Poll::Ready(Some(Ok(bytes))) => {
                             let bytes_len = bytes.len() as u64;
+
+                            if bytes_len > streaming_state.bytes_left {
+                                let err = CondowError::new_io("Too many bytes received");
+                                this.probe.part_failed(
+                                    &err,
+                                    this.part_request.part_index,
+                                    &this.part_request.blob_range,
+                                );
+                                *this.state = State::Finished;
+                                return Poll::Ready(Some(Err(err)));
+                            }
+
                             streaming_state.bytes_left -= bytes_len;
 
                             let chunk = Chunk {
@@ -261,14 +273,29 @@ pub mod part_chunks_stream {
                             Poll::Ready(Some(Err(err)))
                         }
                         Poll::Ready(None) => {
-                            this.probe.part_completed(
-                                this.part_request.part_index,
-                                streaming_state.chunk_index,
-                                this.part_request.blob_range.len(),
-                                this.started_at.elapsed(),
-                            );
-                            *this.state = State::Finished;
-                            Poll::Ready(None)
+                            if streaming_state.bytes_left == 0 {
+                                this.probe.part_completed(
+                                    this.part_request.part_index,
+                                    streaming_state.chunk_index,
+                                    this.part_request.blob_range.len(),
+                                    this.started_at.elapsed(),
+                                );
+
+                                *this.state = State::Finished;
+
+                                Poll::Ready(None)
+                            } else {
+                                let err = CondowError::new_io("unexpected end of part chunks");
+                                this.probe.part_failed(
+                                    &err,
+                                    this.part_request.part_index,
+                                    &this.part_request.blob_range,
+                                );
+
+                                *this.state = State::Finished;
+
+                                Poll::Ready(Some(Err(err)))
+                            }
                         }
                         Poll::Pending => {
                             *this.state = State::Streaming(streaming_state);
