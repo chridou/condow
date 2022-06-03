@@ -105,6 +105,7 @@ impl From<Duration> for RetryDelayMaxMs {
 
 new_type! {
     #[doc="The maximum number of attempts to resume a byte stream from the same offset."]
+    #[doc="This value should be greater than zero to be able to retry on failures where parts of a strem have already been published."]
     #[doc="Default is 3."]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
     pub copy struct RetryMaxStreamResumeAttempts(usize, env="RETRY_MAX_STREAM_RESUME_ATTEMPTS");
@@ -152,6 +153,10 @@ pub struct RetryConfig {
     ///
     /// Setting this to 0 will disable resumes. Enabling them has a small overhead
     /// since the current progress on a byte stream must be tracked.
+    ///
+    /// If disabled the whole download will fail if a single stream of
+    /// a part breaks since chunks might already have benn published which must not
+    /// be published again.
     pub max_stream_resume_attempts: RetryMaxStreamResumeAttempts,
     // TODO: Add possibility to jitter
 }
@@ -189,6 +194,10 @@ impl RetryConfig {
     ///
     /// Setting this to 0 will disable resumes. Enabling them has a small overhead
     /// since the current progress on a byte stream must be tracked.
+    ///
+    /// If disabled the whole download will fail if a single stream of
+    /// a part breaks since chunks might already have benn published which must not
+    /// be published again.
     pub fn max_stream_resume_attempts<T: Into<RetryMaxStreamResumeAttempts>>(
         mut self,
         max_stream_resume_attempts: T,
