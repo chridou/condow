@@ -188,6 +188,9 @@ impl RequestNoLocation<IgnoreLocation> {
     /// To create a random access reader the size of the BLOB must be known.
     /// If `trusted_blob_size` is set that value will be used. Otherwise a request
     /// to get the size of the BLOB is made.
+    ///
+    /// The seek operations of the reader operate relatively to the downloaded range.
+    /// To seek on the complete BLOB the full range should be specified which is also the default.
     pub fn random_access_reader(self) -> RandomAccessReaderBuilder<IgnoreLocation> {
         self.at(IgnoreLocation).random_access_reader()
     }
@@ -301,6 +304,9 @@ where
     /// To create a random access reader the size of the BLOB must be known.
     /// If `trusted_blob_size` is set that value will be used. Otherwise a request
     /// to get the size of the BLOB is made.
+    ///
+    /// The seek operations of the reader operate relatively to the downloaded range.
+    /// To seek on the complete BLOB the full range should be specified which is also the default.
     pub fn random_access_reader(self) -> RandomAccessReaderBuilder<L> {
         RandomAccessReaderBuilder {
             adapter: self.adapter,
