@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.18.0 - 2022-06-03
 
-This reease involves major breaking changes with the API.
+This release involves major breaking changes with the API.
 See documentation for examples of new API usage.
 
 ### REMOVED

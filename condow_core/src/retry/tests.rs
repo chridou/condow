@@ -1003,7 +1003,7 @@ mod retry_resume_part_stream {
 
         let get_stream_fn = {
             let client = client.clone();
-            move |range: InclusiveRange| client.download(IgnoreLocation, range.into()).boxed()
+            move |range: InclusiveRange| client.download(IgnoreLocation, range).boxed()
         };
 
         let mut retry_stream = RetryResumePartStream::new(
@@ -1261,7 +1261,7 @@ mod retry_download_get_stream {
 
         let get_part_stream = {
             let client = client.clone();
-            move |range: InclusiveRange| client.download(IgnoreLocation, range.into()).boxed()
+            move |range: InclusiveRange| client.download(IgnoreLocation, range).boxed()
         };
 
         match gen_retry_get_stream_fn(
