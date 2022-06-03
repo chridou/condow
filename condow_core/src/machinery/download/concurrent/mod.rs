@@ -1,13 +1,13 @@
-//! Spawns multiple [SequentialDownloader]s to download parts
+//! Components for concurrent downloads
 
 use futures::StreamExt;
 
 use crate::{
     condow_client::CondowClient,
-    config::{ClientRetryWrapper, Config},
-    machinery::{part_request::PartRequestIterator, DownloadSpanGuard},
+    config::ClientRetryWrapper,
+    machinery::{configure_download::DownloadConfiguration, DownloadSpanGuard},
     probe::Probe,
-    streams::ChunkStream,
+    streams::{BytesStream, ChunkStream},
 };
 
 use self::parallel::ParallelDownloader;
@@ -26,63 +26,60 @@ mod two_concurrently;
 /// Debending on the level of concurrency the returned stream
 /// will either poll chunks eagerly or has to be driven
 /// by the consumer.
-pub(crate) fn download_concurrently<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+pub(crate) fn download_chunks_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    if *config.max_concurrency <= 2 {
-        download_two_concurrently(
-            part_requests,
-            client,
-            location,
-            probe,
-            config,
-            download_span_guard,
-        )
-    } else if *config.max_concurrency == 3 {
-        download_three_concurrently(
-            part_requests,
-            client,
-            location,
-            probe,
-            config,
-            download_span_guard,
-        )
-    } else if *config.max_concurrency == 4 {
-        download_four_concurrently(
-            part_requests,
-            client,
-            location,
-            probe,
-            config,
-            download_span_guard,
-        )
+    if configuration.max_concurrency() <= 2 {
+        download_chunks_two_concurrently(client, configuration, probe, download_span_guard)
+    } else if configuration.max_concurrency() == 3 {
+        download_chunks_three_concurrently(client, configuration, probe, download_span_guard)
+    } else if configuration.max_concurrency() == 4 {
+        download_chunks_four_concurrently(client, configuration, probe, download_span_guard)
     } else {
-        download_concurrently_parallel(
-            part_requests,
-            client,
-            location,
-            probe,
-            config,
-            download_span_guard,
-        )
+        download_chunks_parallel(client, configuration, probe, download_span_guard)
     }
 }
 
-/// Download the parst of a BLOB concurrently spawning tasks to create parallelism
-fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+pub(crate) fn download_bytes_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
+    download_span_guard: DownloadSpanGuard,
+) -> BytesStream {
+    let unordered_chunks = if configuration.max_concurrency() <= 2 {
+        download_chunks_two_concurrently(client, configuration, probe, download_span_guard)
+    } else if configuration.max_concurrency() == 3 {
+        download_chunks_three_concurrently(client, configuration, probe, download_span_guard)
+    } else if configuration.max_concurrency() == 4 {
+        download_chunks_four_concurrently(client, configuration, probe, download_span_guard)
+    } else {
+        download_chunks_parallel(client, configuration, probe, download_span_guard)
+    };
+
+    unordered_chunks
+        .try_into_ordered_chunk_stream()
+        .expect("chunk stream to be fresh")
+        .into_bytes_stream()
+}
+
+/// Download the parst of a BLOB concurrently spawning tasks to create parallelism
+fn download_chunks_parallel<C: CondowClient, P: Probe + Clone>(
+    client: ClientRetryWrapper<C>,
+    configuration: DownloadConfiguration<C::Location>,
+    probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = part_requests.bytes_hint();
+    let bytes_hint = configuration.bytes_hint();
+
+    let DownloadConfiguration {
+        location,
+        config,
+        part_requests,
+        ..
+    } = configuration;
 
     let (chunk_stream, results_sender) = ChunkStream::new_channel_sink_pair(bytes_hint);
     tokio::spawn(async move {
@@ -101,26 +98,34 @@ fn download_concurrently_parallel<C: CondowClient, P: Probe + Clone>(
 }
 
 /// Download with a maximum concurrency of 2
-fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+fn download_chunks_two_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = part_requests.bytes_hint();
+    let bytes_hint = configuration.bytes_hint();
+
+    let DownloadConfiguration {
+        location,
+        config,
+        part_requests,
+        ..
+    } = configuration;
+
+    let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
+
     let downloader = two_concurrently::TwoPartsConcurrently::from_client(
         client,
         location,
         part_requests,
         probe.clone(),
-        config.log_download_messages_as_debug,
+        log_dl_msg_as_dbg,
         download_span_guard,
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, config);
+        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
         ChunkStream::from_receiver(active_stream, bytes_hint)
     } else {
         ChunkStream::from_stream(downloader.boxed(), bytes_hint)
@@ -128,26 +133,34 @@ fn download_two_concurrently<C: CondowClient, P: Probe + Clone>(
 }
 
 /// Download with a maximum concurrency of 3
-fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+fn download_chunks_three_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = part_requests.bytes_hint();
+    let bytes_hint = configuration.bytes_hint();
+
+    let DownloadConfiguration {
+        location,
+        config,
+        part_requests,
+        ..
+    } = configuration;
+
+    let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
+
     let downloader = three_concurrently::ThreePartsConcurrently::from_client(
         client,
         location,
         part_requests,
         probe.clone(),
-        config.log_download_messages_as_debug,
+        log_dl_msg_as_dbg,
         download_span_guard,
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, config);
+        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
         ChunkStream::from_receiver(active_stream, bytes_hint)
     } else {
         ChunkStream::from_stream(downloader.boxed(), bytes_hint)
@@ -155,26 +168,34 @@ fn download_three_concurrently<C: CondowClient, P: Probe + Clone>(
 }
 
 /// Download with a maximum concurrency of 3
-fn download_four_concurrently<C: CondowClient, P: Probe + Clone>(
-    part_requests: PartRequestIterator,
+fn download_chunks_four_concurrently<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
-    location: C::Location,
+    configuration: DownloadConfiguration<C::Location>,
     probe: P,
-    config: Config,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = part_requests.bytes_hint();
+    let bytes_hint = configuration.bytes_hint();
+
+    let DownloadConfiguration {
+        location,
+        config,
+        part_requests,
+        ..
+    } = configuration;
+
+    let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
+
     let downloader = four_concurrently::FourPartsConcurrently::from_client(
         client,
         location,
         part_requests,
         probe.clone(),
-        config.log_download_messages_as_debug,
+        log_dl_msg_as_dbg,
         download_span_guard,
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, config);
+        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
         ChunkStream::from_receiver(active_stream, bytes_hint)
     } else {
         ChunkStream::from_stream(downloader.boxed(), bytes_hint)

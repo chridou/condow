@@ -13,9 +13,9 @@ use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
 use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec},
+    condow_client::CondowClient,
     config::{ClientRetryWrapper, Config},
-    errors::{CondowError, IoError},
+    errors::CondowError,
     machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     streams::{BytesStream, Chunk, ChunkStreamItem},
@@ -69,13 +69,13 @@ impl SequentialDownloader {
                     match client
                         .download(
                             location.clone(),
-                            DownloadSpec::Range(range_request.blob_range),
+                            range_request.blob_range,
                             context.probe.clone(),
                         )
                         .instrument(span.clone())
                         .await
                     {
-                        Ok((bytes_stream, _total_bytes)) => {
+                        Ok(bytes_stream) => {
                             if consume_and_dispatch_bytes(bytes_stream, &mut context, range_request)
                                 .instrument(span.clone())
                                 .await
@@ -289,13 +289,13 @@ async fn consume_and_dispatch_bytes<P: Probe + Clone>(
                 chunk_index += 1;
                 offset_in_range += n_bytes as u64;
             }
-            Err(IoError(msg)) => {
+            Err(err) => {
                 context.probe.part_failed(
-                    &CondowError::new_io(msg.clone()),
+                    &err,
                     range_request.part_index,
                     &range_request.blob_range,
                 );
-                context.send_err(CondowError::new_io(msg));
+                context.send_err(err);
                 return Err(());
             }
         }

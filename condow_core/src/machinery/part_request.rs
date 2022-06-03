@@ -66,10 +66,13 @@ impl PartRequestIterator {
         }
     }
 
-    pub fn exact_size_hint(&self) -> u64 {
+    /// Returns the number of parts left
+    pub fn parts_hint(&self) -> u64 {
         self.parts_left
     }
 
+    /// Returns a hint for the bytes which are still to be
+    /// delivered by the rmaining [PartRequest]s
     pub fn bytes_hint(&self) -> BytesHint {
         BytesHint::new_exact(self.bytes_left)
     }
@@ -257,7 +260,7 @@ fn test_n_parts_vs_iter_count() {
                 let end_incl = start + end_offset;
                 let range = InclusiveRange(start, end_incl);
                 let iter = PartRequestIterator::new(range, part_size);
-                let n_parts = iter.exact_size_hint();
+                let n_parts = iter.parts_hint();
                 let items = iter.collect::<Vec<_>>();
 
                 assert_eq!(

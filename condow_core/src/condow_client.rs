@@ -5,66 +5,13 @@
 //! * [InMemoryClient]: A client which keeps data in memory and never fails
 //! * [failing_client_simulator]: A module containing a client with data kept in memory
 //! which can fail and cause panics.
-use std::{convert::Infallible, fmt, ops::RangeInclusive, str::FromStr};
+use std::{convert::Infallible, str::FromStr};
 
-use futures::future::BoxFuture;
+use futures::{future::BoxFuture, FutureExt};
 
-use crate::{
-    errors::CondowError,
-    streams::{BytesHint, BytesStream},
-    InclusiveRange,
-};
+use crate::{errors::CondowError, streams::BytesStream, InclusiveRange};
 
 pub use in_memory::InMemoryClient;
-
-/// Specifies whether a whole BLOB or part of it should be downloaded
-#[derive(Debug, Copy, Clone)]
-pub enum DownloadSpec {
-    /// Download the complete BLOB
-    Complete,
-    /// Download part of the BLOB given by an [InclusiveRange]
-    Range(InclusiveRange),
-}
-
-impl DownloadSpec {
-    /// Returns a value for an  `HTTP-Range` header with bytes as the unit
-    /// if the variant is [DownloadSpec::Range]
-    pub fn http_bytes_range_value(&self) -> Option<String> {
-        match self {
-            DownloadSpec::Complete => None,
-            DownloadSpec::Range(r) => Some(r.http_bytes_range_value()),
-        }
-    }
-
-    /// Returns the position of the first byte to be fetched
-    pub fn start(&self) -> u64 {
-        match self {
-            DownloadSpec::Complete => 0,
-            DownloadSpec::Range(r) => r.start(),
-        }
-    }
-}
-
-impl fmt::Display for DownloadSpec {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DownloadSpec::Complete => write!(f, "[..]"),
-            DownloadSpec::Range(r) => r.fmt(f),
-        }
-    }
-}
-
-impl From<InclusiveRange> for DownloadSpec {
-    fn from(r: InclusiveRange) -> Self {
-        Self::Range(r)
-    }
-}
-
-impl From<RangeInclusive<u64>> for DownloadSpec {
-    fn from(r: RangeInclusive<u64>) -> Self {
-        Self::Range(r.into())
-    }
-}
 
 /// A client to some service or other resource which supports
 /// partial downloads
@@ -79,16 +26,25 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
     /// Returns the size of the BLOB at the given location
     fn get_size(&self, location: Self::Location) -> BoxFuture<'static, Result<u64, CondowError>>;
 
-    /// Download a BLOB or part of a BLOB from the given location as specified by the [DownloadSpec]
-    ///
-    /// A valid [BytesHint] must be returned alongside the stream.
-    /// A concurrent download will fail if the [BytesHint] does not match
-    /// the number of bytes requested by a [DownloadSpec::Range].
+    /// Download a BLOB or part of a BLOB from the given location as specified by the [InclusiveRange]
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>;
+        range: InclusiveRange,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>>;
+
+    /// Download a complete BLOB
+    fn download_full(
+        &self,
+        location: Self::Location,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+        let me = self.clone();
+        async move {
+            let len = me.get_size(location.clone()).await?;
+            me.download(location, InclusiveRange(0, len - 1)).await
+        }
+        .boxed()
+    }
 }
 
 /// A location usable for testing.
@@ -125,7 +81,7 @@ mod in_memory {
         config::{Config, Mebi},
         errors::CondowError,
         streams::{BytesHint, BytesStream},
-        Condow,
+        Condow, InclusiveRange,
     };
     use anyhow::Error as AnyError;
     use bytes::Bytes;
@@ -135,7 +91,7 @@ mod in_memory {
     };
     use tracing::trace;
 
-    use super::{CondowClient, DownloadSpec, IgnoreLocation};
+    use super::{CondowClient, IgnoreLocation};
 
     /// Holds the BLOB in memory as owned or static data.
     ///
@@ -209,25 +165,22 @@ mod in_memory {
         fn download(
             &self,
             _location: Self::Location,
-            spec: DownloadSpec,
-        ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+            range: InclusiveRange,
+        ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
             trace!("in-memory-client: download");
 
-            download(self.blob.as_slice(), self.chunk_size, spec)
+            download(self.blob.as_slice(), self.chunk_size, range)
         }
     }
 
     fn download(
         blob: &[u8],
         chunk_size: usize,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-        let range = match spec {
-            DownloadSpec::Complete => 0..blob.len(),
-            DownloadSpec::Range(r) => {
-                let r = r.to_std_range_excl();
-                r.start as usize..r.end as usize
-            }
+        range: InclusiveRange,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+        let range = {
+            let r = range.to_std_range_excl();
+            r.start as usize..r.end as usize
         };
 
         if range.end > blob.len() {
@@ -248,9 +201,9 @@ mod in_memory {
 
         let stream = stream::iter(owned_bytes);
 
-        let stream: BytesStream = Box::pin(stream);
+        let stream = BytesStream::new(stream, bytes_hint);
 
-        let f = future::ready(Ok((stream, bytes_hint)));
+        let f = future::ready(Ok(stream));
 
         Box::pin(f)
     }
@@ -281,19 +234,18 @@ mod in_memory {
     mod test {
         use futures::{pin_mut, StreamExt};
 
-        use crate::{
-            condow_client::DownloadSpec, errors::CondowError, streams::BytesHint, InclusiveRange,
-        };
+        use crate::{errors::CondowError, streams::BytesHint, InclusiveRange};
 
         const BLOB: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
 
         async fn download_to_vec(
             blob: &[u8],
             chunk_size: usize,
-            spec: DownloadSpec,
+            range: InclusiveRange,
         ) -> Result<(Vec<u8>, BytesHint), CondowError> {
-            let (stream, bytes_hint) = super::download(blob, chunk_size, spec).await?;
+            let stream = super::download(blob, chunk_size, range).await?;
 
+            let bytes_hint = stream.bytes_hint();
             let mut buf = Vec::with_capacity(bytes_hint.lower_bound() as usize);
             pin_mut!(stream);
             while let Some(next) = stream.next().await {
@@ -306,9 +258,10 @@ mod in_memory {
         #[tokio::test]
         async fn download_all() {
             for chunk_size in 1..30 {
-                let (bytes, bytes_hint) = download_to_vec(BLOB, chunk_size, DownloadSpec::Complete)
-                    .await
-                    .unwrap();
+                let (bytes, bytes_hint) =
+                    download_to_vec(BLOB, chunk_size, (0..=BLOB.len() as u64 - 1).into())
+                        .await
+                        .unwrap();
 
                 assert_eq!(&bytes, BLOB);
                 assert_eq!(bytes_hint, BytesHint::new_exact(bytes.len() as u64));
@@ -319,10 +272,7 @@ mod in_memory {
         async fn download_range_begin() {
             for chunk_size in 1..30 {
                 let range = InclusiveRange(0, 9);
-                let (bytes, bytes_hint) =
-                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
-                        .await
-                        .unwrap();
+                let (bytes, bytes_hint) = download_to_vec(BLOB, chunk_size, range).await.unwrap();
 
                 let expected = b"abcdefghij";
 
@@ -335,10 +285,7 @@ mod in_memory {
         async fn download_range_middle() {
             for chunk_size in 1..30 {
                 let range = InclusiveRange(10, 19);
-                let (bytes, bytes_hint) =
-                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
-                        .await
-                        .unwrap();
+                let (bytes, bytes_hint) = download_to_vec(BLOB, chunk_size, range).await.unwrap();
 
                 let expected = b"klmnopqrst";
 
@@ -351,10 +298,7 @@ mod in_memory {
         async fn download_range_end() {
             for chunk_size in 1..30 {
                 let range = InclusiveRange(16, 25);
-                let (bytes, bytes_hint) =
-                    download_to_vec(BLOB, chunk_size, DownloadSpec::Range(range))
-                        .await
-                        .unwrap();
+                let (bytes, bytes_hint) = download_to_vec(BLOB, chunk_size, range).await.unwrap();
 
                 let expected = b"qrstuvwxyz";
 
@@ -367,17 +311,16 @@ mod in_memory {
 
 pub mod failing_client_simulator {
     //! Simulate failing requests and streams
-    use std::{fmt::Display, marker::PhantomData, sync::Arc, vec};
-
     use bytes::Bytes;
-    use futures::{future, lock::Mutex, task, FutureExt, Stream, StreamExt};
+    use futures::{future, lock::Mutex, task, FutureExt, Stream};
+    use std::{fmt::Display, marker::PhantomData, sync::Arc, vec};
     use tracing::trace;
 
     use crate::{
-        condow_client::{CondowClient, DownloadSpec},
+        condow_client::CondowClient,
         config::Config,
-        errors::{CondowError, IoError},
-        streams::{BytesHint, BytesStream},
+        errors::CondowError,
+        streams::{BytesHint, BytesStream, BytesStreamItem},
         Condow, InclusiveRange,
     };
 
@@ -509,20 +452,15 @@ pub mod failing_client_simulator {
         fn download(
             &self,
             _location: Self::Location,
-            spec: DownloadSpec,
-        ) -> futures::future::BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
-        {
+            range: InclusiveRange,
+        ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
             trace!("failing-client-simulator: download");
             let me = self.clone();
-            let range_incl = match spec {
-                DownloadSpec::Range(r) => r,
-                DownloadSpec::Complete => InclusiveRange(0, (me.blob.len() - 1) as u64),
-            };
 
-            if range_incl.end_incl() >= me.blob.len() as u64 {
+            if range.end_incl() >= me.blob.len() as u64 {
                 let msg = format!(
                     "end of range incl. {} is behind slice end (len = {})",
-                    range_incl,
+                    range,
                     me.blob.len()
                 );
                 return futures::future::ready(Err(CondowError::new(
@@ -532,7 +470,7 @@ pub mod failing_client_simulator {
                 .boxed();
             }
 
-            let bytes_hint = BytesHint::new_exact(range_incl.len());
+            let bytes_hint = BytesHint::new_exact(range.len());
 
             async move {
                 let next_response = me
@@ -546,21 +484,20 @@ pub mod failing_client_simulator {
                     ResponseBehaviour::Success => {
                         let stream = BytesStreamWithError {
                             blob: me.blob,
-                            next: range_incl.start() as usize,
-                            end_excl: range_incl.end_incl() as usize + 1,
+                            next: range.start() as usize,
+                            end_excl: range.end_incl() as usize + 1,
                             error: None,
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                     ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
-                        let start = range_incl.start() as usize;
-                        let end_excl =
-                            (start + error_offset).min(range_incl.end_incl() as usize + 1);
+                        let start = range.start() as usize;
+                        let end_excl = (start + error_offset).min(range.end_incl() as usize + 1);
                         if start > end_excl {
                             panic!(
                                 "start ({}) > end_excl ({}) with range {:?} and error offset {}",
-                                start, end_excl, range_incl, error_offset
+                                start, end_excl, range, error_offset
                             );
                         }
 
@@ -574,20 +511,19 @@ pub mod failing_client_simulator {
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                     ResponseBehaviour::Error(error) => Err(error),
                     ResponseBehaviour::Panic(msg) => {
                         panic!("{}", msg)
                     }
                     ResponseBehaviour::SuccessWithStreamPanic(panic_offset) => {
-                        let start = range_incl.start() as usize;
-                        let end_excl =
-                            (start + panic_offset).min(range_incl.end_incl() as usize + 1);
+                        let start = range.start() as usize;
+                        let end_excl = (start + panic_offset).min(range.end_incl() as usize + 1);
                         if start > end_excl {
                             panic!(
                                 "start ({}) > end_excl ({}) with range {:?} and error offset {}",
-                                start, end_excl, range_incl, panic_offset
+                                start, end_excl, range, panic_offset
                             );
                         }
 
@@ -597,11 +533,11 @@ pub mod failing_client_simulator {
                             end_excl,
                             error: Some(ErrorAction::Panic(format!(
                                 "panic at byte {} of range {}",
-                                panic_offset, range_incl
+                                panic_offset, range
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok((stream.boxed(), bytes_hint))
+                        Ok(BytesStream::new(stream, bytes_hint))
                     }
                 }
             }
@@ -894,7 +830,7 @@ pub mod failing_client_simulator {
     }
 
     impl Stream for BytesStreamWithError {
-        type Item = Result<Bytes, IoError>;
+        type Item = BytesStreamItem;
 
         fn poll_next(
             mut self: std::pin::Pin<&mut Self>,
@@ -903,7 +839,10 @@ pub mod failing_client_simulator {
             if self.next == self.end_excl || self.chunk_size == 0 {
                 if let Some(error_action) = self.error.take() {
                     match error_action {
-                        ErrorAction::Err(msg) => return task::Poll::Ready(Some(Err(IoError(msg)))),
+                        ErrorAction::Err(msg) => {
+                            let err = CondowError::new_io(msg);
+                            return task::Poll::Ready(Some(Err(err)));
+                        }
                         ErrorAction::Panic(msg) => panic!("{}", msg),
                     }
                 } else {
@@ -930,6 +869,8 @@ pub mod failing_client_simulator {
 
     #[cfg(test)]
     mod test_client {
+        use futures::StreamExt;
+
         use crate::errors::CondowErrorKind;
 
         use super::*;
@@ -939,7 +880,7 @@ pub mod failing_client_simulator {
         #[tokio::test]
         async fn all_ok() {
             let client = get_builder().finish();
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap();
 
@@ -950,7 +891,7 @@ pub mod failing_client_simulator {
         #[should_panic(expected = "request 1 should have never happened")]
         async fn never_1() {
             let client = get_builder().responses().never().finish();
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let _result = download(&client, range).await;
         }
@@ -959,7 +900,7 @@ pub mod failing_client_simulator {
         #[should_panic(expected = "request 2 should have never happened")]
         async fn never_2() {
             let client = get_builder().responses().success().never().finish();
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let _result = download(&client, range).await.unwrap().unwrap();
             let _result = download(&client, range).await;
@@ -972,7 +913,7 @@ pub mod failing_client_simulator {
                 .failure(CondowErrorKind::NotFound)
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap_err();
 
@@ -987,7 +928,7 @@ pub mod failing_client_simulator {
                 .failure(CondowErrorKind::NotFound)
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::InvalidRange);
@@ -1004,7 +945,7 @@ pub mod failing_client_simulator {
                 .failure(CondowErrorKind::NotFound)
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::InvalidRange);
@@ -1031,7 +972,7 @@ pub mod failing_client_simulator {
                 .never()
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap();
             assert_eq!(result, BLOB, "1");
@@ -1060,7 +1001,7 @@ pub mod failing_client_simulator {
                 .success_with_stream_failure(0)
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &[], "err");
@@ -1075,7 +1016,7 @@ pub mod failing_client_simulator {
                 .successes_with_stream_failure([0, 0])
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &[], "err");
@@ -1092,7 +1033,7 @@ pub mod failing_client_simulator {
                 .successes_with_stream_failure([5])
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[0..5], "err");
@@ -1107,7 +1048,7 @@ pub mod failing_client_simulator {
                 .successes_with_stream_failure([5, 10])
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[0..5], "err");
@@ -1124,7 +1065,7 @@ pub mod failing_client_simulator {
                 .successes_with_stream_failure([5, 5, 5])
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[0..5], "err");
@@ -1143,7 +1084,7 @@ pub mod failing_client_simulator {
                 .success_with_stream_failure(BLOB.len() - 1)
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[0..BLOB.len() - 1], "err");
@@ -1158,7 +1099,7 @@ pub mod failing_client_simulator {
                 .success_with_stream_failure(BLOB.len())
                 .finish();
 
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap().unwrap_err();
             assert_eq!(result, BLOB, "err");
@@ -1177,7 +1118,7 @@ pub mod failing_client_simulator {
                 .success()
                 .never()
                 .finish();
-            let range = DownloadSpec::Complete;
+            let range = InclusiveRange(0u64, BLOB.len() as u64 - 1);
 
             let result = download(&client, range).await.unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::Io, "1");
@@ -1207,16 +1148,22 @@ pub mod failing_client_simulator {
                 .never()
                 .finish();
 
-            let result = download(&client, DownloadSpec::Complete).await.unwrap_err();
+            let result = download(&client, InclusiveRange(0u64, BLOB.len() as u64 - 1))
+                .await
+                .unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::Io, "1");
-            let result = download(&client, DownloadSpec::Complete)
+            let result = download(&client, InclusiveRange(0u64, BLOB.len() as u64 - 1))
                 .await
                 .unwrap()
                 .unwrap_err();
             assert_eq!(result, &[], "2");
-            let result = download(&client, DownloadSpec::Complete).await.unwrap_err();
+            let result = download(&client, InclusiveRange(0u64, BLOB.len() as u64 - 1))
+                .await
+                .unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::Remote, "3");
-            let result = download(&client, DownloadSpec::Complete).await.unwrap_err();
+            let result = download(&client, InclusiveRange(0u64, BLOB.len() as u64 - 1))
+                .await
+                .unwrap_err();
             assert_eq!(result.kind(), CondowErrorKind::InvalidRange, "4");
             let result = download(&client, 2..=9).await.unwrap().unwrap_err();
             assert_eq!(result, &BLOB[2..5], "5");
@@ -1236,11 +1183,11 @@ pub mod failing_client_simulator {
                 .chunk_size(3)
         }
 
-        async fn download<R: Into<DownloadSpec>>(
+        async fn download<R: Into<InclusiveRange>>(
             client: &FailingClientSimulator,
             range: R,
         ) -> Result<Result<Vec<u8>, Vec<u8>>, CondowError> {
-            let (mut stream, _bytes_hint) = client.download(IgnoreLocation, range.into()).await?;
+            let mut stream = client.download(IgnoreLocation, range.into()).await?;
 
             let mut received = Vec::new();
 
@@ -1259,6 +1206,8 @@ pub mod failing_client_simulator {
     #[cfg(test)]
     mod test_stream {
         use std::ops::Range;
+
+        use futures::StreamExt;
 
         use super::*;
 

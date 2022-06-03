@@ -85,57 +85,7 @@ mod range {
     mod open {
         use std::sync::Arc;
 
-        use crate::condow_client::IgnoreLocation;
-        use crate::machinery;
         use crate::{config::Config, test_utils::create_test_data, test_utils::*, Condow};
-
-        #[tokio::test]
-        async fn from_always_get_size() {
-            let buffer_size = 10;
-
-            let data = Arc::new(create_test_data());
-
-            for chunk_size in [1, 3, 5] {
-                let client = TestCondowClient {
-                    data: Arc::clone(&data),
-                    max_jitter_ms: 0,
-                    include_size_hint: true,
-                    max_chunk_size: chunk_size,
-                    ..TestCondowClient::default()
-                };
-
-                for part_size in [1u64, 3, 50, 1_000] {
-                    for n_concurrency in [1usize, 2, 3, 4, 10] {
-                        let config = Config::default()
-                            .buffer_size(buffer_size)
-                            .max_buffers_full_delay_ms(0)
-                            .part_size_bytes(part_size)
-                            .always_get_size(true) // case to test
-                            .max_concurrency(n_concurrency);
-                        let condow = Condow::new(client.clone(), config).unwrap();
-
-                        for from_idx in [0u64, 101, 255, 256] {
-                            let range = from_idx..;
-
-                            let result_stream = machinery::download_range(
-                                condow.client.clone(),
-                                condow.config.clone(),
-                                IgnoreLocation,
-                                range.clone(),
-                                (),
-                            )
-                            .await
-                            .unwrap();
-
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            let check_range = (from_idx as usize).min(data.len())..;
-                            assert_eq!(&result, &data[check_range]);
-                        }
-                    }
-                }
-            }
-        }
 
         #[tokio::test]
         async fn from_when_required_get_size() {
@@ -158,20 +108,20 @@ mod range {
                             .buffer_size(buffer_size)
                             .max_buffers_full_delay_ms(0)
                             .part_size_bytes(part_size)
-                            .always_get_size(false) // case to test
                             .max_concurrency(n_concurrency);
                         let condow = Condow::new(client.clone(), config).unwrap();
 
-                        for from_idx in [0u64, 101, 255, 256] {
+                        for from_idx in [0u64, 101, 254, 255] {
                             let range = from_idx..;
 
-                            let result_stream =
-                                condow.blob().range(range).download_chunks().await.unwrap();
+                            let result = condow.blob().range(range).download_into_vec().await;
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            let check_range = (from_idx as usize).min(data.len())..;
-                            assert_eq!(&result, &data[check_range]);
+                            if (from_idx as usize) < data.len() {
+                                let check_range = (from_idx as usize).min(data.len())..;
+                                assert_eq!(&result.unwrap(), &data[check_range]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -214,19 +164,23 @@ mod range {
                             let range = 0..=end_incl;
                             let expected_range_end = (end_incl as usize + 1).min(data.len());
 
-                            let result_stream = machinery::download_range(
+                            let result_stream = machinery::download_chunks(
                                 condow.client.clone(),
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
                                 (),
+                                None,
                             )
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            assert_eq!(&result, &data[0..expected_range_end]);
+                            let result = result_stream.into_vec().await;
+                            if (end_incl as usize) < data.len() {
+                                assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -261,19 +215,23 @@ mod range {
                             let range = 0..end_excl;
                             let expected_range_end = (end_excl as usize).min(data.len());
 
-                            let result_stream = machinery::download_range(
+                            let result_stream = machinery::download_chunks(
                                 condow.client.clone(),
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
                                 (),
+                                None,
                             )
                             .await
                             .unwrap();
 
-                            let result = result_stream.into_vec().await.unwrap();
-
-                            assert_eq!(&result, &data[0..expected_range_end]);
+                            let result = result_stream.into_vec().await;
+                            if (end_excl as usize) <= data.len() {
+                                assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                            } else {
+                                assert!(result.is_err());
+                            }
                         }
                     }
                 }
@@ -317,19 +275,23 @@ mod range {
                                     let expected_range_end =
                                         (end_incl as usize + 1).min(data.len());
 
-                                    let result_stream = machinery::download_range(
+                                    let result_stream = machinery::download_chunks(
                                         condow.client.clone(),
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
                                         (),
+                                        None,
                                     )
                                     .await
                                     .unwrap();
 
-                                    let result = result_stream.into_vec().await.unwrap();
-
-                                    assert_eq!(&result, &data[0..expected_range_end]);
+                                    let result = result_stream.into_vec().await;
+                                    if (end_incl as usize) < data.len() {
+                                        assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                                    } else {
+                                        assert!(result.is_err());
+                                    }
                                 }
                             }
                         }
@@ -364,19 +326,23 @@ mod range {
                                     let range = 0..end_excl;
                                     let expected_range_end = (end_excl as usize).min(data.len());
 
-                                    let result_stream = machinery::download_range(
+                                    let result_stream = machinery::download_chunks(
                                         condow.client.clone(),
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
                                         (),
+                                        None,
                                     )
                                     .await
                                     .unwrap();
 
-                                    let result = result_stream.into_vec().await.unwrap();
-
-                                    assert_eq!(&result, &data[0..expected_range_end]);
+                                    let result = result_stream.into_vec().await;
+                                    if (end_excl as usize) <= data.len() {
+                                        assert_eq!(&result.unwrap(), &data[0..expected_range_end]);
+                                    } else {
+                                        assert!(result.is_err());
+                                    }
                                 }
                             }
                         }
@@ -422,22 +388,26 @@ mod range {
                                         let expected_range_end =
                                             (end_incl as usize + 1).min(data.len());
 
-                                        let result_stream = machinery::download_range(
+                                        let result_stream = machinery::download_chunks(
                                             condow.client.clone(),
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
                                             (),
+                                            None,
                                         )
                                         .await
                                         .unwrap();
 
-                                        let result = result_stream.into_vec().await.unwrap();
-
-                                        assert_eq!(
-                                            &result,
-                                            &data[start as usize..expected_range_end]
-                                        );
+                                        let result = result_stream.into_vec().await;
+                                        if (end_incl as usize) < data.len() {
+                                            assert_eq!(
+                                                &result.unwrap(),
+                                                &data[start as usize..expected_range_end]
+                                            );
+                                        } else {
+                                            assert!(result.is_err());
+                                        }
                                     }
                                 }
                             }
@@ -476,22 +446,26 @@ mod range {
                                         let expected_range_end =
                                             (end_excl as usize).min(data.len());
 
-                                        let result_stream = machinery::download_range(
+                                        let result_stream = machinery::download_chunks(
                                             condow.client.clone(),
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
                                             (),
+                                            None,
                                         )
                                         .await
                                         .unwrap();
 
-                                        let result = result_stream.into_vec().await.unwrap();
-
-                                        assert_eq!(
-                                            &result,
-                                            &data[start as usize..expected_range_end]
-                                        );
+                                        let result = result_stream.into_vec().await;
+                                        if (end_excl as usize) <= data.len() {
+                                            assert_eq!(
+                                                &result.unwrap(),
+                                                &data[start as usize..expected_range_end]
+                                            );
+                                        } else {
+                                            assert!(result.is_err());
+                                        }
                                     }
                                 }
                             }
@@ -521,47 +495,66 @@ mod probe_events {
         //! We test different levels of concurrency since there are special
         //! implementations and each of them has to trifgger the events.
 
+        let sequential_modes = [
+            SequentialDownloadMode::KeepParts,
+            SequentialDownloadMode::MergeParts,
+            SequentialDownloadMode::Repartition {
+                part_size: 5.into(),
+            },
+        ];
         let n_concurencies = [1usize, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20];
 
-        for n_concurrency in n_concurencies {
-            let client = TestCondowClient::new().max_chunk_size(10);
-            let config = Config::default()
-                .part_size_bytes(5)
-                .sequential_download_mode(SequentialDownloadMode::KeepParts)
-                .max_concurrency(n_concurrency);
-            let condow = Condow::new(client.clone(), config).unwrap();
+        for sequential_download_mode in sequential_modes {
+            for n_concurrency in n_concurencies {
+                let client = TestCondowClient::new().max_chunk_size(10);
+                let config = Config::default()
+                    .part_size_bytes(5)
+                    .sequential_download_mode(sequential_download_mode)
+                    .max_concurrency(n_concurrency);
+                let condow = Condow::new(client.clone(), config).unwrap();
 
-            let probe = TestProbe::new();
-            let result = condow
-                .blob()
-                .range(0..100)
-                .probe(Arc::new(probe.clone()))
-                .download_into_vec()
-                .await
-                .unwrap();
+                let probe = TestProbe::new();
+                let result = condow
+                    .blob()
+                    .range(0..100)
+                    .probe(Arc::new(probe.clone()))
+                    .download_into_vec()
+                    .await
+                    .unwrap();
 
-            assert_eq!(result, client.data_slice()[0..100]);
+                assert_eq!(result, client.data_slice()[0..100]);
 
-            assert_eq!(
-                probe.downloads_open(),
-                0,
-                "downloads open - n_conc: {n_concurrency}"
-            );
-            assert_eq!(
-                probe.downloads_started(),
-                1,
-                "downloads started - n_conc: {n_concurrency}"
-            );
-            assert_eq!(
-                probe.parts_open(),
-                0,
-                "parts open - n_conc: {n_concurrency}"
-            );
-            assert_eq!(
-                probe.parts_received(),
-                20,
-                "parts received - n_conc: {n_concurrency}"
-            );
+                assert_eq!(
+                    probe.downloads_open(),
+                    0,
+                    "downloads open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+                assert_eq!(
+                    probe.downloads_started(),
+                    1,
+                    "downloads started - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+                assert_eq!(
+                    probe.parts_open(),
+                    0,
+                    "parts open - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                );
+                if sequential_download_mode == SequentialDownloadMode::MergeParts
+                    && n_concurrency == 1
+                {
+                    assert_eq!(
+                        probe.parts_received(),
+                        1,
+                        "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        probe.parts_received(),
+                        20,
+                        "parts received - n_conc: {n_concurrency}, mode: {sequential_download_mode:?}"
+                    );
+                }
+            }
         }
     }
 

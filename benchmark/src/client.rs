@@ -6,11 +6,11 @@ use bytes::Bytes;
 use futures::{future::BoxFuture, stream, FutureExt, StreamExt};
 
 use condow_core::{
-    condow_client::{CondowClient, DownloadSpec, IgnoreLocation},
+    condow_client::{CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
     streams::{BytesHint, BytesStream},
-    Condow,
+    Condow, InclusiveRange,
 };
 
 /// A client for benchmarking which returns zero bytes only.
@@ -47,16 +47,13 @@ impl CondowClient for BenchmarkClient {
     fn download(
         &self,
         _location: Self::Location,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-        let bytes_to_send = match spec {
-            DownloadSpec::Complete => self.size,
-            DownloadSpec::Range(r) => {
-                if r.end_incl() >= self.size {
-                    return futures::future::err(CondowError::new_other("out of range")).boxed();
-                } else {
-                    r.len()
-                }
+        range: InclusiveRange,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+        let bytes_to_send = {
+            if range.end_incl() >= self.size {
+                return futures::future::err(CondowError::new_other("out of range")).boxed();
+            } else {
+                range.len()
             }
         };
 
@@ -90,9 +87,10 @@ impl CondowClient for BenchmarkClient {
 
             chunk
         });
-        let stream = Box::pin(stream).boxed();
+        //       let stream = stream::iter(iter);
+        let stream = BytesStream::new(stream, BytesHint::new_exact(bytes_to_send));
 
-        futures::future::ok((stream, BytesHint::new_exact(bytes_to_send))).boxed()
+        futures::future::ok(stream).boxed()
     }
 }
 
@@ -109,7 +107,7 @@ mod test {
 
         let bytes_downloaded = condow
             .blob()
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -127,7 +125,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(0..)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -146,7 +144,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(range)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -163,7 +161,7 @@ mod test {
 
         let bytes_downloaded = condow
             .blob()
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -181,7 +179,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(0..)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()
@@ -200,7 +198,7 @@ mod test {
         let bytes_downloaded = condow
             .blob()
             .range(range)
-            .download_chunks()
+            .download_chunks_unordered()
             .await
             .unwrap()
             .count_bytes()

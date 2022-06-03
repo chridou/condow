@@ -51,6 +51,17 @@ impl InclusiveRange {
         self.1
     }
 
+    pub fn validate(&self) -> Result<(), CondowError> {
+        if self.end_incl() < self.start() {
+            Err(CondowError::new_invalid_range(format!(
+                "End must not be smaller than start: {}",
+                self
+            )))
+        } else {
+            Ok(())
+        }
+    }
+
     /// Returns the length of the range
     ///
     /// ```
@@ -61,6 +72,7 @@ impl InclusiveRange {
     /// assert_eq!(range.len(), 6);
     /// ```
     #[allow(clippy::len_without_is_empty)]
+    #[inline]
     pub fn len(&self) -> u64 {
         if self.1 < self.0 {
             return 0;
@@ -80,6 +92,11 @@ impl InclusiveRange {
 
     pub fn to_std_range_excl(self) -> Range<u64> {
         self.0..self.1 + 1
+    }
+
+    #[inline]
+    pub fn advance(&mut self, by: u64) {
+        self.0 += by
     }
 
     /// Returns a value for an  `HTTP-Range` header with bytes as the unit
@@ -270,15 +287,15 @@ impl ClosedRange {
         }
     }
 
-    pub fn is_empty(self) -> bool {
-        self.len() == 0 // is this efficient enough?
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0 // efficient enough since not on the hot path
     }
 
-    pub fn len(self) -> u64 {
+    pub fn len(&self) -> u64 {
         match self {
             Self::FromTo(a, b) => b - a,
             Self::FromToInclusive(a, b) => b - a + 1,
-            Self::To(last_excl) => last_excl,
+            Self::To(last_excl) => *last_excl,
             Self::ToInclusive(last_incl) => last_incl + 1,
         }
     }
@@ -303,63 +320,25 @@ impl ClosedRange {
         Some(self)
     }
 
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
-        if size == 0 {
-            return None;
-        }
-
-        let max_inclusive = size - 1;
-        let inclusive = match self {
-            Self::FromTo(a, b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(InclusiveRange(a, (max_inclusive).min(b - 1)))
-            }
-            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, (max_inclusive).min(b))),
-            Self::To(b) => {
-                if b == 0 {
-                    return None;
-                }
-                Some(InclusiveRange(0, (max_inclusive).min(b - 1)))
-            }
-            Self::ToInclusive(b) => Some(InclusiveRange(0, (max_inclusive).min(b))),
-        };
-
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
-
-        inclusive
-    }
-
     pub fn incl_range(self) -> Option<InclusiveRange> {
         let inclusive = match self {
             Self::FromTo(a, b) => {
-                if b == 0 {
+                if a == b {
                     return None;
                 }
-                Some(InclusiveRange(a, b - 1))
+                InclusiveRange(a, b - 1)
             }
-            Self::FromToInclusive(a, b) => Some(InclusiveRange(a, b)),
+            Self::FromToInclusive(a, b) => InclusiveRange(a, b),
             Self::To(b) => {
                 if b == 0 {
                     return None;
                 }
-                Some(InclusiveRange(0, b - 1))
+                InclusiveRange(0, b - 1)
             }
-            Self::ToInclusive(b) => Some(InclusiveRange(0, b)),
+            Self::ToInclusive(b) => InclusiveRange(0, b),
         };
 
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
-
-        inclusive
+        Some(inclusive)
     }
 }
 
@@ -418,24 +397,20 @@ pub enum OpenRange {
 }
 
 impl OpenRange {
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Result<Option<InclusiveRange>, CondowError> {
         if size == 0 {
-            return None;
+            return Ok(None);
         }
 
         let max_inclusive = size - 1;
         let inclusive = match self {
-            Self::From(a) => Some(InclusiveRange(a, max_inclusive)),
-            Self::Full => Some(InclusiveRange(0, max_inclusive)),
+            Self::From(a) => InclusiveRange(a, max_inclusive),
+            Self::Full => InclusiveRange(0, max_inclusive),
         };
 
-        if let Some(InclusiveRange(a, b)) = inclusive {
-            if b < a {
-                return None;
-            }
-        }
+        inclusive.validate()?;
 
-        inclusive
+        Ok(Some(inclusive))
     }
 }
 
@@ -516,10 +491,16 @@ impl DownloadRange {
         }
     }
 
-    pub fn incl_range_from_size(self, size: u64) -> Option<InclusiveRange> {
+    pub fn incl_range_from_size(self, size: u64) -> Result<Option<InclusiveRange>, CondowError> {
         match self {
             DownloadRange::Open(r) => r.incl_range_from_size(size),
-            DownloadRange::Closed(r) => r.incl_range_from_size(size),
+            DownloadRange::Closed(r) => {
+                let inclusive = r.incl_range();
+                if let Some(inclusive) = inclusive {
+                    inclusive.validate()?
+                }
+                Ok(inclusive)
+            }
         }
     }
 
@@ -528,6 +509,13 @@ impl DownloadRange {
         match self {
             DownloadRange::Open(_) => None,
             DownloadRange::Closed(r) => Some(r.len()),
+        }
+    }
+
+    pub fn is_empty(&self) -> Option<bool> {
+        match self {
+            DownloadRange::Open(_) => None,
+            DownloadRange::Closed(r) => Some(r.is_empty()),
         }
     }
 }

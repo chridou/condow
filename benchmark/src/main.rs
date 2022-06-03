@@ -7,7 +7,7 @@ mod client;
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() {
-    let results = benchmarks::run(327).await.unwrap();
+    let results = benchmarks::run(103).await.unwrap();
 
     let handle = spawn_blocking(move || {
         let mut wtr = csv::Writer::from_writer(io::stdout());

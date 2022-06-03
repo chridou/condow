@@ -30,7 +30,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Error as AnyError};
-use futures::{future::BoxFuture, stream::TryStreamExt};
+use futures::{future::BoxFuture, TryStreamExt};
 use rusoto_core::{request::BufferedHttpResponse, RusotoError};
 use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectRequest, S3};
 
@@ -40,7 +40,7 @@ pub use rusoto_s3::S3Client;
 use condow_core::{
     condow_client::*,
     config::Config,
-    errors::{CondowError, IoError},
+    errors::CondowError,
     streams::{BytesHint, BytesStream},
 };
 
@@ -310,15 +310,15 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
+        range: InclusiveRange,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
             let get_object_request = GetObjectRequest {
                 bucket: bucket.into_inner(),
                 key: object_key.into_inner(),
-                range: spec.http_bytes_range_value(),
+                range: Some(range.http_bytes_range_value()),
                 ..Default::default()
             };
 
@@ -338,9 +338,9 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
                 return Err(CondowError::new_other("response had no body"));
             };
 
-            let stream: BytesStream = Box::pin(stream.map_err(|err| IoError(err.to_string())));
+            let stream = stream.map_err(From::from);
 
-            Ok((stream, bytes_hint))
+            Ok(BytesStream::new(stream, bytes_hint))
         };
 
         Box::pin(f)

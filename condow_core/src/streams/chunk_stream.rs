@@ -184,10 +184,18 @@ impl ChunkStream {
         }
     }
 
-    /// Turns this stream into a [PartStream]
+    /// Turns this stream into a [OrderedChunkStream]
     ///
     /// Fails if this [ChunkStream] was already iterated.
+    #[deprecated(note = "use try_into_ordered_chunk_stream", since = "0.20.0")]
     pub fn try_into_part_stream(self) -> Result<OrderedChunkStream, CondowError> {
+        OrderedChunkStream::try_from(self)
+    }
+
+    /// Turns this stream into a [OrderedChunkStream]
+    ///
+    /// Fails if this [ChunkStream] was already iterated.
+    pub fn try_into_ordered_chunk_stream(self) -> Result<OrderedChunkStream, CondowError> {
         OrderedChunkStream::try_from(self)
     }
 

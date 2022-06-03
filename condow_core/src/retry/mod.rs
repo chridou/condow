@@ -1,17 +1,20 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{bail, Error as AnyError};
-use bytes::Bytes;
-use futures::{channel::mpsc, Future, Stream, StreamExt};
-use tracing::{debug, warn, Instrument, Span};
+use futures::Future;
+use tracing::warn;
 
 use crate::{
-    condow_client::{CondowClient, DownloadSpec},
-    errors::{CondowError, IoError},
+    condow_client::CondowClient,
+    errors::CondowError,
     probe::Probe,
     streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
+
+use retry_stream::RetryPartStream;
+
+pub(crate) mod retry_stream;
 
 #[cfg(test)]
 mod tests;
@@ -334,7 +337,7 @@ impl Iterator for RetryDelaysIterator {
 /// The methods need a [Reporter] which is used to signal
 /// retries and broken streams.
 #[derive(Clone)]
-pub(crate) struct ClientRetryWrapper<C> {
+pub struct ClientRetryWrapper<C> {
     inner: Arc<(C, Option<RetryConfig>)>,
 }
 
@@ -353,7 +356,7 @@ where
         location: C::Location,
         probe: &P,
     ) -> Result<u64, CondowError> {
-        debug!("getting size");
+        //debug!("getting size");
 
         let (client, config) = self.inner.as_ref();
         let f = async {
@@ -370,18 +373,21 @@ where
     pub fn download<P: Probe + Clone>(
         &self,
         location: C::Location,
-        spec: DownloadSpec,
+        range: InclusiveRange,
         probe: P,
-    ) -> impl Future<Output = Result<(BytesStream, BytesHint), CondowError>> + Send + 'static {
-        debug!("retry client - downloading part");
+    ) -> impl Future<Output = Result<BytesStream, CondowError>> + Send + 'static {
+        //debug!("retry client - downloading part");
 
         let inner = Arc::clone(&self.inner);
         async move {
             let (client, config) = inner.as_ref();
             if let Some(config) = config {
-                retry_download(client, location, spec, config, probe.clone()).await
+                let stream =
+                    RetryPartStream::from_client(client, location, range, config.clone(), probe)
+                        .await?;
+                Ok(BytesStream::new(stream, BytesHint::new_exact(range.len())))
             } else {
-                Ok(client.download(location, spec).await?)
+                Ok(client.download(location, range).await?)
             }
         }
     }
@@ -424,233 +430,12 @@ where
     let mut delays = config.iterator();
     for delay in delays.by_ref() {
         warn!("get size request failed with \"{last_err}\" - retry in {delay:?}");
-        probe.retry_attempt(&location, &last_err, delay);
+        probe.retry_attempt(&last_err, delay);
 
         tokio::time::sleep(delay).await;
 
         last_err = match client.get_size(location.clone()).await {
             Ok(v) => return Ok(v),
-            Err(err) if err.is_retryable() => err,
-            Err(err) => return Err(err),
-        };
-    }
-
-    Err(last_err)
-}
-
-/// Retries on attempts to get a stream.
-///
-/// If a stream breaks with an [IoError] retries to get
-/// a new stream starting where the broken one ended will be made.
-async fn retry_download<C, P: Probe + Clone>(
-    client: &C,
-    location: C::Location,
-    spec: DownloadSpec,
-    config: &RetryConfig,
-    probe: P,
-) -> Result<(BytesStream, BytesHint), CondowError>
-where
-    C: CondowClient,
-{
-    // The initial stream for the whole download
-    let (stream, bytes_hint) =
-        retry_download_get_stream(client, location.clone(), spec, config, &probe).await?;
-
-    // Only if we have an length we can try to continue broken streams
-    // because we can only download whole BLOBs or ranges. We use a range for
-    // the complete BLOB to be able to determine the remainder after a stream broke.
-    // If the mximum number to resume is 0 we also do not want to resume on broken streams.
-    let blob_len_for_resume = bytes_hint.exact().and_then(|blob_len| {
-        if config.max_stream_resume_attempts.into_inner() > 0 {
-            Some(blob_len)
-        } else {
-            None
-        }
-    });
-
-    let original_range = if let Some(blob_len_for_resume) = blob_len_for_resume {
-        InclusiveRange(spec.start(), spec.start() + blob_len_for_resume - 1) // original range has at least len 1
-    } else {
-        // We are done because we will not do any resume attempts
-        return Ok((stream, bytes_hint));
-    };
-
-    // The returned stream is a channel so that we can continue easily after a stream broke
-    let (next_elem_tx, output_stream_rx) = mpsc::unbounded();
-
-    // Now we try to complete the stream by requesting new streams with the remaining
-    // bytes if a stream broke
-    let span = Span::current();
-    tokio::spawn(
-        loop_retry_complete_stream(
-            stream,
-            location.clone(),
-            original_range,
-            client.clone(),
-            next_elem_tx,
-            config.clone(),
-            probe.clone(),
-        )
-        .instrument(span),
-    );
-
-    Ok((Box::pin(output_stream_rx), bytes_hint))
-}
-
-/// Used to check whether [loop_retry_complete_stream] exited with a panic
-///
-/// In case of a panic the sender of the stream is closed which indicates
-/// the end of the stream. In fact must must append an error since the
-/// stream was not finished.
-///
-/// `completed_without_panic` must be set to true before exiting
-/// [loop_retry_complete_stream] otherwise a panic is assumed.
-struct RetryLoopPanicGuard<P: Probe + Clone> {
-    completed_without_panic: bool,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
-    probe: P,
-}
-
-impl<P: Probe + Clone> Drop for RetryLoopPanicGuard<P> {
-    fn drop(&mut self) {
-        if !self.completed_without_panic {
-            self.probe.panic_detected("panicked while retrying");
-            let _ = self
-                .next_elem_tx
-                .unbounded_send(Err(IoError("panicked while retrying".to_string())));
-        }
-    }
-}
-
-/// Tries to complete the given stream.
-///
-/// If a stream breaks it tries to complete the `original_range` by
-/// requesting new stream for the remainder of `original_range`
-async fn loop_retry_complete_stream<C, P: Probe + Clone>(
-    mut stream: BytesStream,
-    location: C::Location,
-    original_range: InclusiveRange,
-    client: C,
-    next_elem_tx: mpsc::UnboundedSender<Result<Bytes, IoError>>,
-    config: RetryConfig,
-    probe: P,
-) where
-    C: CondowClient,
-{
-    let mut panic_guard = RetryLoopPanicGuard {
-        completed_without_panic: false,
-        next_elem_tx: next_elem_tx.clone(),
-        probe: probe.clone(),
-    };
-
-    // We move the start of the range forward to determine the range
-    // we need to complete the original download defined by `original_range`
-    let mut remaining_range = original_range;
-    let mut n_times_made_no_progress = 0;
-    while let Err((stream_io_error, bytes_read)) = try_consume_stream(stream, &next_elem_tx).await {
-        if bytes_read > 0 {
-            // we start right after where the previous one ended
-            remaining_range.0 += bytes_read;
-            n_times_made_no_progress = 0;
-        } else {
-            // Hint: Failing on the first byte also counts as
-            // not having made any progress.
-            n_times_made_no_progress += 1;
-        }
-
-        if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
-            let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                "failed to make progress on the stream {} times \
-                    with the last error being \"{}\"",
-                n_times_made_no_progress, stream_io_error
-            ))));
-            break;
-        }
-
-        let new_spec = DownloadSpec::Range(remaining_range);
-        warn!(
-            "streaming failed with IO error \"{stream_io_error}\" - retrying on remaining \
-                range {remaining_range}"
-        );
-        probe.stream_resume_attempt(&location, &stream_io_error, original_range, remaining_range);
-        match retry_download_get_stream(&client, location.clone(), new_spec, &config, &probe).await
-        {
-            Ok((new_stream, _)) => {
-                stream = new_stream;
-            }
-            Err(err_new_stream) => {
-                // we must send the final error over the stream
-                let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                    "failed to create a new stream with error \"{}\"\
-                         after previous stream broke with \"{}\"",
-                    err_new_stream, stream_io_error
-                ))));
-                break;
-            }
-        }
-    }
-
-    // Every other exit is a panic
-    panic_guard.completed_without_panic = true;
-}
-
-/// Consume a stream until it is finished or broken.
-///
-/// If it finished [Ok] will be returned otherwise an [Err] containing
-/// the bytes read and the [IoError].
-async fn try_consume_stream<St: Stream<Item = Result<Bytes, IoError>>>(
-    stream: St,
-    next_elem_tx: &mpsc::UnboundedSender<Result<Bytes, IoError>>,
-) -> Result<(), (IoError, u64)> {
-    let mut stream = Box::pin(stream);
-
-    let mut bytes_read = 0;
-    while let Some(chunk_res) = stream.next().await {
-        match chunk_res {
-            Ok(bytes) => {
-                bytes_read += bytes.len() as u64;
-                if next_elem_tx.unbounded_send(Ok(bytes)).is_err() {
-                    return Ok(());
-                }
-            }
-            Err(err) => {
-                // Do not send the error to the stream. We will try to continue
-                return Err((err, bytes_read));
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Retries to get a new stream for the given download spec.
-async fn retry_download_get_stream<C, P: Probe + Clone>(
-    client: &C,
-    location: C::Location,
-    spec: DownloadSpec,
-    config: &RetryConfig,
-    probe: &P,
-) -> Result<(BytesStream, BytesHint), CondowError>
-where
-    C: CondowClient,
-{
-    // The first attempt
-    let mut last_err = match client.download(location.clone(), spec).await {
-        Ok(stream_and_hint) => return Ok(stream_and_hint),
-        Err(err) if err.is_retryable() => err,
-        Err(err) => return Err(err),
-    };
-
-    // Retries if the first attempt failed
-    let mut delays = config.iterator();
-    for delay in delays.by_ref() {
-        warn!("get stream request failed with \"{last_err}\" - retry in {delay:?}");
-        probe.retry_attempt(&location, &last_err, delay);
-
-        tokio::time::sleep(delay).await;
-
-        last_err = match client.download(location.clone(), spec).await {
-            Ok(stream_and_hint) => return Ok(stream_and_hint),
             Err(err) if err.is_retryable() => err,
             Err(err) => return Err(err),
         };

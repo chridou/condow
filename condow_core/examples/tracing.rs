@@ -68,7 +68,7 @@ async fn run() -> Result<(), Error> {
     let config = Config::default()
         .max_buffers_full_delay_ms(0)
         .part_size_bytes(13)
-        .max_concurrency(4);
+        .max_concurrency(1);
 
     let condow = FailingClientSimulatorBuilder::default()
         .blob(blob)
@@ -87,7 +87,11 @@ async fn run() -> Result<(), Error> {
         .condow(config)
         .unwrap();
 
-    let stream = condow.blob().range(200..300).download().await?;
+    let stream = condow
+        .blob()
+        .range(200..300)
+        .download_chunks_ordered()
+        .await?;
     let _downloaded = stream.into_vec().await?;
 
     println!("Download finished (not from tracing...)");

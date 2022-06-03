@@ -20,12 +20,11 @@
 //! # };
 //! # ()
 //! ```
-
-use std::fmt::Display;
 use std::str::FromStr;
 
 use anyhow::Error as AnyError;
-use futures::{future::BoxFuture, TryStreamExt};
+use futures::future::BoxFuture;
+use futures::TryStreamExt;
 use http_content_range::ContentRange;
 use reqwest::{
     header::HeaderMap, header::HeaderName, header::CONTENT_LENGTH, header::CONTENT_RANGE,
@@ -33,10 +32,10 @@ use reqwest::{
 };
 
 use condow_core::config::Config;
-use condow_core::errors::{http_status_to_error, IoError};
+use condow_core::errors::http_status_to_error;
 pub use condow_core::*;
 use condow_core::{
-    condow_client::{CondowClient, DownloadSpec},
+    condow_client::CondowClient,
     errors::CondowError,
     streams::{BytesHint, BytesStream},
 };
@@ -66,7 +65,11 @@ impl CondowClient for HttpClient {
         let client = self.client.clone();
         Box::pin(async move {
             // TODO: implement timeout support, e.g. head(url).timeout(config.timeout).send()
-            let res = client.head(location).send().await.map_err(into_io_error)?;
+            let res = client
+                .head(location)
+                .send()
+                .await
+                .map_err(reqwest_error_to_condow_error)?;
             parse_content_length(res.headers())
         })
     }
@@ -74,17 +77,15 @@ impl CondowClient for HttpClient {
     fn download(
         &self,
         location: Self::Location,
-        spec: DownloadSpec,
-    ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
-        dbg!(spec);
+        range: InclusiveRange,
+    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+        dbg!(range);
         let client = self.client.clone();
         Box::pin(async move {
             // TODO: implement timeout support, e.g. head(url).timeout(config.timeout).send()
             let mut req = client.get(location);
-            if let DownloadSpec::Range(r) = spec {
-                req = req.header(RANGE, r.http_bytes_range_value());
-            }
-            let res = req.send().await.map_err(into_io_error)?;
+            req = req.header(RANGE, range.http_bytes_range_value());
+            let res = req.send().await.map_err(reqwest_error_to_condow_error)?;
             let status = res.status();
             if status.is_success() {
                 let hint = if status == StatusCode::PARTIAL_CONTENT {
@@ -98,8 +99,11 @@ impl CondowClient for HttpClient {
                 } else {
                     BytesHint::new_exact(parse_content_length(res.headers())?)
                 };
-                let stream: BytesStream = Box::pin(res.bytes_stream().map_err(into_io_error));
-                Ok((stream, hint))
+                let stream = res.bytes_stream().map_err(reqwest_error_to_condow_error);
+
+                let stream = BytesStream::new(stream, hint);
+
+                Ok(stream)
             } else {
                 Err(http_status_to_error(
                     status.as_u16(),
@@ -129,6 +133,14 @@ fn header_as_str<'a>(headers: &'a HeaderMap, header: &HeaderName) -> Result<&'a 
         .map_err(|_| CondowError::new_other(format!("{} header is not a valid string", header)))
 }
 
-fn into_io_error<T: Display>(v: T) -> IoError {
-    IoError(v.to_string())
+fn reqwest_error_to_condow_error(err: reqwest::Error) -> CondowError {
+    if err.is_connect() {
+        CondowError::new_io("connect failed").with_source(err)
+    } else if err.is_request() {
+        CondowError::new_io("request failed").with_source(err)
+    } else if err.is_timeout() {
+        CondowError::new_io("send HTTP request failed").with_source(err)
+    } else {
+        CondowError::new_other("reqwest error").with_source(err)
+    }
 }

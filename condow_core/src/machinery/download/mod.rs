@@ -5,16 +5,11 @@
 use futures::{Stream, StreamExt};
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::{
-    config::{Config, LogDownloadMessagesAsDebug},
-    errors::CondowError,
-    probe::Probe,
-    streams::ChunkStreamItem,
-};
+use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
 
-pub(crate) use concurrent::download_concurrently;
+pub(crate) use concurrent::{download_bytes_concurrently, download_chunks_concurrently};
 pub(crate) use part_chunks_stream::PartChunksStream;
-pub(crate) use sequential::download_sequentially;
+pub(crate) use sequential::{download_bytes_sequentially, download_chunks_sequentially};
 
 mod concurrent;
 mod sequential;
@@ -27,13 +22,14 @@ mod sequential;
 ///
 /// This functions emits an error over the receiber in case a panic occurred whie
 /// polling the input stream.
-pub fn active_pull<St, P: Probe>(
+pub fn active_pull<St, T, P: Probe>(
     mut input: St,
     probe: P,
-    config: Config,
-) -> mpsc::UnboundedReceiver<St::Item>
+    log_dl_msg_dbg: LogDownloadMessagesAsDebug,
+) -> mpsc::UnboundedReceiver<Result<T, CondowError>>
 where
-    St: Stream<Item = ChunkStreamItem> + Send + 'static + Unpin,
+    St: Stream<Item = Result<T, CondowError>> + Send + 'static + Unpin,
+    T: Send + 'static,
 {
     let (sender, rx) = mpsc::unbounded_channel();
 
@@ -41,7 +37,7 @@ where
         let panic_guard = PanicGuard {
             sender: sender.clone(),
             probe: Box::new(probe),
-            log_dl_msg_dbg: config.log_download_messages_as_debug,
+            log_dl_msg_dbg,
         };
 
         while let Some(message) = input.next().await {
@@ -89,7 +85,7 @@ pub mod part_chunks_stream {
         machinery::part_request::PartRequest,
         probe::Probe,
         retry::ClientRetryWrapper,
-        streams::{BytesHint, BytesStream, Chunk, ChunkStreamItem},
+        streams::{BytesStream, Chunk, ChunkStreamItem},
         InclusiveRange,
     };
 
@@ -126,7 +122,7 @@ pub mod part_chunks_stream {
                 let probe = probe.clone();
                 move |range: InclusiveRange| {
                     client
-                        .download(location.clone(), range.into(), probe.clone())
+                        .download(location.clone(), range, probe.clone())
                         .boxed()
                 }
             };
@@ -137,10 +133,8 @@ pub mod part_chunks_stream {
         pub(crate) fn new(
             get_part_stream: &dyn Fn(
                 InclusiveRange,
-            ) -> BoxFuture<
-                'static,
-                Result<(BytesStream, BytesHint), CondowError>,
-            >,
+            )
+                -> BoxFuture<'static, Result<BytesStream, CondowError>>,
             part_request: PartRequest,
             probe: P,
             parent: &Span,
@@ -175,7 +169,7 @@ pub mod part_chunks_stream {
     enum State {
         /// A future to yield a [BytesStream] was created. It needs to be polled
         /// until it retuns the stream.
-        GettingStream(BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>),
+        GettingStream(BoxFuture<'static, Result<BytesStream, CondowError>>),
         Streaming(StreamingPart),
         /// Nothing to do anymore. Always return `None`.
         Finished,
@@ -205,7 +199,7 @@ pub mod part_chunks_stream {
                         *this.state = State::GettingStream(fut);
                         Poll::Pending
                     } // Nothing there. Poll again later. Future will wake us up.
-                    Poll::Ready(Ok((bytes_stream, _bytes_hint))) => {
+                    Poll::Ready(Ok(bytes_stream)) => {
                         let part_state = StreamingPart {
                             bytes_stream,
                             chunk_index: 0,
@@ -232,6 +226,18 @@ pub mod part_chunks_stream {
                     match streaming_state.bytes_stream.poll_next_unpin(cx) {
                         Poll::Ready(Some(Ok(bytes))) => {
                             let bytes_len = bytes.len() as u64;
+
+                            if bytes_len > streaming_state.bytes_left {
+                                let err = CondowError::new_io("Too many bytes received");
+                                this.probe.part_failed(
+                                    &err,
+                                    this.part_request.part_index,
+                                    &this.part_request.blob_range,
+                                );
+                                *this.state = State::Finished;
+                                return Poll::Ready(Some(Err(err)));
+                            }
+
                             streaming_state.bytes_left -= bytes_len;
 
                             let chunk = Chunk {
@@ -257,7 +263,6 @@ pub mod part_chunks_stream {
                             Poll::Ready(Some(Ok(chunk)))
                         }
                         Poll::Ready(Some(Err(err))) => {
-                            let err: CondowError = err.into();
                             this.probe.part_failed(
                                 &err,
                                 this.part_request.part_index,
@@ -268,14 +273,29 @@ pub mod part_chunks_stream {
                             Poll::Ready(Some(Err(err)))
                         }
                         Poll::Ready(None) => {
-                            this.probe.part_completed(
-                                this.part_request.part_index,
-                                streaming_state.chunk_index,
-                                this.part_request.blob_range.len(),
-                                this.started_at.elapsed(),
-                            );
-                            *this.state = State::Finished;
-                            Poll::Ready(None)
+                            if streaming_state.bytes_left == 0 {
+                                this.probe.part_completed(
+                                    this.part_request.part_index,
+                                    streaming_state.chunk_index,
+                                    this.part_request.blob_range.len(),
+                                    this.started_at.elapsed(),
+                                );
+
+                                *this.state = State::Finished;
+
+                                Poll::Ready(None)
+                            } else {
+                                let err = CondowError::new_io("unexpected end of part chunks");
+                                this.probe.part_failed(
+                                    &err,
+                                    this.part_request.part_index,
+                                    &this.part_request.blob_range,
+                                );
+
+                                *this.state = State::Finished;
+
+                                Poll::Ready(Some(Err(err)))
+                            }
                         }
                         Poll::Pending => {
                             *this.state = State::Streaming(streaming_state);

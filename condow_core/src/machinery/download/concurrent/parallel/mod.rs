@@ -75,7 +75,6 @@ impl<P: Probe + Clone> ParallelDownloader<P> {
     }
 
     pub async fn download(&mut self, ranges: PartRequestIterator) {
-        self.probe.download_started();
         let mut ranges_stream = ranges.into_stream();
 
         let max_buffers_full_delay: Duration = self.config.max_buffers_full_delay_ms.into();

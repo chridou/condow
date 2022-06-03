@@ -5,23 +5,13 @@ use std::{
     task,
 };
 
-use bytes::Bytes;
-use futures::{
-    future::{BoxFuture, FutureExt, TryFutureExt},
-    stream::{BoxStream, StreamExt},
-    AsyncRead, AsyncSeek,
-};
+use futures::{future::BoxFuture, AsyncRead, AsyncSeek};
 
-use crate::{
-    condow_client::CondowClient, config::Mebi, errors::CondowError, probe::ProbeFactory,
-    streams::OrderedChunkStream, Condow, DownloadRange,
-};
+use crate::{config::Mebi, errors::CondowError, InclusiveRange};
 
 use super::BytesAsyncReader;
 
-type BytesStream = BoxStream<'static, Result<Bytes, CondowError>>;
-type AsyncReader = BytesAsyncReader<BytesStream>;
-type GetNewReaderFuture = BoxFuture<'static, Result<AsyncReader, CondowError>>;
+type GetNewReaderFuture = BoxFuture<'static, Result<BytesAsyncReader, CondowError>>;
 
 /// 8 MiBytes
 const FETCH_AHEAD_BYTES: u64 = Mebi(8).value();
@@ -69,58 +59,13 @@ enum State {
     Initial,
     /// Wait for a new stream to be created
     GetNewReaderFuture(GetNewReaderFuture),
-    PollingReader(AsyncReader),
+    PollingReader(BytesAsyncReader),
     Finished,
     Error,
 }
 
-/// A trait providing the essential functionality to access
-/// a BLOB at a fixed location used by the [RandomAccessReader].
-///
-/// Contract:
-/// `get_size`and `download_range` must point to the same location.
-pub trait ReaderAdapter: Send + Sync + 'static {
-    fn get_size(&self) -> BoxFuture<Result<u64, CondowError>>;
-    fn download_range(
-        &self,
-        range: DownloadRange,
-    ) -> BoxFuture<Result<OrderedChunkStream, CondowError>>;
-}
-
-/// A [ReaderAdapter] for [Condow] tied to a specific location
-pub(crate) struct CondowAdapter<C: CondowClient, PF: ProbeFactory> {
-    condow: Condow<C, PF>,
-    location: C::Location,
-}
-
-impl<C: CondowClient, PF: ProbeFactory> CondowAdapter<C, PF> {
-    pub fn new(condow: Condow<C, PF>, location: C::Location) -> Self {
-        Self { condow, location }
-    }
-}
-
-impl<C, PF> ReaderAdapter for CondowAdapter<C, PF>
-where
-    C: CondowClient,
-    PF: ProbeFactory,
-{
-    fn get_size(&self) -> BoxFuture<Result<u64, CondowError>> {
-        self.condow.get_size(self.location.clone()).boxed()
-    }
-
-    fn download_range(
-        &self,
-        range: DownloadRange,
-    ) -> BoxFuture<Result<OrderedChunkStream, CondowError>> {
-        self.condow
-            .blob()
-            .range(range)
-            .at(self.location.clone())
-            .reconfigure(|cfg| cfg.always_get_size(false)) // The reader has the size already
-            .download()
-            .boxed()
-    }
-}
+type GetReaderFn =
+    Arc<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesAsyncReader, CondowError>>>;
 
 /// Implements [AsyncRead] and [AsyncSeek]
 ///
@@ -145,39 +90,30 @@ where
 pub struct RandomAccessReader {
     /// Reading position of the next byte
     pos: u64,
-    /// Download logic
-    downloader: Arc<dyn ReaderAdapter>,
-    /// Total length of the BLOB
-    length: u64,
+    /// Get a new stream
+    get_reader: GetReaderFn,
+    /// Range in which the reader can operate
+    bounds: InclusiveRange,
     state: State,
     fetch_ahead_mode: FetchAheadMode,
 }
 
 impl RandomAccessReader {
-    /// Creates a new instance without a given BLOB length
-    ///
-    /// This function will query the size of the BLOB. If the size is already known
-    /// call [RandomAccessReader::new_with_length]
-    pub async fn new<T: ReaderAdapter + Send + Sync + 'static>(
-        downloader: T,
-    ) -> Result<Self, CondowError> {
-        let length = downloader.get_size().await?;
-        Ok(Self::new_with_length(downloader, length))
-    }
-
     /// Will create a reader with the given known size of the BLOB.
-    ///
-    /// This function will create a new reader immediately
-    pub fn new_with_length<T: ReaderAdapter + Send + Sync + 'static>(
-        downloader: T,
-        length: u64,
-    ) -> Self {
+    pub fn new<F, FM>(get_reader: F, bounds: InclusiveRange, fetch_ahead_mode: FM) -> Self
+    where
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesAsyncReader, CondowError>>
+            + Send
+            + Sync
+            + 'static,
+        FM: Into<FetchAheadMode>,
+    {
         Self {
-            downloader: Arc::new(downloader),
+            get_reader: Arc::new(get_reader),
             pos: 0,
-            length,
+            bounds,
             state: State::Initial,
-            fetch_ahead_mode: FetchAheadMode::default(),
+            fetch_ahead_mode: fetch_ahead_mode.into(),
         }
     }
 
@@ -189,26 +125,18 @@ impl RandomAccessReader {
     }
 
     fn get_next_reader(&self, dest_buf_len: u64) -> GetNewReaderFuture {
-        let len = match self.fetch_ahead_mode {
+        let bytes_to_fetch = match self.fetch_ahead_mode {
             FetchAheadMode::None => dest_buf_len,
             FetchAheadMode::Bytes(n_bytes) => dest_buf_len.max(n_bytes),
-            FetchAheadMode::ToEnd => self.length,
+            FetchAheadMode::ToEnd => self.bounds.len(),
         };
 
-        let end_incl = (self.pos + len - 1).min(self.length - 1);
+        let end_incl =
+            (self.bounds.start() + self.pos + bytes_to_fetch - 1).min(self.bounds.end_incl());
 
-        let downloader = self.downloader.clone();
-        let range = DownloadRange::from(self.pos..=end_incl);
-        async move {
-            downloader
-                .download_range(range)
-                .map_ok(|stream| {
-                    let stream = stream.bytes_stream().boxed();
-                    super::BytesAsyncReader::new(stream)
-                })
-                .await
-        }
-        .boxed()
+        let range = (self.bounds.start() + self.pos)..=end_incl;
+
+        (self.get_reader)(range.into())
     }
 }
 
@@ -262,12 +190,12 @@ impl AsyncRead for RandomAccessReader {
                 match Pin::new(&mut reader).poll_read(cx, dest_buf) {
                     task::Poll::Ready(Ok(bytes_written)) => {
                         assert!(
-                            self.pos <= self.length,
+                            self.pos <= self.bounds.len(),
                             "Position can not be larger than length"
                         );
                         self.pos += bytes_written as u64;
-                        if self.pos == self.length {
-                            assert_ne!(bytes_written, 0, "Still bytes left");
+                        if self.pos == self.bounds.len() {
+                            assert!(bytes_written != 0, "Still bytes left");
                             self.state = State::Finished;
                             task::Poll::Ready(Ok(bytes_written))
                         } else if bytes_written == 0 {
@@ -314,13 +242,13 @@ impl AsyncSeek for RandomAccessReader {
         let new_pos = match pos {
             SeekFrom::Start(offset) => offset,
             SeekFrom::End(offset) => {
-                if offset < 0 && -offset as u64 > this.length {
+                if offset < 0 && -offset as u64 > this.bounds.len() {
                     // This would go before the start
                     // and is an error by the specification of SeekFrom::End
                     let err = CondowError::new_invalid_range("Seek before start");
                     return task::Poll::Ready(Err(IoError::new(IoErrorKind::Other, err)));
                 }
-                (this.length as i64 + offset) as u64
+                (this.bounds.len() as i64 + offset) as u64
             }
             SeekFrom::Current(offset) => {
                 if offset < 0 && -offset as u64 > this.pos {
@@ -345,11 +273,7 @@ impl AsyncSeek for RandomAccessReader {
 mod tests {
     use futures::io::{AsyncReadExt as _, AsyncSeekExt as _};
 
-    use crate::{
-        condow_client::{IgnoreLocation, InMemoryClient},
-        test_utils::TestDownloader,
-        Downloads,
-    };
+    use crate::{test_utils::TestDownloader, Downloads};
 
     use super::*;
 
@@ -360,7 +284,12 @@ mod tests {
 
             let downloader = TestDownloader::new(n as usize);
 
-            let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
+            let mut reader = downloader
+                .blob()
+                .random_access_reader()
+                .finish()
+                .await
+                .unwrap();
 
             let mut buf = Vec::new();
             let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
@@ -371,9 +300,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn check_read_1() {
+        let expected = [0u8];
+
+        let downloader = TestDownloader::new(1);
+
+        let mut reader = downloader
+            .blob()
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = Vec::new();
+        let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+        assert_eq!(bytes_read, 1);
+        assert_eq!(buf, expected);
+    }
+
+    #[tokio::test]
     async fn offsets_and_seek_from_start() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(IgnoreLocation)
+            .blob()
+            .random_access_reader()
+            .finish()
             .await
             .unwrap();
 
@@ -392,7 +343,9 @@ mod tests {
     #[tokio::test]
     async fn offsets_and_seek_from_end() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(IgnoreLocation)
+            .blob()
+            .random_access_reader()
+            .finish()
             .await
             .unwrap();
 
@@ -409,7 +362,9 @@ mod tests {
     #[tokio::test]
     async fn offsets_and_seek_from_current() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(IgnoreLocation)
+            .blob()
+            .random_access_reader()
+            .finish()
             .await
             .unwrap();
 
@@ -432,7 +387,16 @@ mod tests {
     async fn seek_from_start() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
+        let mut reader = downloader
+            .blob()
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![0, 1, 2]);
 
         reader.seek(SeekFrom::Start(1)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -454,7 +418,12 @@ mod tests {
     async fn seek_from_end() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
+        let mut reader = downloader
+            .blob()
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
 
         reader.seek(SeekFrom::End(-10)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -475,7 +444,9 @@ mod tests {
     #[tokio::test]
     async fn seek_from_end_before_byte_zero_must_err() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(IgnoreLocation)
+            .blob()
+            .random_access_reader()
+            .finish()
             .await
             .unwrap();
         // Hit 0 is ok
@@ -490,7 +461,12 @@ mod tests {
     async fn seek_from_current() {
         let expected = vec![0, 1, 2, 3, 0, 0, 4, 5, 0, 6, 7];
         let downloader = TestDownloader::new_with_blob(expected.clone());
-        let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
+        let mut reader = downloader
+            .blob()
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
 
         reader.seek(SeekFrom::Current(1)).await.unwrap();
         let mut buf = vec![0, 0, 0];
@@ -511,7 +487,9 @@ mod tests {
     #[tokio::test]
     async fn seek_from_current_before_byte_zero_must_err() {
         let mut reader = TestDownloader::new_with_blob(vec![0, 1, 2, 3])
-            .reader(IgnoreLocation)
+            .blob()
+            .random_access_reader()
+            .finish()
             .await
             .unwrap();
 
@@ -522,6 +500,59 @@ mod tests {
 
         let result = reader.seek(SeekFrom::Current(-1)).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn read_from_range_no_seek() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = Vec::new();
+        let bytes_read = reader.read_to_end(&mut buf).await.unwrap();
+
+        assert_eq!(bytes_read, 3);
+        assert_eq!(buf, [2, 3, 4]);
+    }
+
+    #[tokio::test]
+    async fn read_from_range_seek_from_start() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        let mut buf = vec![0, 0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![2, 3, 4]);
+
+        reader.seek(SeekFrom::Start(1)).await.unwrap();
+        let mut buf = vec![0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![3, 4]);
+    }
+
+    #[tokio::test]
+    async fn read_from_range_seek_from_end() {
+        let mut reader = TestDownloader::new_with_blob(vec![1, 2, 3, 4, 5])
+            .blob()
+            .range(1..=3)
+            .random_access_reader()
+            .finish()
+            .await
+            .unwrap();
+
+        reader.seek(SeekFrom::End(-2)).await.unwrap();
+        let mut buf = vec![0, 0];
+        reader.read_exact(&mut buf).await.unwrap();
+        assert_eq!(buf, vec![3, 4]);
     }
 
     #[tokio::test]
@@ -542,7 +573,12 @@ mod tests {
 
                 let downloader = TestDownloader::new_with_blob(expected.clone());
 
-                let mut reader = downloader.reader(IgnoreLocation).await.unwrap();
+                let mut reader = downloader
+                    .blob()
+                    .random_access_reader()
+                    .finish()
+                    .await
+                    .unwrap();
                 reader.set_fetch_ahead_mode(mode);
 
                 let mut buf = Vec::new();
@@ -558,78 +594,5 @@ mod tests {
                 assert_eq!(buf, expected, "bytes read ({} items, mode: {:?})", n, mode);
             }
         }
-    }
-
-    #[tokio::test]
-    async fn check_condow_reader_adapter() {
-        let sample: Vec<u8> = (0..101).collect();
-
-        let condow = InMemoryClient::new(sample.clone())
-            .condow(Default::default())
-            .unwrap();
-        let adapter = CondowAdapter::new(condow, IgnoreLocation);
-
-        let result = adapter
-            .download_range((..).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample, "1A");
-
-        let result = adapter
-            .download_range((0..101).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample, "1B");
-
-        let result = adapter
-            .download_range((0..=100).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample, "1C");
-
-        let result = adapter
-            .download_range((1..100).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample[1..100], "2");
-
-        let result = adapter
-            .download_range((1..=100).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample[1..=100], "3");
-
-        let result = adapter
-            .download_range((..=33).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample[..=33], "4");
-
-        let result = adapter
-            .download_range((..40).into())
-            .await
-            .unwrap()
-            .into_vec()
-            .await
-            .unwrap();
-        assert_eq!(result, sample[..40], "5");
     }
 }

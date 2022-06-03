@@ -111,10 +111,7 @@
 //! ```
 use std::{fmt, time::Duration};
 
-use crate::{
-    errors::{CondowError, IoError},
-    InclusiveRange,
-};
+use crate::{errors::CondowError, InclusiveRange};
 
 pub use simple_reporter::*;
 
@@ -154,7 +151,7 @@ pub trait Probe: Send + Sync + 'static {
 
     /// An error occurred but a retry will be attempted
     #[inline]
-    fn retry_attempt(&self, location: &dyn fmt::Display, error: &CondowError, next_in: Duration) {}
+    fn retry_attempt(&self, error: &CondowError, next_in: Duration) {}
 
     /// A stream for fetching a part broke and an attempt to resume will be made
     ///
@@ -163,8 +160,7 @@ pub trait Probe: Send + Sync + 'static {
     #[inline]
     fn stream_resume_attempt(
         &self,
-        location: &dyn fmt::Display,
-        error: &IoError,
+        error: &CondowError,
         orig_range: InclusiveRange,
         remaining_range: InclusiveRange,
     ) {
@@ -229,10 +225,7 @@ mod simple_reporter {
         time::{Duration, Instant},
     };
 
-    use crate::{
-        errors::{CondowError, IoError},
-        InclusiveRange,
-    };
+    use crate::{errors::CondowError, InclusiveRange};
 
     use super::Probe;
 
@@ -366,19 +359,13 @@ mod simple_reporter {
             self.inner.is_failed.store(true, Ordering::SeqCst);
         }
 
-        fn retry_attempt(
-            &self,
-            _location: &dyn fmt::Display,
-            _error: &CondowError,
-            _next_in: Duration,
-        ) {
+        fn retry_attempt(&self, _error: &CondowError, _next_in: Duration) {
             self.inner.n_retries.fetch_add(1, Ordering::SeqCst);
         }
 
         fn stream_resume_attempt(
             &self,
-            _location: &dyn fmt::Display,
-            _error: &IoError,
+            _error: &CondowError,
             _orig_range: InclusiveRange,
             _remaining_range: InclusiveRange,
         ) {

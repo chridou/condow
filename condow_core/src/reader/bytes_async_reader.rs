@@ -4,30 +4,24 @@ use std::pin::Pin;
 use bytes::Bytes;
 use futures::{task, AsyncRead, Stream};
 
-use crate::errors::CondowError;
+use crate::streams::BytesStream;
 
 /// A reader for streams of `Result<Bytes, CondowError>`.
 ///
 /// Consumes a stream of bytes and wraps it into an `AsyncRead`.
-pub struct BytesAsyncReader<St> {
-    state: State<St>,
+pub struct BytesAsyncReader {
+    state: State,
 }
 
-impl<St> BytesAsyncReader<St>
-where
-    St: Stream<Item = Result<Bytes, CondowError>> + Send + 'static + Unpin,
-{
-    pub fn new(stream: St) -> Self {
+impl BytesAsyncReader {
+    pub fn new(stream: BytesStream) -> Self {
         Self {
             state: State::PollingStream(stream),
         }
     }
 }
 
-impl<St> AsyncRead for BytesAsyncReader<St>
-where
-    St: Stream<Item = Result<Bytes, CondowError>> + Send + 'static + Unpin,
-{
+impl AsyncRead for BytesAsyncReader {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut task::Context<'_>,
@@ -106,14 +100,14 @@ fn fill_destination_buffer(buf: &mut Buffer, dest: &mut [u8]) -> usize {
     bytes_written
 }
 
-enum State<St> {
-    PollingStream(St),
+enum State {
+    PollingStream(BytesStream),
     /// State that holds undelivered bytes
     Buffered {
         /// Position in the first element of `bytes`
         buffer: Buffer,
         /// Bytes following those already buffered
-        stream: St,
+        stream: BytesStream,
     },
     Finished,
     Error,
@@ -140,6 +134,7 @@ mod tests {
     use crate::errors::CondowError;
     use crate::reader::bytes_async_reader::{fill_destination_buffer, Buffer};
     use crate::reader::BytesAsyncReader;
+    use crate::streams::{BytesHint, BytesStream};
     use crate::test_utils::TestDownloader;
     use crate::Downloads;
 
@@ -153,6 +148,7 @@ mod tests {
             Ok(vec![6_u8, 7, 8].into()),
         ];
         let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let bytes_stream = BytesStream::new(bytes_stream, BytesHint::new_no_hint());
         let mut reader = BytesAsyncReader::new(bytes_stream);
         let dest_buf: &mut [u8; 3] = &mut [42; 3];
 
@@ -215,6 +211,7 @@ mod tests {
             Ok(vec![6_u8, 7, 8].into()),
         ];
         let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let bytes_stream = BytesStream::new(bytes_stream, BytesHint::new_no_hint());
         let mut reader = BytesAsyncReader::new(bytes_stream);
         let dest_buf: &mut [u8; 2] = &mut [42; 2];
 
@@ -254,6 +251,7 @@ mod tests {
         let bytes_stream: Vec<Result<Bytes, CondowError>> =
             vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
         let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let bytes_stream = BytesStream::new(bytes_stream, BytesHint::new_no_hint());
         let mut reader = BytesAsyncReader::new(bytes_stream);
         let dest_buf: &mut [u8; 4] = &mut [42; 4];
 
@@ -273,6 +271,7 @@ mod tests {
         let bytes_stream: Vec<Result<Bytes, CondowError>> =
             vec![Ok(vec![0_u8, 1, 2].into()), Ok(vec![3_u8, 4, 5].into())];
         let bytes_stream = futures::stream::iter(bytes_stream.into_iter());
+        let bytes_stream = BytesStream::new(bytes_stream, BytesHint::new_no_hint());
         let mut reader = BytesAsyncReader::new(bytes_stream);
 
         let mut buf = Vec::new();

@@ -14,7 +14,7 @@ use crate::{
     machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesHint, BytesStream, ChunkStreamItem},
+    streams::{BytesStream, ChunkStreamItem},
     InclusiveRange,
 };
 
@@ -35,7 +35,7 @@ pin_project! {
 
 struct Baggage<P: Probe> {
     get_part_stream: Box<
-        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     >,
@@ -75,12 +75,10 @@ impl<P: Probe + Clone> ThreePartsConcurrently<P> {
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
-        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>>
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     {
-        probe.download_started();
-
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
 
         let active_streams = match (
@@ -178,7 +176,7 @@ impl<P: Probe + Clone> ThreePartsConcurrently<P> {
             let probe = probe.clone();
             move |range: InclusiveRange| {
                 client
-                    .download(location.clone(), range.into(), probe.clone())
+                    .download(location.clone(), range, probe.clone())
                     .boxed()
             }
         };
