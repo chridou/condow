@@ -185,7 +185,7 @@ impl RetryConfig {
     /// The maximum number of attempts to resume a byte stream from the same offset.
     ///
     /// Setting this to 0 will disable resumes. Enabling them has a small overhead
-    /// since the current progress on a byte stream must be tracked.    
+    /// since the current progress on a byte stream must be tracked.
     pub fn max_stream_resume_attempts<T: Into<RetryMaxStreamResumeAttempts>>(
         mut self,
         max_stream_resume_attempts: T,
@@ -422,7 +422,7 @@ where
 
     // Retries if the first attempt failed
     let mut delays = config.iterator();
-    while let Some(delay) = delays.next() {
+    for delay in delays.by_ref() {
         warn!("get size request failed with \"{last_err}\" - retry in {delay:?}");
         probe.retry_attempt(&location, &last_err, delay);
 
@@ -435,7 +435,7 @@ where
         };
     }
 
-    return Err(last_err);
+    Err(last_err)
 }
 
 /// Retries on attempts to get a stream.
@@ -547,58 +547,46 @@ async fn loop_retry_complete_stream<C, P: Probe + Clone>(
     // we need to complete the original download defined by `original_range`
     let mut remaining_range = original_range;
     let mut n_times_made_no_progress = 0;
-    loop {
-        if let Err((stream_io_error, bytes_read)) = try_consume_stream(stream, &next_elem_tx).await
-        {
-            if bytes_read > 0 {
-                // we start right after where the previous one ended
-                remaining_range.0 += bytes_read;
-                n_times_made_no_progress = 0;
-            } else {
-                // Hint: Failing on the first byte also counts as
-                // not having made any progress.
-                n_times_made_no_progress += 1;
-            }
+    while let Err((stream_io_error, bytes_read)) = try_consume_stream(stream, &next_elem_tx).await {
+        if bytes_read > 0 {
+            // we start right after where the previous one ended
+            remaining_range.0 += bytes_read;
+            n_times_made_no_progress = 0;
+        } else {
+            // Hint: Failing on the first byte also counts as
+            // not having made any progress.
+            n_times_made_no_progress += 1;
+        }
 
-            if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
-                let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                    "failed to make progress on the stream {} times \
+        if n_times_made_no_progress >= config.max_stream_resume_attempts.into_inner() {
+            let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
+                "failed to make progress on the stream {} times \
                     with the last error being \"{}\"",
-                    n_times_made_no_progress, stream_io_error
+                n_times_made_no_progress, stream_io_error
+            ))));
+            break;
+        }
+
+        let new_spec = DownloadSpec::Range(remaining_range);
+        warn!(
+            "streaming failed with IO error \"{stream_io_error}\" - retrying on remaining \
+                range {remaining_range}"
+        );
+        probe.stream_resume_attempt(&location, &stream_io_error, original_range, remaining_range);
+        match retry_download_get_stream(&client, location.clone(), new_spec, &config, &probe).await
+        {
+            Ok((new_stream, _)) => {
+                stream = new_stream;
+            }
+            Err(err_new_stream) => {
+                // we must send the final error over the stream
+                let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
+                    "failed to create a new stream with error \"{}\"\
+                         after previous stream broke with \"{}\"",
+                    err_new_stream, stream_io_error
                 ))));
                 break;
             }
-
-            let new_spec = DownloadSpec::Range(remaining_range);
-            warn!(
-                "streaming failed with IO error \"{stream_io_error}\" - retrying on remaining \
-                range {remaining_range}"
-            );
-            probe.stream_resume_attempt(
-                &location,
-                &stream_io_error,
-                original_range,
-                remaining_range,
-            );
-            match retry_download_get_stream(&client, location.clone(), new_spec, &config, &probe)
-                .await
-            {
-                Ok((new_stream, _)) => {
-                    stream = new_stream;
-                }
-                Err(err_new_stream) => {
-                    // we must send the final error over the stream
-                    let _ = next_elem_tx.unbounded_send(Err(IoError(format!(
-                        "failed to create a new stream with error \"{}\"\
-                         after previous stream broke with \"{}\"",
-                        err_new_stream, stream_io_error
-                    ))));
-                    break;
-                }
-            }
-        } else {
-            // consumption of the stream completed successfully
-            break;
         }
     }
 
@@ -655,7 +643,7 @@ where
 
     // Retries if the first attempt failed
     let mut delays = config.iterator();
-    while let Some(delay) = delays.next() {
+    for delay in delays.by_ref() {
         warn!("get stream request failed with \"{last_err}\" - retry in {delay:?}");
         probe.retry_attempt(&location, &last_err, delay);
 
@@ -668,5 +656,5 @@ where
         };
     }
 
-    return Err(last_err);
+    Err(last_err)
 }

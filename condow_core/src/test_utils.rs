@@ -185,7 +185,7 @@ impl CondowClient for TestCondowClient {
             });
 
             let stream: BytesStream = if let Some(pending_module) = me.pending_on_stream_module {
-                let stream_with_pending = Penderizer::new(stream, pending_module.clone());
+                let stream_with_pending = Penderizer::new(stream, pending_module);
                 stream_with_pending.boxed()
             } else {
                 stream.boxed()
@@ -505,10 +505,7 @@ impl Downloads for TestDownloader {
         RequestNoLocation::new(download_fn, Config::default())
     }
 
-    fn get_size<'a>(
-        &'a self,
-        _location: IgnoreLocation,
-    ) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self, _location: IgnoreLocation) -> BoxFuture<Result<u64, CondowError>> {
         let len = self.blob.lock().unwrap().len();
         futures::future::ok(len as u64).boxed()
     }
@@ -520,16 +517,13 @@ impl Downloads for TestDownloader {
         RandomAccessReader::new_with_length(self.clone(), length)
     }
 
-    fn reader<'a>(
-        &'a self,
-        location: Self::Location,
-    ) -> BoxFuture<'a, Result<RandomAccessReader, CondowError>>
+    fn reader(&self, location: Self::Location) -> BoxFuture<Result<RandomAccessReader, CondowError>>
     where
         Self: Sized + Sync,
     {
         let me = self;
         async move {
-            let length = Downloads::get_size(me, location.clone()).await?;
+            let length = Downloads::get_size(me, location).await?;
             Ok(me.reader_with_length(location, length))
         }
         .boxed()
@@ -537,14 +531,14 @@ impl Downloads for TestDownloader {
 }
 
 impl ReaderAdapter for TestDownloader {
-    fn get_size<'a>(&'a self) -> BoxFuture<'a, Result<u64, CondowError>> {
+    fn get_size(&self) -> BoxFuture<Result<u64, CondowError>> {
         <TestDownloader as Downloads>::get_size(self, IgnoreLocation)
     }
 
-    fn download_range<'a>(
-        &'a self,
+    fn download_range(
+        &self,
         range: DownloadRange,
-    ) -> BoxFuture<'a, Result<OrderedChunkStream, CondowError>> {
+    ) -> BoxFuture<Result<OrderedChunkStream, CondowError>> {
         <TestDownloader as Downloads>::blob(self)
             .range(range)
             .download()
@@ -694,14 +688,13 @@ pub mod stream_penderizer {
         }
 
         pub fn return_pending(&mut self) -> bool {
-            let pending = if self.pendings_done < self.consecutive_pendings {
+            if self.pendings_done < self.consecutive_pendings {
                 self.pendings_done += 1;
                 true
             } else {
                 self.pendings_done = 0;
                 false
-            };
-            pending
+            }
         }
     }
 

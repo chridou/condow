@@ -213,7 +213,7 @@ mod in_memory {
         ) -> BoxFuture<'static, Result<(BytesStream, BytesHint), CondowError>> {
             trace!("in-memory-client: download");
 
-            download(&self.blob.as_slice(), self.chunk_size, spec)
+            download(self.blob.as_slice(), self.chunk_size, spec)
         }
     }
 
@@ -272,7 +272,7 @@ mod in_memory {
         pub fn as_slice(&self) -> &[u8] {
             match self {
                 Blob::Static(b) => b,
-                Blob::Owned(b) => &b,
+                Blob::Owned(b) => b,
             }
         }
     }
@@ -626,7 +626,7 @@ pub mod failing_client_simulator {
         pub fn as_slice(&self) -> &[u8] {
             match self {
                 Blob::Static(b) => b,
-                Blob::Owned(b) => &b,
+                Blob::Owned(b) => b,
             }
         }
     }

@@ -31,7 +31,7 @@ use super::KillSwitch;
 /// Results are pushed into a channel via the [DownloaderContext].
 ///
 /// Usually one `SequentialDownloader` is created for each level of
-/// concurrency.  
+/// concurrency.
 pub(crate) struct SequentialDownloader {
     request_sender: Sender<PartRequest>,
 }
@@ -52,7 +52,7 @@ impl SequentialDownloader {
                 let mut request_receiver = Box::pin(request_receiver);
                 while let Some(range_request) = request_receiver.recv().await {
                     let span = debug_span!(
-                        parent: context.span(), "download_part", 
+                        parent: context.span(), "download_part",
                         part_index = %range_request.part_index,
                         part_range = %range_request.blob_range,
                         part_offset = %range_request.range_offset);
@@ -161,7 +161,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
 
         self.kill_switch.push_the_button();
 
-        return Err(());
+        Err(())
     }
 
     /// Send an error and mark as completed
