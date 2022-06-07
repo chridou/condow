@@ -64,8 +64,12 @@ enum State {
     Error,
 }
 
-type GetReaderFn =
-    Arc<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesAsyncReader, CondowError>>>;
+type GetReaderFn = Arc<
+    dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesAsyncReader, CondowError>>
+        + Send
+        + Sync
+        + 'static,
+>;
 
 /// Implements [AsyncRead] and [AsyncSeek]
 ///
