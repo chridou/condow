@@ -361,6 +361,17 @@ where
         self
     }
 
+    /// Specify the number of bytes to fetch ahead.
+    ///
+    /// This reduces the number of requests being made.
+    /// Eager fetch is not guaranteed and dependent on [EnsureActivePull].
+    ///
+    /// [EnsureActivePull]:crate::config::EnsureActivePull
+    pub fn fetch_ahead_mode<M: Into<FetchAheadMode>>(mut self, mode: M) -> Self {
+        self.fetch_ahead_mode = mode.into();
+        self
+    }
+
     /// Attach a [Probe] to the reader
     pub fn probe(mut self, probe: Arc<dyn Probe>) -> Self {
         self.params.probe = Some(probe);
