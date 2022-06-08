@@ -229,7 +229,7 @@ impl Stream for SourceFlavour {
         match this {
             SourceFlavourProj::DynStream { mut stream } => stream.as_mut().poll_next(cx),
             SourceFlavourProj::PartsBytesStream { stream } => match stream.poll_next(cx) {
-                Poll::Ready(Some(res)) => Poll::Ready(Some(res.map(|bytes| bytes))),
+                Poll::Ready(Some(res)) => Poll::Ready(Some(res)),
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },

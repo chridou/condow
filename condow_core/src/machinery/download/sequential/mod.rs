@@ -1,6 +1,4 @@
 //! Components for sequential downloads
-use futures::StreamExt;
-
 use crate::{
     condow_client::CondowClient,
     machinery::{configure_download::DownloadConfiguration, DownloadSpanGuard},

@@ -1,7 +1,5 @@
 //! Components for concurrent downloads
 
-use futures::StreamExt;
-
 use crate::{
     condow_client::CondowClient,
     config::ClientRetryWrapper,

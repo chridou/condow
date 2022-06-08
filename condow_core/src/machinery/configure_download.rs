@@ -6,7 +6,6 @@ use crate::{
     errors::CondowError,
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::BytesHint,
     DownloadRange, InclusiveRange,
 };
 
