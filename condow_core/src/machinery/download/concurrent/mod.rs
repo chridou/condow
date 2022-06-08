@@ -128,7 +128,7 @@ fn download_chunks_two_concurrently<C: CondowClient, P: Probe + Clone>(
 
     if *config.ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
         ChunkStream::from_two_concurrently(stream, bytes_hint)
     }
@@ -163,7 +163,7 @@ fn download_chunks_three_concurrently<C: CondowClient, P: Probe + Clone>(
 
     if *config.ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
         ChunkStream::from_three_concurrently(stream, bytes_hint)
     }
@@ -198,7 +198,7 @@ fn download_chunks_four_concurrently<C: CondowClient, P: Probe + Clone>(
 
     if *config.ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
         ChunkStream::from_four_concurrently(stream, bytes_hint)
     }

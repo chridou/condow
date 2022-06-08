@@ -2,7 +2,10 @@
 //!
 //! Downloads can be done concurrently or sequentially.
 
-use futures::{Stream, StreamExt};
+use std::{collections::VecDeque, task::Poll};
+
+use futures::{ready, Stream, StreamExt};
+use pin_project_lite::pin_project;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
@@ -31,11 +34,13 @@ pub fn active_pull<St, T, P: Probe>(
     mut input: St,
     probe: P,
     log_dl_msg_dbg: LogDownloadMessagesAsDebug,
-) -> mpsc::UnboundedReceiver<Result<T, CondowError>>
+) -> ActiveStream<T>
 where
     St: Stream<Item = Result<T, CondowError>> + Send + 'static + Unpin,
     T: Send + 'static,
 {
+    const CAPACITY: usize = 16;
+
     let (sender, rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
@@ -45,16 +50,76 @@ where
             log_dl_msg_dbg,
         };
 
+        let mut buffer = VecDeque::with_capacity(CAPACITY);
+
         while let Some(message) = input.next().await {
-            if let Err(_err) = sender.send(message) {
-                break;
+            let payload = match message {
+                Ok(payload) => payload,
+                Err(err) => {
+                    let _ = sender.send(Err(err));
+                    return;
+                }
+            };
+
+            if buffer.len() == buffer.capacity() {
+                let _ = sender.send(Ok(buffer));
+                buffer = VecDeque::with_capacity(CAPACITY);
             }
+
+            buffer.push_back(payload);
+        }
+
+        if !buffer.is_empty() {
+            let _ = sender.send(Ok(buffer));
         }
 
         drop(panic_guard);
     });
 
-    rx
+    ActiveStream::new(rx)
+}
+
+pin_project! {
+pub struct ActiveStream<T> {
+    #[pin]
+    receiver: mpsc::UnboundedReceiver<Result<VecDeque<T>, CondowError>>,
+    next: Option<VecDeque<T>>
+}
+}
+
+impl<T> ActiveStream<T> {
+    pub(crate) fn new(receiver: mpsc::UnboundedReceiver<Result<VecDeque<T>, CondowError>>) -> Self {
+        Self {
+            receiver,
+            next: None,
+        }
+    }
+}
+
+impl<T> Stream for ActiveStream<T> {
+    type Item = Result<T, CondowError>;
+
+    #[inline]
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut this = self.project();
+
+        Poll::Ready(loop {
+            if let Some(queue) = this.next.as_mut() {
+                if let Some(item) = queue.pop_front() {
+                    break Some(Ok(item));
+                } else {
+                    *this.next = None;
+                }
+            } else if let Some(queue) = ready!(this.receiver.as_mut().poll_recv(cx)?) {
+                *this.next = Some(queue);
+            } else {
+                break None;
+            }
+        })
+    }
 }
 
 struct PanicGuard<T> {

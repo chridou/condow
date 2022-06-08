@@ -39,7 +39,7 @@ pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
 
     if *ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
         ChunkStream::from_download_parts_seq(stream, bytes_hint)
     }
@@ -68,7 +68,7 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
 
     if *ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_dbg);
-        BytesStream::new_tokio_receiver(active_stream, BytesHint::new_exact(exact_bytes))
+        BytesStream::new_active_stream(active_stream, BytesHint::new_exact(exact_bytes))
     } else {
         BytesStream::new_parts_bytes_stream(stream)
     }

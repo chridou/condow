@@ -14,7 +14,9 @@ use pin_project_lite::pin_project;
 use tokio::sync::mpsc as tokio_mpsc;
 
 use crate::{
-    errors::CondowError, machinery::download::PartsBytesStream, streams::BytesHint,
+    errors::CondowError,
+    machinery::download::{ActiveStream, PartsBytesStream},
+    streams::BytesHint,
     streams::OrderedChunkStream,
 };
 
@@ -105,6 +107,13 @@ impl BytesStream {
         }
     }
 
+    pub(crate) fn new_active_stream(stream: ActiveStream<Bytes>, bytes_hint: BytesHint) -> Self {
+        Self {
+            source: SourceFlavour::ActiveStream { stream },
+            bytes_hint,
+        }
+    }
+
     /// Writes all bytes left on the stream into the provided buffer
     ///
     /// Fails if the buffer is too small or there was an error on the stream.
@@ -186,6 +195,7 @@ impl BytesStream {
 
 impl Stream for BytesStream {
     type Item = BytesStreamItem;
+
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
@@ -212,6 +222,7 @@ pin_project! {
         DynStream{#[pin] stream: BoxStream<'static, BytesStreamItem>},
         PartsBytesStream{#[pin] stream: PartsBytesStream },
         ChunksOrdered{#[pin] stream: OrderedChunkStream},
+        ActiveStream{#[pin] stream: ActiveStream<Bytes>},
         TokioChannel{#[pin] receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>},
         FuturesChannel{#[pin] receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>},
         Empty,
@@ -237,6 +248,7 @@ impl Stream for SourceFlavour {
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
+            SourceFlavourProj::ActiveStream { stream } => stream.poll_next(cx),
             SourceFlavourProj::TokioChannel { mut receiver } => receiver.poll_recv(cx),
             SourceFlavourProj::FuturesChannel { receiver } => receiver.poll_next(cx),
             SourceFlavourProj::Empty => Poll::Ready(None),

@@ -10,7 +10,8 @@ use tokio::sync::mpsc;
 use crate::{
     errors::CondowError,
     machinery::download::{
-        DownloadPartsSeq, FourPartsConcurrently, ThreePartsConcurrently, TwoPartsConcurrently,
+        ActiveStream, DownloadPartsSeq, FourPartsConcurrently, ThreePartsConcurrently,
+        TwoPartsConcurrently,
     },
     streams::ChunkStreamItem,
 };
@@ -265,6 +266,15 @@ impl ChunkStream {
             is_fresh: true,
         }
     }
+
+    pub(crate) fn from_active_stream(stream: ActiveStream<Chunk>, bytes_hint: BytesHint) -> Self {
+        Self {
+            source: SourceFlavour::ActiveStream { stream },
+            bytes_hint,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
 }
 
 pin_project! {
@@ -274,6 +284,7 @@ pin_project! {
         ThreeConcurrently{#[pin] stream: ThreePartsConcurrently},
         FourConcurrently{#[pin] stream: FourPartsConcurrently},
         DownloadPartsSeq{#[pin] stream: DownloadPartsSeq},
+        ActiveStream{#[pin] stream: ActiveStream<Chunk>},
         Channel{#[pin] receiver: mpsc::UnboundedReceiver<ChunkStreamItem>},
         StreamDyn{#[pin] stream: BoxStream<'static, ChunkStreamItem>},
     }
@@ -289,6 +300,8 @@ impl SourceFlavour {
 
 impl Stream for SourceFlavour {
     type Item = ChunkStreamItem;
+
+    #[inline]
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
 
@@ -297,6 +310,7 @@ impl Stream for SourceFlavour {
             SourceFlavourProj::TwoConcurrently { stream } => stream.poll_next(cx),
             SourceFlavourProj::ThreeConcurrently { stream } => stream.poll_next(cx),
             SourceFlavourProj::FourConcurrently { stream } => stream.poll_next(cx),
+            SourceFlavourProj::ActiveStream { stream } => stream.poll_next(cx),
             SourceFlavourProj::DownloadPartsSeq { stream } => stream.poll_next(cx),
             SourceFlavourProj::Channel { mut receiver } => receiver.poll_recv(cx),
         }
