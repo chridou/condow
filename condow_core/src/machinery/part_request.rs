@@ -1,6 +1,6 @@
 use futures::Stream;
 
-use crate::{InclusiveRange};
+use crate::InclusiveRange;
 
 /// A request to download a part.
 ///
