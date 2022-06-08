@@ -21,6 +21,9 @@ pub use in_memory::InMemoryClient;
 ///
 /// Implementors of this trait may not panic on calling any of the methods nor
 /// within any of the futures returned.
+///
+/// It is suggested that `FromStr` is implemented for `Location` as well as a [From] implentation
+/// for [IgnoreLocation].
 pub trait CondowClient: Clone + Send + Sync + 'static {
     type Location: std::fmt::Debug + std::fmt::Display + Clone + Send + Sync + 'static;
 
@@ -93,6 +96,13 @@ mod client_bytes_stream {
     use crate::streams::{BytesHint, BytesStreamItem};
 
     pin_project! {
+    /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes.
+    ///
+    /// Implementors of [CondowClient] return this stream.
+    ///
+    /// This stream is NOT fused and depends on the input stream.
+    ///
+    /// [CondowClient]:crate::condow_client::CondowClient
     pub struct ClientBytesStream {
         #[pin]
         source: SourceFlavour,
@@ -144,6 +154,7 @@ mod client_bytes_stream {
                 exact_bytes_left,
             }
         }
+
         pub fn new_tokio_receiver(
             receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>,
             exact_bytes_left: u64,
