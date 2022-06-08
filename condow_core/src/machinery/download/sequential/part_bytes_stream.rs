@@ -1,6 +1,6 @@
 //! [BytesStream] for a single [PartRequest].
 
-use std::{task::Poll, time::Instant};
+use std::{sync::Arc, task::Poll, time::Instant};
 
 use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
@@ -24,27 +24,27 @@ pin_project! {
     ///
     /// The supplied [Probe] is notified on part events and chunk events.
     /// Global download events are not published.
-    pub struct PartBytesStream<P: Probe> {
+    pub struct PartBytesStream {
         part_request: PartRequest,
         state: State,
-        probe: P,
+        probe: Arc<dyn Probe>,
         started_at: Instant,
         part_span: Span,
     }
 }
 
-impl<P> PartBytesStream<P>
-where
-    P: Probe + Clone,
-{
+impl PartBytesStream {
     #[allow(dead_code)]
-    pub(crate) fn from_client<C: CondowClient>(
+    pub(crate) fn from_client<C: CondowClient, P>(
         client: &ClientRetryWrapper<C>,
         location: C::Location,
         part_request: PartRequest,
         probe: P,
         parent: &Span,
-    ) -> Self {
+    ) -> Self
+    where
+        P: Probe + Clone,
+    {
         let get_part_stream = {
             let probe = probe.clone();
             move |range: InclusiveRange| {
@@ -54,7 +54,7 @@ where
             }
         };
 
-        Self::new(&get_part_stream, part_request, probe, parent)
+        Self::new(&get_part_stream, part_request, Arc::new(probe), parent)
     }
 
     pub fn new(
@@ -62,7 +62,7 @@ where
             InclusiveRange,
         ) -> BoxFuture<'static, Result<BytesStream, CondowError>>,
         part_request: PartRequest,
-        probe: P,
+        probe: Arc<dyn Probe>,
         parent: &Span,
     ) -> Self {
         let range = part_request.blob_range;
@@ -101,10 +101,7 @@ enum State {
     Finished,
 }
 
-impl<P> Stream for PartBytesStream<P>
-where
-    P: Probe + Clone,
-{
+impl Stream for PartBytesStream {
     type Item = BytesStreamItem;
 
     fn poll_next(
@@ -165,13 +162,6 @@ where
                         }
 
                         streaming_state.bytes_left -= bytes_len;
-
-                        this.probe.chunk_received(
-                            this.part_request.part_index,
-                            streaming_state.chunk_index,
-                            bytes_len as usize,
-                        );
-
                         streaming_state.chunk_index += 1;
                         streaming_state.blob_offset += bytes_len;
                         streaming_state.range_offset += bytes_len;

@@ -73,7 +73,7 @@ impl<T> Drop for PanicGuard<T> {
 }
 
 pub mod part_chunks_stream {
-    use std::{task::Poll, time::Instant};
+    use std::{sync::Arc, task::Poll, time::Instant};
 
     use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
     use pin_project_lite::pin_project;
@@ -97,27 +97,27 @@ pub mod part_chunks_stream {
         ///
         /// The supplied [Probe] is notified on part events and chunk events.
         /// Global download events are not published.
-        pub struct PartChunksStream<P: Probe> {
+        pub struct PartChunksStream {
             part_request: PartRequest,
             state: State,
-            probe: P,
+            probe: Arc<dyn Probe>,
             started_at: Instant,
             part_span: Span,
         }
     }
 
-    impl<P> PartChunksStream<P>
-    where
-        P: Probe + Clone,
-    {
+    impl PartChunksStream {
         #[allow(dead_code)]
-        pub(crate) fn from_client<C: CondowClient>(
+        pub(crate) fn from_client<C: CondowClient, P>(
             client: &ClientRetryWrapper<C>,
             location: C::Location,
             part_request: PartRequest,
             probe: P,
             parent: &Span,
-        ) -> Self {
+        ) -> Self
+        where
+            P: Probe + Clone,
+        {
             let get_part_stream = {
                 let probe = probe.clone();
                 move |range: InclusiveRange| {
@@ -127,7 +127,7 @@ pub mod part_chunks_stream {
                 }
             };
 
-            Self::new(&get_part_stream, part_request, probe, parent)
+            Self::new(&get_part_stream, part_request, Arc::new(probe), parent)
         }
 
         pub(crate) fn new(
@@ -136,7 +136,7 @@ pub mod part_chunks_stream {
             )
                 -> BoxFuture<'static, Result<BytesStream, CondowError>>,
             part_request: PartRequest,
-            probe: P,
+            probe: Arc<dyn Probe>,
             parent: &Span,
         ) -> Self {
             let range = part_request.blob_range;
@@ -175,10 +175,7 @@ pub mod part_chunks_stream {
         Finished,
     }
 
-    impl<P> Stream for PartChunksStream<P>
-    where
-        P: Probe + Clone,
-    {
+    impl Stream for PartChunksStream {
         type Item = ChunkStreamItem;
 
         fn poll_next(
@@ -248,12 +245,6 @@ pub mod part_chunks_stream {
                                 bytes,
                                 bytes_left: streaming_state.bytes_left,
                             };
-
-                            this.probe.chunk_received(
-                                chunk.part_index,
-                                chunk.chunk_index,
-                                bytes_len as usize,
-                            );
 
                             streaming_state.chunk_index += 1;
                             streaming_state.blob_offset += bytes_len;

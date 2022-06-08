@@ -75,6 +75,7 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
 }
 mod download_parts_seq {
     use std::{
+        sync::Arc,
         task::Poll,
         time::{Duration, Instant},
     };
@@ -93,9 +94,9 @@ mod download_parts_seq {
         InclusiveRange,
     };
     /// Internal state of the stream.
-    enum State<P: Probe> {
+    enum State {
         /// We are streming the [Chunk]s of a part.
-        Streaming(PartChunksStream<P>),
+        Streaming(PartChunksStream),
         /// Nothing more to do. Always return `None`
         Finished,
     }
@@ -104,25 +105,22 @@ mod download_parts_seq {
         /// A stream which returns [ChunkStreamItem]s for all [PartRequest]s of a download.
         ///
         /// Parts are downloaded sequentially
-        pub (crate) struct DownloadPartsSeq<P: Probe> {
+        pub (crate) struct DownloadPartsSeq {
             get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>> + Send + 'static>,
             part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
-            state: State<P>,
-            probe: P,
+            state: State,
+            probe: Arc<dyn Probe>,
             download_started_at: Instant,
             log_dl_msg_dbg: LogDownloadMessagesAsDebug,
             download_span_guard: DownloadSpanGuard,
         }
     }
 
-    impl<P> DownloadPartsSeq<P>
-    where
-        P: Probe + Clone,
-    {
+    impl DownloadPartsSeq {
         pub fn new<I, L, F>(
             get_part_stream: F,
             mut part_requests: I,
-            probe: P,
+            probe: Arc<dyn Probe>,
             log_dl_msg_dbg: L,
             download_span_guard: DownloadSpanGuard,
         ) -> Self
@@ -169,7 +167,7 @@ mod download_parts_seq {
             }
         }
 
-        pub fn from_client<C, I, L>(
+        pub fn from_client<C, I, L, P>(
             client: ClientRetryWrapper<C>,
             location: C::Location,
             part_requests: I,
@@ -181,6 +179,7 @@ mod download_parts_seq {
             I: Iterator<Item = PartRequest> + Send + 'static,
             L: Into<LogDownloadMessagesAsDebug>,
             C: CondowClient,
+            P: Probe + Clone,
         {
             let get_part_stream = {
                 let probe = probe.clone();
@@ -194,17 +193,14 @@ mod download_parts_seq {
             Self::new(
                 get_part_stream,
                 part_requests,
-                probe,
+                Arc::new(probe),
                 log_dl_msg_dbg,
                 download_span_guard,
             )
         }
     }
 
-    impl<P> Stream for DownloadPartsSeq<P>
-    where
-        P: Probe + Clone,
-    {
+    impl Stream for DownloadPartsSeq {
         type Item = ChunkStreamItem;
 
         fn poll_next(

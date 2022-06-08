@@ -1,5 +1,6 @@
 //! Download with a maximum concurrency of 2
 use std::{
+    sync::Arc,
     task::Poll,
     time::{Duration, Instant},
 };
@@ -27,42 +28,42 @@ pin_project! {
     /// parts which have a lower part number (they come in ordered).
     ///
     /// This way there is less entropy in the ordering of the returned chunks.
-    pub struct TwoPartsConcurrently<P: Probe> {
-        active_streams: ActiveStreams<P>,
-        baggage: Baggage<P>,
+    pub struct TwoPartsConcurrently {
+        active_streams: ActiveStreams,
+        baggage: Baggage,
     }
 }
 
-struct Baggage<P: Probe> {
+struct Baggage {
     get_part_stream: Box<
         dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
             + Send
             + 'static,
     >,
     part_requests: Box<dyn Iterator<Item = PartRequest> + Send + 'static>,
-    probe: P,
+    probe: Arc<dyn Probe>,
     download_started_at: Instant,
     log_dl_msg_dbg: LogDownloadMessagesAsDebug,
     download_span_guard: DownloadSpanGuard,
 }
 
-enum ActiveStreams<P: Probe> {
+enum ActiveStreams {
     /// Nothing more to do
     None,
     /// 2 or more parts left to download
     TwoConcurrently {
-        left: PartChunksStream<P>,
-        right: PartChunksStream<P>,
+        left: PartChunksStream,
+        right: PartChunksStream,
     },
     /// Exactly 1 part left to download
-    LastPart(PartChunksStream<P>),
+    LastPart(PartChunksStream),
 }
 
-impl<P: Probe + Clone> TwoPartsConcurrently<P> {
+impl TwoPartsConcurrently {
     pub(crate) fn new<I, L, F>(
         get_part_stream: F,
         mut part_requests: I,
-        probe: P,
+        probe: Arc<dyn Probe>,
         log_dl_msg_dbg: L,
         download_span_guard: DownloadSpanGuard,
     ) -> Self
@@ -124,7 +125,7 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
         }
     }
 
-    pub(crate) fn from_client<C, I, L>(
+    pub(crate) fn from_client<C, I, L, P>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         part_requests: I,
@@ -136,6 +137,7 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
         C: CondowClient,
+        P: Probe + Clone,
     {
         let get_part_stream = {
             let probe = probe.clone();
@@ -149,14 +151,14 @@ impl<P: Probe + Clone> TwoPartsConcurrently<P> {
         Self::new(
             get_part_stream,
             part_requests,
-            probe,
+            Arc::new(probe),
             log_dl_msg_dbg,
             download_span_guard,
         )
     }
 }
 
-impl<P: Probe + Clone> Stream for TwoPartsConcurrently<P> {
+impl Stream for TwoPartsConcurrently {
     type Item = ChunkStreamItem;
 
     fn poll_next(
@@ -220,12 +222,12 @@ impl<P: Probe + Clone> Stream for TwoPartsConcurrently<P> {
 /// poll "left biased" until there is only 1 part left
 ///
 /// New parts are added "to the right"
-fn poll_two<P: Probe + Clone>(
-    mut left: PartChunksStream<P>,
-    mut right: PartChunksStream<P>,
-    baggage: &mut Baggage<P>,
+fn poll_two(
+    mut left: PartChunksStream,
+    mut right: PartChunksStream,
+    baggage: &mut Baggage,
     cx: &mut std::task::Context<'_>,
-) -> Result<(Poll<Option<ChunkStreamItem>>, ActiveStreams<P>), CondowError> {
+) -> Result<(Poll<Option<ChunkStreamItem>>, ActiveStreams), CondowError> {
     match left.poll_next_unpin(cx) {
         Poll::Ready(Some(Ok(chunk))) => {
             return Ok((

@@ -24,9 +24,9 @@ use crate::{
 };
 
 /// Internal state of the stream.
-enum State<P: Probe> {
+enum State {
     /// We are streming the [Chunk]s of a part.
-    Streaming(PartBytesStream<P>),
+    Streaming(PartBytesStream),
     /// Nothing more to do. Always return `None`
     Finished,
 }
@@ -35,25 +35,22 @@ pin_project! {
     /// A stream which returns [ChunkStreamItem]s for all [PartRequest]s of a download.
     ///
     /// Parts are downloaded sequentially
-    pub struct PartsBytesStream<P: Probe> {
+    pub struct PartsBytesStream {
         get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>> + Send + 'static>,
         part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
-        state: State<P>,
-        probe: P,
+        state: State,
+        probe: Arc<dyn Probe>,
         download_started_at: Instant,
         log_dl_msg_dbg: LogDownloadMessagesAsDebug,
         parent_span: Arc<Span>,
     }
 }
 
-impl<P> PartsBytesStream<P>
-where
-    P: Probe + Clone,
-{
+impl PartsBytesStream {
     pub fn new<I, L, F>(
         get_part_stream: F,
         mut part_requests: I,
-        probe: P,
+        probe: Arc<dyn Probe>,
         log_dl_msg_dbg: L,
         parent_span: Arc<Span>,
     ) -> Self
@@ -96,7 +93,7 @@ where
         }
     }
 
-    pub(crate) fn from_client<C, I, L>(
+    pub(crate) fn from_client<C, I, L, P>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
         part_requests: I,
@@ -108,6 +105,7 @@ where
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
         C: CondowClient,
+        P: Probe + Clone,
     {
         let get_part_stream = {
             let probe = probe.clone();
@@ -121,17 +119,14 @@ where
         Self::new(
             get_part_stream,
             part_requests,
-            probe,
+            Arc::new(probe),
             log_dl_msg_dbg,
             parent_span,
         )
     }
 }
 
-impl<P> Stream for PartsBytesStream<P>
-where
-    P: Probe + Clone,
-{
+impl Stream for PartsBytesStream {
     type Item = BytesStreamItem;
 
     fn poll_next(
