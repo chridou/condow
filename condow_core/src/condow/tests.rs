@@ -97,7 +97,6 @@ mod range {
                 let client = TestCondowClient {
                     data: Arc::clone(&data),
                     max_jitter_ms: 0,
-                    include_size_hint: true,
                     max_chunk_size: chunk_size,
                     ..TestCondowClient::default()
                 };
@@ -146,7 +145,6 @@ mod range {
                 let client = TestCondowClient {
                     data: Arc::clone(&data),
                     max_jitter_ms: 0,
-                    include_size_hint: true,
                     max_chunk_size: chunk_size,
                     ..TestCondowClient::default()
                 };
@@ -197,7 +195,6 @@ mod range {
                 let client = TestCondowClient {
                     data: Arc::clone(&data),
                     max_jitter_ms: 0,
-                    include_size_hint: true,
                     max_chunk_size: chunk_size,
                     ..TestCondowClient::default()
                 };
@@ -256,7 +253,6 @@ mod range {
                         let client = TestCondowClient {
                             data: Arc::clone(&data),
                             max_jitter_ms: 0,
-                            include_size_hint: true,
                             max_chunk_size: chunk_size,
                             ..TestCondowClient::default()
                         };
@@ -308,7 +304,6 @@ mod range {
                         let client = TestCondowClient {
                             data: Arc::clone(&data),
                             max_jitter_ms: 0,
-                            include_size_hint: true,
                             max_chunk_size: chunk_size,
                             ..TestCondowClient::default()
                         };
@@ -367,7 +362,6 @@ mod range {
                         let client = TestCondowClient {
                             data: Arc::clone(&data),
                             max_jitter_ms: 0,
-                            include_size_hint: true,
                             max_chunk_size: chunk_size,
                             ..TestCondowClient::default()
                         };
@@ -425,7 +419,6 @@ mod range {
                         let client = TestCondowClient {
                             data: Arc::clone(&data),
                             max_jitter_ms: 0,
-                            include_size_hint: true,
                             max_chunk_size: chunk_size,
                             ..TestCondowClient::default()
                         };

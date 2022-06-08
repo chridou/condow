@@ -31,12 +31,8 @@
 //!
 //! // Methods of Probe have noop default implementations
 //! impl Probe for MyProbe {
-//!     fn chunk_completed(&self,
-//!         _part_index: u64,
-//!         _chunk_index: usize,
-//!         n_bytes: usize,
-//!         _time: Duration) {
-//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     fn part_completed(&self, _part_index: u64, _n_chunks: usize, n_bytes: u64, _time: Duration) {
+//!         self.bytes_received.fetch_add(n_bytes as usize, Ordering::SeqCst);
 //!     }
 //! }
 //!
@@ -74,11 +70,8 @@
 //!
 //! // Methods of Probe have noop default implementations
 //! impl Probe for MyProbe {
-//!     fn chunk_received(&self,
-//!         _part_index: u64,
-//!         _chunk_index: usize,
-//!         n_bytes: usize) {
-//!         self.bytes_received.fetch_add(n_bytes, Ordering::SeqCst);
+//!     fn part_completed(&self, _part_index: u64, _n_chunks: usize, n_bytes: u64, _time: Duration) {
+//!         self.bytes_received.fetch_add(n_bytes as usize, Ordering::SeqCst);
 //!     }
 //! }
 //!

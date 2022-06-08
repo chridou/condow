@@ -1226,11 +1226,12 @@ mod retry_download_get_stream {
                 &self,
                 _location: Self::Location,
                 _range: InclusiveRange,
-            ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
+            ) -> futures::future::BoxFuture<'static, Result<ClientBytesStream, CondowError>>
+            {
                 let mut fails = self.fails_reversed.lock().unwrap();
 
                 if fails.is_empty() {
-                    futures::future::ready(Ok(BytesStream::empty())).boxed()
+                    futures::future::ready(Ok(ClientBytesStream::empty())).boxed()
                 } else {
                     let err = CondowError::from(fails.pop().unwrap());
                     futures::future::ready(Err(err)).boxed()
@@ -1471,7 +1472,8 @@ mod retry_get_size {
                 &self,
                 _location: Self::Location,
                 _range: InclusiveRange,
-            ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
+            ) -> futures::future::BoxFuture<'static, Result<ClientBytesStream, CondowError>>
+            {
                 unimplemented!()
             }
         }

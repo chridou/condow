@@ -5,16 +5,16 @@ use pin_project_lite::pin_project;
 use tracing::warn;
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     errors::CondowError,
     probe::Probe,
-    streams::{BytesStream, BytesStreamItem},
+    streams::BytesStreamItem,
     InclusiveRange,
 };
 
 use super::RetryConfig;
 
-type GetStreamFut = BoxFuture<'static, Result<BytesStream, CondowError>>;
+type GetStreamFut = BoxFuture<'static, Result<ClientBytesStream, CondowError>>;
 
 type GetStreamFn = Arc<dyn Fn(InclusiveRange) -> GetStreamFut + Send + Sync + 'static>;
 
@@ -107,8 +107,8 @@ where
 
 enum RetryResumePartStreamState {
     GettingStream(GetStreamFut, usize),
-    StreamingAfterResume(BytesStream, usize),
-    Streaming(BytesStream),
+    StreamingAfterResume(ClientBytesStream, usize),
+    Streaming(ClientBytesStream),
     Finished,
 }
 
@@ -129,7 +129,7 @@ where
 {
     pub fn new(
         initial_range: InclusiveRange,
-        bytes_stream: BytesStream,
+        bytes_stream: ClientBytesStream,
         get_stream_fn: GetStreamFn,
         config: RetryConfig,
         probe: Arc<P>,

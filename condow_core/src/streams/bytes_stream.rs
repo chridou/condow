@@ -13,7 +13,10 @@ use futures::{
 use pin_project_lite::pin_project;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use crate::{errors::CondowError, streams::BytesHint, streams::OrderedChunkStream};
+use crate::{
+    errors::CondowError, machinery::download::PartsBytesStream, streams::BytesHint,
+    streams::OrderedChunkStream,
+};
 
 /// Item of a [BytesStream]
 pub type BytesStreamItem = Result<Bytes, CondowError>;
@@ -117,10 +120,6 @@ impl BytesStream {
         Self::once(Ok(bytes))
     }
 
-    pub fn bytes_hint(&self) -> BytesHint {
-        self.bytes_hint
-    }
-
     pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
         self.map_err(From::from)
     }
@@ -197,6 +196,10 @@ impl BytesStream {
     pub async fn count_bytes(self) -> Result<u64, CondowError> {
         self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
             .await
+    }
+
+    pub fn bytes_hint(&self) -> BytesHint {
+        self.bytes_hint
     }
 }
 

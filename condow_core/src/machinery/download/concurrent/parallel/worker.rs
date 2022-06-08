@@ -13,12 +13,12 @@ use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
 use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     config::{ClientRetryWrapper, Config},
     errors::CondowError,
     machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
-    streams::{BytesStream, Chunk, ChunkStreamItem},
+    streams::{Chunk, ChunkStreamItem},
 };
 
 use super::KillSwitch;
@@ -234,7 +234,7 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
 ///
 /// [Bytes]: bytes::bytes
 async fn consume_and_dispatch_bytes<P: Probe + Clone>(
-    mut bytes_stream: BytesStream,
+    mut bytes_stream: ClientBytesStream,
     context: &mut DownloaderContext<P>,
     range_request: PartRequest,
 ) -> Result<(), ()> {

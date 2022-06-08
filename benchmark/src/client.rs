@@ -6,10 +6,9 @@ use bytes::Bytes;
 use futures::{future::BoxFuture, stream, FutureExt, StreamExt};
 
 use condow_core::{
-    condow_client::{CondowClient, IgnoreLocation},
+    condow_client::{ClientBytesStream, CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
-    streams::{BytesHint, BytesStream},
     Condow, InclusiveRange,
 };
 
@@ -48,7 +47,7 @@ impl CondowClient for BenchmarkClient {
         &self,
         _location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         let bytes_to_send = {
             if range.end_incl() >= self.size {
                 return futures::future::err(CondowError::new_other("out of range")).boxed();
@@ -88,7 +87,7 @@ impl CondowClient for BenchmarkClient {
             chunk
         });
         //       let stream = stream::iter(iter);
-        let stream = BytesStream::new(stream, BytesHint::new_exact(bytes_to_send));
+        let stream = ClientBytesStream::new(stream, bytes_to_send);
 
         futures::future::ok(stream).boxed()
     }

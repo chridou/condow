@@ -9,8 +9,9 @@ use std::{convert::Infallible, str::FromStr};
 
 use futures::{future::BoxFuture, FutureExt};
 
-use crate::{errors::CondowError, streams::BytesStream, InclusiveRange};
+use crate::{errors::CondowError, InclusiveRange};
 
+pub use client_bytes_stream::ClientBytesStream;
 pub use in_memory::InMemoryClient;
 
 /// A client to some service or other resource which supports
@@ -31,13 +32,13 @@ pub trait CondowClient: Clone + Send + Sync + 'static {
         &self,
         location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>>;
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>;
 
     /// Download a complete BLOB
     fn download_full(
         &self,
         location: Self::Location,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         let me = self.clone();
         async move {
             let len = me.get_size(location.clone()).await?;
@@ -74,13 +75,189 @@ where
     }
 }
 
+mod client_bytes_stream {
+    use std::{
+        io, iter,
+        task::{Context, Poll},
+    };
+
+    use bytes::Bytes;
+    use futures::{
+        channel::mpsc as futures_mpsc,
+        stream::{self, BoxStream},
+        Stream, StreamExt, TryStreamExt,
+    };
+    use pin_project_lite::pin_project;
+    use tokio::sync::mpsc as tokio_mpsc;
+
+    use crate::streams::{BytesHint, BytesStreamItem};
+
+    pin_project! {
+    pub struct ClientBytesStream {
+        #[pin]
+        source: SourceFlavour,
+        exact_bytes_left: u64,
+    }
+    }
+
+    impl ClientBytesStream {
+        pub fn new<St>(stream: St, exact_bytes_left: u64) -> Self
+        where
+            St: Stream<Item = BytesStreamItem> + Send + 'static,
+        {
+            Self {
+                source: SourceFlavour::DynStream {
+                    stream: stream.boxed(),
+                },
+                exact_bytes_left,
+            }
+        }
+
+        pub fn new_io<St>(stream: St, exact_bytes_left: u64) -> Self
+        where
+            St: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
+        {
+            Self {
+                source: SourceFlavour::IoDynStream {
+                    stream: stream.boxed(),
+                },
+                exact_bytes_left,
+            }
+        }
+
+        pub fn new_io_dyn(
+            stream: BoxStream<'static, Result<Bytes, io::Error>>,
+            exact_bytes_left: u64,
+        ) -> Self {
+            Self {
+                source: SourceFlavour::IoDynStream { stream },
+                exact_bytes_left,
+            }
+        }
+
+        pub fn new_futures_receiver(
+            receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>,
+            exact_bytes_left: u64,
+        ) -> Self {
+            Self {
+                source: SourceFlavour::FuturesChannel { receiver },
+                exact_bytes_left,
+            }
+        }
+        pub fn new_tokio_receiver(
+            receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>,
+            exact_bytes_left: u64,
+        ) -> Self {
+            Self {
+                source: SourceFlavour::TokioChannel { receiver },
+                exact_bytes_left,
+            }
+        }
+
+        pub fn empty() -> Self {
+            Self {
+                source: SourceFlavour::Empty,
+                exact_bytes_left: 0,
+            }
+        }
+
+        pub fn once(item: BytesStreamItem) -> Self {
+            match item {
+                Ok(bytes) => {
+                    let exact_bytes_left = bytes.len() as u64;
+                    Self::new(stream::iter(iter::once(Ok(bytes))), exact_bytes_left)
+                }
+                Err(err) => Self::new(stream::iter(iter::once(Err(err))), 0),
+            }
+        }
+
+        pub fn once_ok(bytes: Bytes) -> Self {
+            Self::once(Ok(bytes))
+        }
+
+        pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
+            self.map_err(From::from)
+        }
+
+        pub fn bytes_hint(&self) -> BytesHint {
+            BytesHint::new_exact(self.exact_bytes_left)
+        }
+
+        pub fn exact_bytes_left(&self) -> u64 {
+            self.exact_bytes_left
+        }
+    }
+
+    impl Stream for ClientBytesStream {
+        type Item = BytesStreamItem;
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            let mut this = self.project();
+
+            match this.source.as_mut().poll_next(cx) {
+                Poll::Ready(Some(next)) => match next {
+                    Ok(bytes) => {
+                        *this.exact_bytes_left -= bytes.len() as u64;
+                        Poll::Ready(Some(Ok(bytes)))
+                    }
+                    Err(err) => {
+                        *this.exact_bytes_left = 0;
+                        Poll::Ready(Some(Err(err)))
+                    }
+                },
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            }
+        }
+    }
+
+    pin_project! {
+        #[project = SourceFlavourProj]
+        enum SourceFlavour {
+            DynStream{#[pin] stream: BoxStream<'static, BytesStreamItem>},
+            IoDynStream{#[pin] stream: BoxStream<'static, Result<Bytes, io::Error>>},
+            TokioChannel{#[pin] receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>},
+            FuturesChannel{#[pin] receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>},
+            Empty,
+        }
+    }
+
+    impl Stream for SourceFlavour {
+        type Item = BytesStreamItem;
+
+        #[inline]
+        fn poll_next(
+            self: std::pin::Pin<&mut Self>,
+            cx: &mut Context<'_>,
+        ) -> Poll<Option<Self::Item>> {
+            let this = self.project();
+
+            match this {
+                SourceFlavourProj::DynStream { mut stream } => stream.as_mut().poll_next(cx),
+                SourceFlavourProj::IoDynStream { mut stream } => {
+                    match stream.as_mut().poll_next(cx) {
+                        Poll::Ready(Some(Ok(bytes))) => Poll::Ready(Some(Ok(bytes))),
+                        Poll::Ready(Some(Err(err))) => Poll::Ready(Some(Err(err.into()))),
+                        Poll::Ready(None) => Poll::Ready(None),
+                        Poll::Pending => Poll::Pending,
+                    }
+                }
+                SourceFlavourProj::TokioChannel { mut receiver } => receiver.poll_recv(cx),
+                SourceFlavourProj::FuturesChannel { receiver } => receiver.poll_next(cx),
+                SourceFlavourProj::Empty => Poll::Ready(None),
+            }
+        }
+    }
+}
+
 mod in_memory {
     use std::{marker::PhantomData, sync::Arc};
 
     use crate::{
         config::{Config, Mebi},
         errors::CondowError,
-        streams::{BytesHint, BytesStream},
         Condow, InclusiveRange,
     };
     use anyhow::Error as AnyError;
@@ -91,7 +268,7 @@ mod in_memory {
     };
     use tracing::trace;
 
-    use super::{CondowClient, IgnoreLocation};
+    use super::{ClientBytesStream, CondowClient, IgnoreLocation};
 
     /// Holds the BLOB in memory as owned or static data.
     ///
@@ -166,7 +343,7 @@ mod in_memory {
             &self,
             _location: Self::Location,
             range: InclusiveRange,
-        ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+        ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
             trace!("in-memory-client: download");
 
             download(self.blob.as_slice(), self.chunk_size, range)
@@ -177,7 +354,7 @@ mod in_memory {
         blob: &[u8],
         chunk_size: usize,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         let range = {
             let r = range.to_std_range_excl();
             r.start as usize..r.end as usize
@@ -193,7 +370,7 @@ mod in_memory {
 
         let slice = &blob[range];
 
-        let bytes_hint = BytesHint::new_exact(slice.len() as u64);
+        let exact_bytes = slice.len() as u64;
 
         let iter = slice.chunks(chunk_size).map(Bytes::copy_from_slice).map(Ok);
 
@@ -201,7 +378,7 @@ mod in_memory {
 
         let stream = stream::iter(owned_bytes);
 
-        let stream = BytesStream::new(stream, bytes_hint);
+        let stream = ClientBytesStream::new(stream, exact_bytes);
 
         let f = future::ready(Ok(stream));
 
@@ -317,14 +494,11 @@ pub mod failing_client_simulator {
     use tracing::trace;
 
     use crate::{
-        condow_client::CondowClient,
-        config::Config,
-        errors::CondowError,
-        streams::{BytesHint, BytesStream, BytesStreamItem},
+        condow_client::CondowClient, config::Config, errors::CondowError, streams::BytesStreamItem,
         Condow, InclusiveRange,
     };
 
-    pub use super::IgnoreLocation;
+    pub use super::{ClientBytesStream, IgnoreLocation};
 
     /// A builder for a [FailingClientSimulator]
     pub struct FailingClientSimulatorBuilder {
@@ -453,7 +627,7 @@ pub mod failing_client_simulator {
             &self,
             _location: Self::Location,
             range: InclusiveRange,
-        ) -> futures::future::BoxFuture<'static, Result<BytesStream, CondowError>> {
+        ) -> futures::future::BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
             trace!("failing-client-simulator: download");
             let me = self.clone();
 
@@ -470,7 +644,7 @@ pub mod failing_client_simulator {
                 .boxed();
             }
 
-            let bytes_hint = BytesHint::new_exact(range.len());
+            let exact_bytes_left = range.len();
 
             async move {
                 let next_response = me
@@ -489,7 +663,7 @@ pub mod failing_client_simulator {
                             error: None,
                             chunk_size: me.chunk_size,
                         };
-                        Ok(BytesStream::new(stream, bytes_hint))
+                        Ok(ClientBytesStream::new(stream, exact_bytes_left))
                     }
                     ResponseBehaviour::SuccessWithFailungStream(error_offset) => {
                         let start = range.start() as usize;
@@ -511,7 +685,7 @@ pub mod failing_client_simulator {
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok(BytesStream::new(stream, bytes_hint))
+                        Ok(ClientBytesStream::new(stream, exact_bytes_left))
                     }
                     ResponseBehaviour::Error(error) => Err(error),
                     ResponseBehaviour::Panic(msg) => {
@@ -537,7 +711,7 @@ pub mod failing_client_simulator {
                             ))),
                             chunk_size: me.chunk_size,
                         };
-                        Ok(BytesStream::new(stream, bytes_hint))
+                        Ok(ClientBytesStream::new(stream, exact_bytes_left))
                     }
                 }
             }

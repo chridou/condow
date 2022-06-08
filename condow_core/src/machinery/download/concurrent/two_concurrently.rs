@@ -9,13 +9,13 @@ use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     config::LogDownloadMessagesAsDebug,
     errors::CondowError,
     machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesStream, ChunkStreamItem},
+    streams::ChunkStreamItem,
     InclusiveRange,
 };
 
@@ -36,7 +36,7 @@ pin_project! {
 
 struct Baggage {
     get_part_stream: Box<
-        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
+        dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>
             + Send
             + 'static,
     >,
@@ -70,7 +70,7 @@ impl TwoPartsConcurrently {
     where
         I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
-        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>
             + Send
             + 'static,
     {

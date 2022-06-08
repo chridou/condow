@@ -28,7 +28,10 @@ use futures::future::BoxFuture;
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-use condow_core::{condow_client::CondowClient, errors::CondowError, streams::BytesStream};
+use condow_core::{
+    condow_client::{ClientBytesStream, CondowClient},
+    errors::CondowError,
+};
 
 pub use condow_core::*;
 
@@ -60,7 +63,7 @@ impl CondowClient for FsClient {
         &self,
         location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         let f = async move {
             let bytes = {
                 let mut file = fs::File::open(location.as_str()).await?;
@@ -90,7 +93,7 @@ impl CondowClient for FsClient {
 
             let bytes = Bytes::from(bytes);
 
-            Ok(BytesStream::once_ok(bytes))
+            Ok(ClientBytesStream::once_ok(bytes))
         };
 
         Box::pin(f)

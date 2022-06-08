@@ -74,7 +74,11 @@ impl PartRequestIterator {
     /// Returns a hint for the bytes which are still to be
     /// delivered by the rmaining [PartRequest]s
     pub fn bytes_hint(&self) -> BytesHint {
-        BytesHint::new_exact(self.bytes_left)
+        BytesHint::new_exact(self.exact_bytes_left())
+    }
+
+    pub fn exact_bytes_left(&self) -> u64 {
+        self.bytes_left
     }
 
     /// Turns this iterator into a [Stream]

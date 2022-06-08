@@ -9,7 +9,9 @@ use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Prob
 
 pub(crate) use concurrent::{download_bytes_concurrently, download_chunks_concurrently};
 pub(crate) use part_chunks_stream::PartChunksStream;
-pub(crate) use sequential::{download_bytes_sequentially, download_chunks_sequentially};
+pub(crate) use sequential::{
+    download_bytes_sequentially, download_chunks_sequentially, PartsBytesStream,
+};
 
 mod concurrent;
 mod sequential;
@@ -80,12 +82,12 @@ pub mod part_chunks_stream {
     use tracing::{debug_span, Span};
 
     use crate::{
-        condow_client::CondowClient,
+        condow_client::{ClientBytesStream, CondowClient},
         errors::CondowError,
         machinery::part_request::PartRequest,
         probe::Probe,
         retry::ClientRetryWrapper,
-        streams::{BytesStream, Chunk, ChunkStreamItem},
+        streams::{Chunk, ChunkStreamItem},
         InclusiveRange,
     };
 
@@ -134,7 +136,7 @@ pub mod part_chunks_stream {
             get_part_stream: &dyn Fn(
                 InclusiveRange,
             )
-                -> BoxFuture<'static, Result<BytesStream, CondowError>>,
+                -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>,
             part_request: PartRequest,
             probe: Arc<dyn Probe>,
             parent: &Span,
@@ -159,7 +161,7 @@ pub mod part_chunks_stream {
     }
 
     struct StreamingPart {
-        bytes_stream: BytesStream,
+        bytes_stream: ClientBytesStream,
         chunk_index: usize,
         blob_offset: u64,
         range_offset: u64,
@@ -169,7 +171,7 @@ pub mod part_chunks_stream {
     enum State {
         /// A future to yield a [BytesStream] was created. It needs to be polled
         /// until it retuns the stream.
-        GettingStream(BoxFuture<'static, Result<BytesStream, CondowError>>),
+        GettingStream(BoxFuture<'static, Result<ClientBytesStream, CondowError>>),
         Streaming(StreamingPart),
         /// Nothing to do anymore. Always return `None`.
         Finished,

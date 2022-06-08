@@ -35,9 +35,8 @@ use condow_core::config::Config;
 use condow_core::errors::http_status_to_error;
 pub use condow_core::*;
 use condow_core::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     errors::CondowError,
-    streams::{BytesHint, BytesStream},
 };
 
 #[derive(Clone)]
@@ -78,7 +77,7 @@ impl CondowClient for HttpClient {
         &self,
         location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         dbg!(range);
         let client = self.client.clone();
         Box::pin(async move {
@@ -91,17 +90,15 @@ impl CondowClient for HttpClient {
                 let hint = if status == StatusCode::PARTIAL_CONTENT {
                     let range = header_as_str(res.headers(), &CONTENT_RANGE)?;
                     match ContentRange::parse(range) {
-                        ContentRange::Bytes(r) => {
-                            BytesHint::new_exact(r.last_byte - r.first_byte + 1)
-                        }
-                        _ => BytesHint::new_no_hint(),
+                        ContentRange::Bytes(r) => (r.last_byte - r.first_byte + 1) as u64,
+                        _ => range.len() as u64,
                     }
                 } else {
-                    BytesHint::new_exact(parse_content_length(res.headers())?)
+                    parse_content_length(res.headers())?
                 };
                 let stream = res.bytes_stream().map_err(reqwest_error_to_condow_error);
 
-                let stream = BytesStream::new(stream, hint);
+                let stream = ClientBytesStream::new(stream, hint);
 
                 Ok(stream)
             } else {

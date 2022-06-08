@@ -11,7 +11,7 @@ use crate::{
 
 use super::active_pull;
 
-use parts_bytes_stream::PartsBytesStream;
+pub(crate) use parts_bytes_stream::PartsBytesStream;
 
 pub mod part_bytes_stream;
 pub mod parts_bytes_stream;
@@ -84,13 +84,13 @@ mod download_parts_seq {
     use pin_project_lite::pin_project;
 
     use crate::{
-        condow_client::CondowClient,
+        condow_client::{ClientBytesStream, CondowClient},
         config::LogDownloadMessagesAsDebug,
         errors::CondowError,
         machinery::{download::PartChunksStream, part_request::PartRequest, DownloadSpanGuard},
         probe::Probe,
         retry::ClientRetryWrapper,
-        streams::{BytesStream, ChunkStreamItem},
+        streams::ChunkStreamItem,
         InclusiveRange,
     };
     /// Internal state of the stream.
@@ -106,7 +106,7 @@ mod download_parts_seq {
         ///
         /// Parts are downloaded sequentially
         pub (crate) struct DownloadPartsSeq {
-            get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>> + Send + 'static>,
+            get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> + Send + 'static>,
             part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
             state: State,
             probe: Arc<dyn Probe>,
@@ -127,7 +127,7 @@ mod download_parts_seq {
         where
             I: Iterator<Item = PartRequest> + Send + 'static,
             L: Into<LogDownloadMessagesAsDebug>,
-            F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
+            F: Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>
                 + Send
                 + 'static,
         {
