@@ -6,11 +6,12 @@ use crate::{
     machinery::{configure_download::DownloadConfiguration, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesStream, ChunkStream},
+    streams::{BytesHint, BytesStream, ChunkStream},
 };
 
 use super::active_pull;
 
+pub(crate) use download_parts_seq::DownloadPartsSeq;
 pub(crate) use parts_bytes_stream::PartsBytesStream;
 
 pub mod part_bytes_stream;
@@ -28,8 +29,8 @@ pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
 
-    let bytes_hint = configuration.bytes_hint();
-    let poll_parts = download_parts_seq::DownloadPartsSeq::from_client(
+    let bytes_hint = BytesHint::new_exact(configuration.exact_bytes());
+    let stream = download_parts_seq::DownloadPartsSeq::from_client(
         client,
         configuration.location,
         configuration.part_requests,
@@ -39,10 +40,10 @@ pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     );
 
     if *ensure_active_pull {
-        let active_stream = active_pull(poll_parts, probe, log_dl_msg_dbg);
+        let active_stream = active_pull(stream, probe, log_dl_msg_dbg);
         ChunkStream::from_receiver(active_stream, bytes_hint)
     } else {
-        ChunkStream::from_stream(poll_parts.boxed(), bytes_hint)
+        ChunkStream::from_download_parts_seq(stream, bytes_hint)
     }
 }
 
@@ -55,7 +56,7 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
 
-    let bytes_hint = configuration.bytes_hint();
+    let exact_bytes = configuration.exact_bytes();
 
     let stream = PartsBytesStream::from_client(
         client,
@@ -64,13 +65,14 @@ pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
         probe.clone(),
         log_dl_msg_dbg,
         download_span_guard.shared_span(),
-    );
+    )
+    .exact_bytes(exact_bytes);
 
     if *ensure_active_pull {
         let active_stream = active_pull(stream, probe, log_dl_msg_dbg);
-        BytesStream::new_tokio_receiver(active_stream, bytes_hint)
+        BytesStream::new_tokio_receiver(active_stream, BytesHint::new_exact(exact_bytes))
     } else {
-        BytesStream::new(stream, bytes_hint)
+        BytesStream::new_parts_bytes_stream(stream)
     }
 }
 mod download_parts_seq {

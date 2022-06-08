@@ -19,7 +19,7 @@ use crate::{
     },
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::BytesStreamItem,
+    streams::{BytesHint, BytesStreamItem},
     InclusiveRange,
 };
 
@@ -132,9 +132,9 @@ impl PartsBytesStream {
         self
     }
 
-    // pub fn bytes_hint(&self) -> BytesHint {
-    //          BytesHint::new_exact(self.bytes_left)
-    // }
+    pub fn bytes_hint(&self) -> BytesHint {
+        BytesHint::new_exact(self.bytes_left)
+    }
 }
 
 impl Stream for PartsBytesStream {

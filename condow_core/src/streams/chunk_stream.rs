@@ -7,7 +7,13 @@ use futures::{future, ready, stream::BoxStream, Stream, StreamExt, TryStreamExt}
 use pin_project_lite::pin_project;
 use tokio::sync::mpsc;
 
-use crate::{errors::CondowError, streams::ChunkStreamItem};
+use crate::{
+    errors::CondowError,
+    machinery::download::{
+        DownloadPartsSeq, FourPartsConcurrently, ThreePartsConcurrently, TwoPartsConcurrently,
+    },
+    streams::ChunkStreamItem,
+};
 
 use super::{BytesHint, Chunk, OrderedChunkStream};
 
@@ -52,7 +58,7 @@ impl ChunkStream {
     }
 
     pub fn from_stream(stream: BoxStream<'static, ChunkStreamItem>, bytes_hint: BytesHint) -> Self {
-        let source = SourceFlavour::Stream { stream };
+        let source = SourceFlavour::StreamDyn { stream };
 
         Self {
             bytes_hint,
@@ -206,21 +212,77 @@ impl ChunkStream {
         self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
             .await
     }
+
+    pub(crate) fn from_two_concurrently(
+        stream: TwoPartsConcurrently,
+        bytes_hint: BytesHint,
+    ) -> Self {
+        let source = SourceFlavour::TwoConcurrently { stream };
+
+        Self {
+            bytes_hint,
+            source,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
+
+    pub(crate) fn from_three_concurrently(
+        stream: ThreePartsConcurrently,
+        bytes_hint: BytesHint,
+    ) -> Self {
+        let source = SourceFlavour::ThreeConcurrently { stream };
+
+        Self {
+            bytes_hint,
+            source,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
+
+    pub(crate) fn from_four_concurrently(
+        stream: FourPartsConcurrently,
+        bytes_hint: BytesHint,
+    ) -> Self {
+        let source = SourceFlavour::FourConcurrently { stream };
+
+        Self {
+            bytes_hint,
+            source,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
+
+    pub(crate) fn from_download_parts_seq(stream: DownloadPartsSeq, bytes_hint: BytesHint) -> Self {
+        let source = SourceFlavour::DownloadPartsSeq { stream };
+
+        Self {
+            bytes_hint,
+            source,
+            is_closed: false,
+            is_fresh: true,
+        }
+    }
 }
 
 pin_project! {
     #[project = SourceFlavourProj]
     enum SourceFlavour {
-         Channel{#[pin] receiver: mpsc::UnboundedReceiver<ChunkStreamItem>},
-         Stream{#[pin] stream: BoxStream<'static, ChunkStreamItem>},
+        TwoConcurrently{#[pin] stream: TwoPartsConcurrently},
+        ThreeConcurrently{#[pin] stream: ThreePartsConcurrently},
+        FourConcurrently{#[pin] stream: FourPartsConcurrently},
+        DownloadPartsSeq{#[pin] stream: DownloadPartsSeq},
+        Channel{#[pin] receiver: mpsc::UnboundedReceiver<ChunkStreamItem>},
+        StreamDyn{#[pin] stream: BoxStream<'static, ChunkStreamItem>},
     }
 }
 
 impl SourceFlavour {
     fn close(&mut self) {
-        match self {
-            SourceFlavour::Channel { receiver } => receiver.close(),
-            SourceFlavour::Stream { .. } => {}
+        if let SourceFlavour::Channel { receiver } = self {
+            receiver.close()
         }
     }
 }
@@ -231,7 +293,11 @@ impl Stream for SourceFlavour {
         let this = self.project();
 
         match this {
-            SourceFlavourProj::Stream { stream } => stream.poll_next(cx),
+            SourceFlavourProj::StreamDyn { stream } => stream.poll_next(cx),
+            SourceFlavourProj::TwoConcurrently { stream } => stream.poll_next(cx),
+            SourceFlavourProj::ThreeConcurrently { stream } => stream.poll_next(cx),
+            SourceFlavourProj::FourConcurrently { stream } => stream.poll_next(cx),
+            SourceFlavourProj::DownloadPartsSeq { stream } => stream.poll_next(cx),
             SourceFlavourProj::Channel { mut receiver } => receiver.poll_recv(cx),
         }
     }

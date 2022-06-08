@@ -7,10 +7,13 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
 
-pub(crate) use concurrent::{download_bytes_concurrently, download_chunks_concurrently};
+pub(crate) use concurrent::{
+    download_bytes_concurrently, download_chunks_concurrently, FourPartsConcurrently,
+    ThreePartsConcurrently, TwoPartsConcurrently,
+};
 pub(crate) use part_chunks_stream::PartChunksStream;
 pub(crate) use sequential::{
-    download_bytes_sequentially, download_chunks_sequentially, PartsBytesStream,
+    download_bytes_sequentially, download_chunks_sequentially, DownloadPartsSeq, PartsBytesStream,
 };
 
 mod concurrent;

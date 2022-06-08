@@ -140,7 +140,7 @@ impl OrderedChunkStream {
     }
 
     pub fn into_bytes_stream(self) -> BytesStream {
-        BytesStream::from_chunk_stream(self)
+        BytesStream::new_chunk_stream(self)
     }
 
     /// Counts the number of bytes downloaded
