@@ -3,9 +3,10 @@ use std::{
     task::{Context, Poll},
 };
 
+use anyhow::Error as AnyError;
 use futures::{future, ready, stream::BoxStream, Stream, StreamExt, TryStreamExt};
 use pin_project_lite::pin_project;
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{
     errors::CondowError,
@@ -17,6 +18,24 @@ use crate::{
 };
 
 use super::{BytesHint, Chunk, OrderedChunkStream};
+
+pub struct ChunkStreamSink {
+    sender: UnboundedSender<ChunkStreamItem>,
+}
+
+impl ChunkStreamSink {
+    pub(crate) fn new(sender: UnboundedSender<ChunkStreamItem>) -> Self {
+        Self { sender }
+    }
+
+    pub fn consume(&self, item: ChunkStreamItem) -> Result<(), AnyError> {
+        self.sender.send(item).map_err(From::from)
+    }
+
+    pub fn another_one(&self) -> Self {
+        Self::new(self.sender.clone())
+    }
+}
 
 pin_project! {
     /// A stream of [Chunk]s received from the network
@@ -34,14 +53,12 @@ pin_project! {
 }
 
 impl ChunkStream {
-    pub fn new_channel_sink_pair(
-        bytes_hint: BytesHint,
-    ) -> (Self, mpsc::UnboundedSender<ChunkStreamItem>) {
+    pub fn new_channel_sink_pair(bytes_hint: BytesHint) -> (Self, ChunkStreamSink) {
         let (tx, receiver) = mpsc::unbounded_channel();
 
         let me = Self::from_receiver(receiver, bytes_hint);
-
-        (me, tx)
+        let sink = ChunkStreamSink::new(tx);
+        (me, sink)
     }
 
     pub fn from_receiver(

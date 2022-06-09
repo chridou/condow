@@ -9,7 +9,7 @@ use std::{
 };
 
 use futures::StreamExt;
-use tokio::sync::mpsc::{self, error::TrySendError, Sender, UnboundedSender};
+use tokio::sync::mpsc::{self, error::TrySendError, Sender};
 use tracing::{debug, debug_span, info, trace, warn, Instrument, Span};
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
     errors::CondowError,
     machinery::{part_request::PartRequest, DownloadSpanGuard},
     probe::Probe,
-    streams::{Chunk, ChunkStreamItem},
+    streams::{Chunk, ChunkStreamSink},
 };
 
 use super::KillSwitch;
@@ -124,7 +124,7 @@ pub(crate) struct DownloaderContext<P: Probe + Clone> {
     counter: Arc<AtomicUsize>,
     kill_switch: KillSwitch,
     probe: P,
-    results_sender: UnboundedSender<ChunkStreamItem>,
+    results_sender: ChunkStreamSink,
     completed: bool,
     /// This must exist for the whole download
     download_span_guard: DownloadSpanGuard,
@@ -133,7 +133,7 @@ pub(crate) struct DownloaderContext<P: Probe + Clone> {
 
 impl<P: Probe + Clone> DownloaderContext<P> {
     pub fn new(
-        results_sender: UnboundedSender<ChunkStreamItem>,
+        results_sender: ChunkStreamSink,
         counter: Arc<AtomicUsize>,
         kill_switch: KillSwitch,
         probe: P,
@@ -155,7 +155,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
     }
 
     pub fn send_chunk(&self, chunk: Chunk) -> Result<(), ()> {
-        if self.results_sender.send(Ok(chunk)).is_ok() {
+        if self.results_sender.consume(Ok(chunk)).is_ok() {
             return Ok(());
         }
 
@@ -166,7 +166,7 @@ impl<P: Probe + Clone> DownloaderContext<P> {
 
     /// Send an error and mark as completed
     pub fn send_err(&mut self, err: CondowError) {
-        let _ = self.results_sender.send(Err(err));
+        let _ = self.results_sender.consume(Err(err));
         self.completed = true;
         self.kill_switch.push_the_button();
     }
@@ -198,7 +198,7 @@ impl<P: Probe + Clone> Drop for DownloaderContext<P> {
             } else {
                 CondowError::new_other("download ended unexpectetly")
             };
-            let _ = self.results_sender.send(Err(err));
+            let _ = self.results_sender.consume(Err(err));
         }
 
         let remaining_contexts = self.counter.fetch_sub(1, Ordering::SeqCst);

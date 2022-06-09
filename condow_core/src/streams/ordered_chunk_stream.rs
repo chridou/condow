@@ -311,7 +311,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -344,7 +344,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 let chunk = Chunk {
                     part_index: 0,
@@ -354,7 +354,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -387,7 +387,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 0,
@@ -396,7 +396,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -429,7 +429,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -438,7 +438,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 0,
@@ -447,7 +447,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -456,7 +456,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -489,7 +489,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 0,
@@ -498,7 +498,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -507,7 +507,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -516,7 +516,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -549,7 +549,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 0,
@@ -558,7 +558,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -567,7 +567,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -576,7 +576,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -609,7 +609,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 0,
@@ -618,7 +618,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -651,7 +651,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -660,7 +660,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 0,
@@ -669,7 +669,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -678,7 +678,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -711,7 +711,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 0,
@@ -720,7 +720,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -729,7 +729,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -738,7 +738,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
@@ -771,7 +771,7 @@ mod tests {
                     bytes: Bytes::from_static(&[3]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 0,
@@ -780,7 +780,7 @@ mod tests {
                     bytes: Bytes::from_static(&[1]),
                     bytes_left: 1,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 0,
                     chunk_index: 1,
@@ -789,7 +789,7 @@ mod tests {
                     bytes: Bytes::from_static(&[2]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
                 let chunk = Chunk {
                     part_index: 1,
                     chunk_index: 1,
@@ -798,7 +798,7 @@ mod tests {
                     bytes: Bytes::from_static(&[4]),
                     bytes_left: 0,
                 };
-                tx.send(Ok(chunk)).unwrap();
+                tx.consume(Ok(chunk)).unwrap();
 
                 drop(tx); // Close the channel! Otherwise the stream does not end!
 
