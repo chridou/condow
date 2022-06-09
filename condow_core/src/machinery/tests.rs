@@ -37,7 +37,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -77,7 +77,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -118,7 +118,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -160,7 +160,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -204,7 +204,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -247,7 +247,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -292,7 +292,7 @@ mod download_chunks {
                     .unwrap();
 
                 let result = download_chunks(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -439,7 +439,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -479,7 +479,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -520,7 +520,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -562,7 +562,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -606,7 +606,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -649,7 +649,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,
@@ -694,7 +694,7 @@ mod download_bytes {
                     .unwrap();
 
                 let result = download_bytes(
-                    condow.client,
+                    condow.retry_client(),
                     condow.config,
                     IgnoreLocation,
                     0..100,

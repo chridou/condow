@@ -1,3 +1,5 @@
+use crate::{condow_client::CondowClient, config::ClientRetryWrapper, probe::ProbeFactory, Condow};
+
 mod blob {
     /*
     use std::sync::Arc;
@@ -79,6 +81,12 @@ mod blob {
             }
         }
     }*/
+}
+
+impl<C: CondowClient, PF: ProbeFactory> Condow<C, PF> {
+    pub fn retry_client(&self) -> ClientRetryWrapper<C> {
+        ClientRetryWrapper::new(self.client.clone(), self.config.retries)
+    }
 }
 
 mod range {
@@ -163,7 +171,7 @@ mod range {
                             let expected_range_end = (end_incl as usize + 1).min(data.len());
 
                             let result_stream = machinery::download_chunks(
-                                condow.client.clone(),
+                                condow.retry_client(),
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
@@ -213,7 +221,7 @@ mod range {
                             let expected_range_end = (end_excl as usize).min(data.len());
 
                             let result_stream = machinery::download_chunks(
-                                condow.client.clone(),
+                                condow.retry_client(),
                                 condow.config.clone(),
                                 IgnoreLocation,
                                 range.clone(),
@@ -272,7 +280,7 @@ mod range {
                                         (end_incl as usize + 1).min(data.len());
 
                                     let result_stream = machinery::download_chunks(
-                                        condow.client.clone(),
+                                        condow.retry_client(),
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
@@ -322,7 +330,7 @@ mod range {
                                     let expected_range_end = (end_excl as usize).min(data.len());
 
                                     let result_stream = machinery::download_chunks(
-                                        condow.client.clone(),
+                                        condow.retry_client(),
                                         condow.config.clone(),
                                         IgnoreLocation,
                                         range,
@@ -383,7 +391,7 @@ mod range {
                                             (end_incl as usize + 1).min(data.len());
 
                                         let result_stream = machinery::download_chunks(
-                                            condow.client.clone(),
+                                            condow.retry_client(),
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
@@ -440,7 +448,7 @@ mod range {
                                             (end_excl as usize).min(data.len());
 
                                         let result_stream = machinery::download_chunks(
-                                            condow.client.clone(),
+                                            condow.retry_client(),
                                             condow.config.clone(),
                                             IgnoreLocation,
                                             range,
