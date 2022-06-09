@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.19.0-alpha.2 - 2022-06-10
+
+### ADDED
+
+- Fast path for small downloads
+### FIXED
+
+- respect retry reconfiguration
+
 ## 0.19.0-alpha.1 - 2022-06-09
 
 ### CHANGED

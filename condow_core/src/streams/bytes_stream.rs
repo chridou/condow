@@ -15,7 +15,7 @@ use tokio::sync::mpsc as tokio_mpsc;
 
 use crate::{
     errors::CondowError,
-    machinery::download::{ActiveStream, PartsBytesStream},
+    machinery::download::{ActiveStream, PartsBytesStream, ShortPathTerminator},
     streams::BytesHint,
     streams::OrderedChunkStream,
 };
@@ -95,6 +95,10 @@ impl BytesStream {
         Self::once(Ok(bytes))
     }
 
+    pub fn once_err(error: CondowError) -> Self {
+        Self::once(Err(error))
+    }
+
     pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
         self.map_err(From::from)
     }
@@ -110,6 +114,13 @@ impl BytesStream {
     pub(crate) fn new_active_stream(stream: ActiveStream<Bytes>, bytes_hint: BytesHint) -> Self {
         Self {
             source: SourceFlavour::ActiveStream { stream },
+            bytes_hint,
+        }
+    }
+
+    pub(crate) fn new_short_path(stream: ShortPathTerminator, bytes_hint: BytesHint) -> Self {
+        Self {
+            source: SourceFlavour::ShortPath { stream },
             bytes_hint,
         }
     }
@@ -222,6 +233,7 @@ pin_project! {
         DynStream{#[pin] stream: BoxStream<'static, BytesStreamItem>},
         PartsBytesStream{#[pin] stream: PartsBytesStream },
         ChunksOrdered{#[pin] stream: OrderedChunkStream},
+        ShortPath{#[pin] stream: ShortPathTerminator},
         ActiveStream{#[pin] stream: ActiveStream<Bytes>},
         TokioChannel{#[pin] receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>},
         FuturesChannel{#[pin] receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>},
@@ -245,6 +257,11 @@ impl Stream for SourceFlavour {
             },
             SourceFlavourProj::ChunksOrdered { stream } => match stream.poll_next(cx) {
                 Poll::Ready(Some(res)) => Poll::Ready(Some(res.map(|chunk| chunk.bytes))),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            },
+            SourceFlavourProj::ShortPath { stream } => match stream.poll_next(cx) {
+                Poll::Ready(Some(res)) => Poll::Ready(Some(res)),
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },

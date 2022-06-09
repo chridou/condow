@@ -29,7 +29,7 @@ use crate::{
 /// * `Part`: The downloaded range is split into parts of certain ranges which are downloaded concurrently
 /// * `Chunk`: A chunk of bytes received from the network (or else). Multiple chunks make up a part.
 pub struct Condow<C, PF = ()> {
-    pub(crate) client: ClientRetryWrapper<C>,
+    pub(crate) client: C,
     pub(crate) config: Config,
     pub(crate) probe_factory: Option<Arc<PF>>,
 }
@@ -54,7 +54,7 @@ where
     pub fn new(client: C, config: Config) -> Result<Condow<C, ()>, AnyError> {
         let config = config.validated()?;
         Ok(Condow {
-            client: ClientRetryWrapper::new(client, config.retries.clone()),
+            client,
             config,
             probe_factory: None,
         })
@@ -96,7 +96,9 @@ where
 
     /// Get the size of a BLOB at the given location
     pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
-        self.client.get_size(location.into(), &()).await
+        let location = location.into();
+        let retry_wrapper = ClientRetryWrapper::new(self.client.clone(), self.config.retries);
+        retry_wrapper.get_size(location.into(), &()).await
     }
 }
 
@@ -273,13 +275,14 @@ where
     C: CondowClient,
     PF: ProbeFactory,
 {
+    let retry_wrapper = ClientRetryWrapper::new(condow.client.clone(), condow.config.retries);
     match (
         params.probe,
         condow.probe_factory.as_ref().map(|f| f.make(&location)),
     ) {
         (None, None) => {
             machinery::download_chunks(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -290,7 +293,7 @@ where
         }
         (Some(request_probe), None) => {
             machinery::download_chunks(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -301,7 +304,7 @@ where
         }
         (None, Some(factory_probe)) => {
             machinery::download_chunks(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -312,7 +315,7 @@ where
         }
         (Some(request_probe), Some(factory_probe)) => {
             machinery::download_chunks(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -333,13 +336,14 @@ where
     C: CondowClient,
     PF: ProbeFactory,
 {
+    let retry_wrapper = ClientRetryWrapper::new(condow.client.clone(), condow.config.retries);
     match (
         params.probe,
         condow.probe_factory.as_ref().map(|f| f.make(&location)),
     ) {
         (None, None) => {
             machinery::download_bytes(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -350,7 +354,7 @@ where
         }
         (Some(request_probe), None) => {
             machinery::download_bytes(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -361,7 +365,7 @@ where
         }
         (None, Some(factory_probe)) => {
             machinery::download_bytes(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -372,7 +376,7 @@ where
         }
         (Some(request_probe), Some(factory_probe)) => {
             machinery::download_bytes(
-                condow.client,
+                retry_wrapper,
                 params.config,
                 location,
                 params.range,
@@ -393,21 +397,20 @@ where
     C: CondowClient,
     PF: ProbeFactory,
 {
+    let retry_wrapper = ClientRetryWrapper::new(condow.client.clone(), condow.config.retries);
     match (
         params.probe,
         condow.probe_factory.as_ref().map(|f| f.make(&location)),
     ) {
-        (None, None) => condow.client.get_size(location, &()).await,
+        (None, None) => retry_wrapper.get_size(location, &()).await,
         (Some(request_probe), None) => {
-            condow
-                .client
+            retry_wrapper
                 .get_size(location, &ProbeInternal::RequestProbe::<()>(request_probe))
                 .await
         }
-        (None, Some(factory_probe)) => condow.client.get_size(location, &factory_probe).await,
+        (None, Some(factory_probe)) => retry_wrapper.get_size(location, &factory_probe).await,
         (Some(request_probe), Some(factory_probe)) => {
-            condow
-                .client
+            retry_wrapper
                 .get_size(
                     location,
                     &ProbeInternal::FactoryAndRequestProbe(factory_probe, request_probe),
