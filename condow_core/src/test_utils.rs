@@ -12,7 +12,7 @@ use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use tokio::time;
 
 use crate::{
-    condow_client::{CondowClient, IgnoreLocation},
+    condow_client::{ClientBytesStream, CondowClient, IgnoreLocation},
     config::Config,
     errors::CondowError,
     request::{Params, RequestAdapter},
@@ -26,7 +26,6 @@ use self::stream_penderizer::{Penderizer, PenderizerModule};
 pub struct TestCondowClient {
     pub data: Arc<Vec<u8>>,
     pub max_jitter_ms: usize,
-    pub include_size_hint: bool,
     pub max_chunk_size: usize,
     pub pending_on_stream_module: Option<PenderizerModule>,
     pub pending_on_requests_module: Option<Mutex<PenderizerModule>>,
@@ -38,7 +37,6 @@ impl TestCondowClient {
         Self {
             data: Arc::new(create_test_data()),
             max_jitter_ms: 0,
-            include_size_hint: true,
             max_chunk_size: 10,
             pending_on_stream_module: None,
             pending_on_requests_module: None,
@@ -68,11 +66,6 @@ impl TestCondowClient {
         self
     }
 
-    pub fn include_size_hint(mut self, include_size_hint: bool) -> Self {
-        self.include_size_hint = include_size_hint;
-        self
-    }
-
     pub fn data(&self) -> Arc<Vec<u8>> {
         Arc::clone(&self.data)
     }
@@ -94,7 +87,6 @@ impl Clone for TestCondowClient {
         Self {
             data: Arc::clone(&self.data),
             max_jitter_ms: self.max_jitter_ms,
-            include_size_hint: self.include_size_hint,
             max_chunk_size: self.max_chunk_size,
             pending_on_stream_module: self.pending_on_stream_module,
             pending_on_requests_module,
@@ -124,7 +116,10 @@ impl CondowClient for TestCondowClient {
         &self,
         _location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<crate::streams::BytesStream, crate::errors::CondowError>> {
+    ) -> BoxFuture<
+        'static,
+        Result<crate::condow_client::ClientBytesStream, crate::errors::CondowError>,
+    > {
         let should_be_pending = if let Some(module) = &self.pending_on_requests_module {
             module.lock().unwrap().return_pending()
         } else {
@@ -153,11 +148,7 @@ impl CondowClient for TestCondowClient {
 
             let slice = &me.data[range];
 
-            let bytes_hint = if me.include_size_hint {
-                BytesHint::new_exact(slice.len() as u64)
-            } else {
-                BytesHint::new_no_hint()
-            };
+            let exact_bytes_left = slice.len() as u64;
 
             let iter = slice
                 .chunks(me.max_chunk_size)
@@ -175,12 +166,13 @@ impl CondowClient for TestCondowClient {
                 bytes
             });
 
-            let stream: BytesStream = if let Some(pending_module) = me.pending_on_stream_module {
-                let stream_with_pending = Penderizer::new(stream, pending_module);
-                BytesStream::new(stream_with_pending.boxed(), bytes_hint)
-            } else {
-                BytesStream::new(stream.boxed(), bytes_hint)
-            };
+            let stream: ClientBytesStream =
+                if let Some(pending_module) = me.pending_on_stream_module {
+                    let stream_with_pending = Penderizer::new(stream, pending_module);
+                    ClientBytesStream::new(stream_with_pending.boxed(), exact_bytes_left)
+                } else {
+                    ClientBytesStream::new(stream.boxed(), exact_bytes_left)
+                };
 
             Ok(stream)
         }
@@ -301,7 +293,7 @@ pub fn create_chunk_stream(
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.send(chunk);
+        let _ = tx.consume(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -394,7 +386,7 @@ pub fn create_chunk_stream_with_err(
     let mut err_sent = chunks_left_until_err == 0;
     loop {
         if chunks_left_until_err == 0 {
-            let _ = tx.send(Err(CondowError::new_other("forced stream error")));
+            let _ = tx.consume(Err(CondowError::new_other("forced stream error")));
             err_sent = true;
             break;
         }
@@ -403,7 +395,7 @@ pub fn create_chunk_stream_with_err(
 
         let part = &mut parts[n];
         let chunk = part.remove(0);
-        let _ = tx.send(chunk);
+        let _ = tx.consume(chunk);
         if part.is_empty() {
             parts.remove(n);
         }
@@ -414,7 +406,7 @@ pub fn create_chunk_stream_with_err(
     }
 
     if !err_sent {
-        let _ = tx.send(Err(CondowError::new_other("forced stream error after end")));
+        let _ = tx.consume(Err(CondowError::new_other("forced stream error after end")));
     }
 
     (chunk_stream, values)
@@ -587,7 +579,7 @@ fn make_a_stream(
                     if let Some(pattern) = pattern {
                         (chunk_index, pattern)
                     } else {
-                        let _ = tx.send(Err(CondowError::new_other("test error")));
+                        let _ = tx.consume(Err(CondowError::new_other("test error")));
                         break;
                     }
                 } else {
@@ -607,7 +599,7 @@ fn make_a_stream(
                 bytes_left,
             };
 
-            let _ = tx.send(Ok(chunk));
+            let _ = tx.consume(Ok(chunk));
 
             start = end_excl;
         }

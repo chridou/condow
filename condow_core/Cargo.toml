@@ -1,6 +1,6 @@
 [package]
 name = "condow_core"
-version = "0.18.2"
+version = "0.19.0-alpha.1"
 authors = ["Christian Douven <chridou@users.noreply.github.com>"]
 readme = "README.md"
 license = "Apache-2.0/MIT"
@@ -16,6 +16,7 @@ pin-project-lite = "0.2"
 bytes = "1"
 futures = "0.3"
 tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
+tokio-stream = "0.1.9"
 thiserror = "1.0"
 anyhow = "1.0"
 tracing = "0.1"

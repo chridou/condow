@@ -11,22 +11,22 @@ use pin_project_lite::pin_project;
 use tracing::Span;
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     config::LogDownloadMessagesAsDebug,
     errors::CondowError,
     machinery::{
-        download::sequential::part_bytes_stream::PartBytesStream, part_request::PartRequest,
+        download::sequential::part_bytes_stream::PartBytesStream, part_request::PartRequestIterator,
     },
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::{BytesStream, BytesStreamItem},
+    streams::{BytesHint, BytesStreamItem},
     InclusiveRange,
 };
 
 /// Internal state of the stream.
-enum State<P: Probe> {
+enum State {
     /// We are streming the [Chunk]s of a part.
-    Streaming(PartBytesStream<P>),
+    Streaming(PartBytesStream),
     /// Nothing more to do. Always return `None`
     Finished,
 }
@@ -35,36 +35,34 @@ pin_project! {
     /// A stream which returns [ChunkStreamItem]s for all [PartRequest]s of a download.
     ///
     /// Parts are downloaded sequentially
-    pub struct PartsBytesStream<P: Probe> {
-        get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>> + Send + 'static>,
-        part_requests: Box<dyn Iterator<Item=PartRequest> + Send + 'static>,
-        state: State<P>,
-        probe: P,
+    pub struct PartsBytesStream {
+        get_part_stream: Box<dyn Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> + Send + 'static>,
+        part_requests: PartRequestIterator,
+        state: State,
+        probe: Arc<dyn Probe>,
         download_started_at: Instant,
         log_dl_msg_dbg: LogDownloadMessagesAsDebug,
         parent_span: Arc<Span>,
+        bytes_left: u64,
     }
 }
 
-impl<P> PartsBytesStream<P>
-where
-    P: Probe + Clone,
-{
-    pub fn new<I, L, F>(
+impl PartsBytesStream {
+    pub fn new<L, F>(
         get_part_stream: F,
-        mut part_requests: I,
-        probe: P,
+        mut part_requests: PartRequestIterator,
+        probe: Arc<dyn Probe>,
         log_dl_msg_dbg: L,
         parent_span: Arc<Span>,
     ) -> Self
     where
-        I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
-        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<BytesStream, CondowError>>
+        F: Fn(InclusiveRange) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>
             + Send
             + 'static,
     {
         let log_dl_msg_dbg = log_dl_msg_dbg.into();
+        let bytes_left = part_requests.exact_bytes_left();
 
         if let Some(part_request) = part_requests.next() {
             let stream =
@@ -72,12 +70,13 @@ where
 
             Self {
                 get_part_stream: Box::new(get_part_stream),
-                part_requests: Box::new(part_requests),
+                part_requests,
                 state: State::Streaming(stream),
                 probe,
                 download_started_at: Instant::now(),
                 log_dl_msg_dbg,
                 parent_span,
+                bytes_left,
             }
         } else {
             probe.download_completed(Duration::ZERO);
@@ -86,28 +85,29 @@ where
 
             Self {
                 get_part_stream: Box::new(get_part_stream),
-                part_requests: Box::new(part_requests),
+                part_requests,
                 state: State::Finished,
                 probe,
                 download_started_at: Instant::now(),
                 log_dl_msg_dbg,
                 parent_span,
+                bytes_left,
             }
         }
     }
 
-    pub(crate) fn from_client<C, I, L>(
+    pub(crate) fn from_client<C, L, P>(
         client: ClientRetryWrapper<C>,
         location: C::Location,
-        part_requests: I,
+        part_requests: PartRequestIterator,
         probe: P,
         log_dl_msg_dbg: L,
         parent_span: Arc<Span>,
     ) -> Self
     where
-        I: Iterator<Item = PartRequest> + Send + 'static,
         L: Into<LogDownloadMessagesAsDebug>,
         C: CondowClient,
+        P: Probe + Clone,
     {
         let get_part_stream = {
             let probe = probe.clone();
@@ -121,17 +121,23 @@ where
         Self::new(
             get_part_stream,
             part_requests,
-            probe,
+            Arc::new(probe),
             log_dl_msg_dbg,
             parent_span,
         )
     }
+
+    pub fn exact_bytes(mut self, exact_bytes_left: u64) -> Self {
+        self.bytes_left = exact_bytes_left;
+        self
+    }
+
+    pub fn bytes_hint(&self) -> BytesHint {
+        BytesHint::new_exact(self.bytes_left)
+    }
 }
 
-impl<P> Stream for PartsBytesStream<P>
-where
-    P: Probe + Clone,
-{
+impl Stream for PartsBytesStream {
     type Item = BytesStreamItem;
 
     fn poll_next(

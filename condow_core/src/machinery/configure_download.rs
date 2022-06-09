@@ -6,7 +6,6 @@ use crate::{
     errors::CondowError,
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::BytesHint,
     DownloadRange, InclusiveRange,
 };
 
@@ -25,8 +24,8 @@ impl<L> DownloadConfiguration<L> {
     }
 
     /// Retrns a hint on the amount of bytes returned from this stream
-    pub fn bytes_hint(&self) -> BytesHint {
-        self.part_requests.bytes_hint()
+    pub fn exact_bytes(&self) -> u64 {
+        self.part_requests.exact_bytes_left()
     }
 }
 

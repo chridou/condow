@@ -5,10 +5,9 @@ use futures::Future;
 use tracing::warn;
 
 use crate::{
-    condow_client::CondowClient,
+    condow_client::{ClientBytesStream, CondowClient},
     errors::CondowError,
     probe::Probe,
-    streams::{BytesHint, BytesStream},
     InclusiveRange,
 };
 
@@ -384,7 +383,7 @@ where
         location: C::Location,
         range: InclusiveRange,
         probe: P,
-    ) -> impl Future<Output = Result<BytesStream, CondowError>> + Send + 'static {
+    ) -> impl Future<Output = Result<ClientBytesStream, CondowError>> + Send + 'static {
         //debug!("retry client - downloading part");
 
         let inner = Arc::clone(&self.inner);
@@ -394,7 +393,7 @@ where
                 let stream =
                     RetryPartStream::from_client(client, location, range, config.clone(), probe)
                         .await?;
-                Ok(BytesStream::new(stream, BytesHint::new_exact(range.len())))
+                Ok(ClientBytesStream::new(stream, range.len()))
             } else {
                 Ok(client.download(location, range).await?)
             }

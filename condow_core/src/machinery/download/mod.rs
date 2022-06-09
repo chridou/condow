@@ -2,14 +2,22 @@
 //!
 //! Downloads can be done concurrently or sequentially.
 
-use futures::{Stream, StreamExt};
+use std::{collections::VecDeque, task::Poll};
+
+use futures::{ready, Stream, StreamExt};
+use pin_project_lite::pin_project;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::{config::LogDownloadMessagesAsDebug, errors::CondowError, probe::Probe};
 
-pub(crate) use concurrent::{download_bytes_concurrently, download_chunks_concurrently};
+pub(crate) use concurrent::{
+    download_bytes_concurrently, download_chunks_concurrently, FourPartsConcurrently,
+    ThreePartsConcurrently, TwoPartsConcurrently,
+};
 pub(crate) use part_chunks_stream::PartChunksStream;
-pub(crate) use sequential::{download_bytes_sequentially, download_chunks_sequentially};
+pub(crate) use sequential::{
+    download_bytes_sequentially, download_chunks_sequentially, DownloadPartsSeq, PartsBytesStream,
+};
 
 mod concurrent;
 mod sequential;
@@ -26,11 +34,13 @@ pub fn active_pull<St, T, P: Probe>(
     mut input: St,
     probe: P,
     log_dl_msg_dbg: LogDownloadMessagesAsDebug,
-) -> mpsc::UnboundedReceiver<Result<T, CondowError>>
+) -> ActiveStream<T>
 where
     St: Stream<Item = Result<T, CondowError>> + Send + 'static + Unpin,
     T: Send + 'static,
 {
+    const CAPACITY: usize = 16;
+
     let (sender, rx) = mpsc::unbounded_channel();
 
     tokio::spawn(async move {
@@ -40,16 +50,76 @@ where
             log_dl_msg_dbg,
         };
 
+        let mut buffer = VecDeque::with_capacity(CAPACITY);
+
         while let Some(message) = input.next().await {
-            if let Err(_err) = sender.send(message) {
-                break;
+            let payload = match message {
+                Ok(payload) => payload,
+                Err(err) => {
+                    let _ = sender.send(Err(err));
+                    return;
+                }
+            };
+
+            if buffer.len() == buffer.capacity() {
+                let _ = sender.send(Ok(buffer));
+                buffer = VecDeque::with_capacity(CAPACITY);
             }
+
+            buffer.push_back(payload);
+        }
+
+        if !buffer.is_empty() {
+            let _ = sender.send(Ok(buffer));
         }
 
         drop(panic_guard);
     });
 
-    rx
+    ActiveStream::new(rx)
+}
+
+pin_project! {
+pub struct ActiveStream<T> {
+    #[pin]
+    receiver: mpsc::UnboundedReceiver<Result<VecDeque<T>, CondowError>>,
+    next: Option<VecDeque<T>>
+}
+}
+
+impl<T> ActiveStream<T> {
+    pub(crate) fn new(receiver: mpsc::UnboundedReceiver<Result<VecDeque<T>, CondowError>>) -> Self {
+        Self {
+            receiver,
+            next: None,
+        }
+    }
+}
+
+impl<T> Stream for ActiveStream<T> {
+    type Item = Result<T, CondowError>;
+
+    #[inline]
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut this = self.project();
+
+        Poll::Ready(loop {
+            if let Some(queue) = this.next.as_mut() {
+                if let Some(item) = queue.pop_front() {
+                    break Some(Ok(item));
+                } else {
+                    *this.next = None;
+                }
+            } else if let Some(queue) = ready!(this.receiver.as_mut().poll_recv(cx)?) {
+                *this.next = Some(queue);
+            } else {
+                break None;
+            }
+        })
+    }
 }
 
 struct PanicGuard<T> {
@@ -73,19 +143,19 @@ impl<T> Drop for PanicGuard<T> {
 }
 
 pub mod part_chunks_stream {
-    use std::{task::Poll, time::Instant};
+    use std::{sync::Arc, task::Poll, time::Instant};
 
     use futures::{future::BoxFuture, FutureExt, Stream, StreamExt};
     use pin_project_lite::pin_project;
     use tracing::{debug_span, Span};
 
     use crate::{
-        condow_client::CondowClient,
+        condow_client::{ClientBytesStream, CondowClient},
         errors::CondowError,
         machinery::part_request::PartRequest,
         probe::Probe,
         retry::ClientRetryWrapper,
-        streams::{BytesStream, Chunk, ChunkStreamItem},
+        streams::{Chunk, ChunkStreamItem},
         InclusiveRange,
     };
 
@@ -97,27 +167,27 @@ pub mod part_chunks_stream {
         ///
         /// The supplied [Probe] is notified on part events and chunk events.
         /// Global download events are not published.
-        pub struct PartChunksStream<P: Probe> {
+        pub struct PartChunksStream {
             part_request: PartRequest,
             state: State,
-            probe: P,
+            probe: Arc<dyn Probe>,
             started_at: Instant,
             part_span: Span,
         }
     }
 
-    impl<P> PartChunksStream<P>
-    where
-        P: Probe + Clone,
-    {
+    impl PartChunksStream {
         #[allow(dead_code)]
-        pub(crate) fn from_client<C: CondowClient>(
+        pub(crate) fn from_client<C: CondowClient, P>(
             client: &ClientRetryWrapper<C>,
             location: C::Location,
             part_request: PartRequest,
             probe: P,
             parent: &Span,
-        ) -> Self {
+        ) -> Self
+        where
+            P: Probe + Clone,
+        {
             let get_part_stream = {
                 let probe = probe.clone();
                 move |range: InclusiveRange| {
@@ -127,16 +197,16 @@ pub mod part_chunks_stream {
                 }
             };
 
-            Self::new(&get_part_stream, part_request, probe, parent)
+            Self::new(&get_part_stream, part_request, Arc::new(probe), parent)
         }
 
         pub(crate) fn new(
             get_part_stream: &dyn Fn(
                 InclusiveRange,
             )
-                -> BoxFuture<'static, Result<BytesStream, CondowError>>,
+                -> BoxFuture<'static, Result<ClientBytesStream, CondowError>>,
             part_request: PartRequest,
-            probe: P,
+            probe: Arc<dyn Probe>,
             parent: &Span,
         ) -> Self {
             let range = part_request.blob_range;
@@ -159,7 +229,7 @@ pub mod part_chunks_stream {
     }
 
     struct StreamingPart {
-        bytes_stream: BytesStream,
+        bytes_stream: ClientBytesStream,
         chunk_index: usize,
         blob_offset: u64,
         range_offset: u64,
@@ -169,16 +239,13 @@ pub mod part_chunks_stream {
     enum State {
         /// A future to yield a [BytesStream] was created. It needs to be polled
         /// until it retuns the stream.
-        GettingStream(BoxFuture<'static, Result<BytesStream, CondowError>>),
+        GettingStream(BoxFuture<'static, Result<ClientBytesStream, CondowError>>),
         Streaming(StreamingPart),
         /// Nothing to do anymore. Always return `None`.
         Finished,
     }
 
-    impl<P> Stream for PartChunksStream<P>
-    where
-        P: Probe + Clone,
-    {
+    impl Stream for PartChunksStream {
         type Item = ChunkStreamItem;
 
         fn poll_next(
@@ -248,12 +315,6 @@ pub mod part_chunks_stream {
                                 bytes,
                                 bytes_left: streaming_state.bytes_left,
                             };
-
-                            this.probe.chunk_received(
-                                chunk.part_index,
-                                chunk.chunk_index,
-                                bytes_len as usize,
-                            );
 
                             streaming_state.chunk_index += 1;
                             streaming_state.blob_offset += bytes_len;

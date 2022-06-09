@@ -7,7 +7,6 @@ use std::{
 };
 
 use futures::StreamExt;
-use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     condow_client::CondowClient,
@@ -16,7 +15,7 @@ use crate::{
     machinery::{part_request::PartRequestIterator, DownloadSpanGuard},
     probe::Probe,
     retry::ClientRetryWrapper,
-    streams::ChunkStreamItem,
+    streams::ChunkStreamSink,
 };
 
 use worker::{DownloaderContext, SequentialDownloader};
@@ -29,12 +28,12 @@ pub(crate) struct ParallelDownloader<P: Probe + Clone> {
     kill_switch: KillSwitch,
     config: Arc<Config>,
     probe: P,
-    results_sender: UnboundedSender<ChunkStreamItem>,
+    results_sender: ChunkStreamSink,
 }
 
 impl<P: Probe + Clone> ParallelDownloader<P> {
     pub fn new<C: CondowClient>(
-        results_sender: UnboundedSender<ChunkStreamItem>,
+        results_sender: ChunkStreamSink,
         client: ClientRetryWrapper<C>,
         config: Config,
         location: C::Location,
@@ -52,7 +51,7 @@ impl<P: Probe + Clone> ParallelDownloader<P> {
                     location.clone(),
                     config.buffer_size.into(),
                     DownloaderContext::new(
-                        results_sender.clone(),
+                        results_sender.another_one(),
                         Arc::clone(&counter),
                         kill_switch.clone(),
                         probe.clone(),
@@ -102,7 +101,7 @@ impl<P: Probe + Clone> ParallelDownloader<P> {
                     Err(()) => {
                         // This is the only error case and we send it over the channel
                         self.kill_switch.push_the_button();
-                        let _ = self.results_sender.send(Err(CondowError::new_other(
+                        let _ = self.results_sender.consume(Err(CondowError::new_other(
                             "failed to send part request - receiver gone",
                         )));
                         return;

@@ -1,13 +1,11 @@
 //! Components for concurrent downloads
 
-use futures::StreamExt;
-
 use crate::{
     condow_client::CondowClient,
     config::ClientRetryWrapper,
     machinery::{configure_download::DownloadConfiguration, DownloadSpanGuard},
     probe::Probe,
-    streams::{BytesStream, ChunkStream},
+    streams::{BytesHint, BytesStream, ChunkStream},
 };
 
 use self::parallel::ParallelDownloader;
@@ -18,6 +16,10 @@ mod four_concurrently;
 mod parallel;
 mod three_concurrently;
 mod two_concurrently;
+
+pub use four_concurrently::FourPartsConcurrently;
+pub use three_concurrently::ThreePartsConcurrently;
+pub use two_concurrently::TwoPartsConcurrently;
 
 /// Download the chunks concurrently
 ///
@@ -72,7 +74,7 @@ fn download_chunks_parallel<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = configuration.bytes_hint();
+    let bytes_hint = BytesHint::new_exact(configuration.exact_bytes());
 
     let DownloadConfiguration {
         location,
@@ -104,7 +106,7 @@ fn download_chunks_two_concurrently<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = configuration.bytes_hint();
+    let bytes_hint = BytesHint::new_exact(configuration.exact_bytes());
 
     let DownloadConfiguration {
         location,
@@ -115,7 +117,7 @@ fn download_chunks_two_concurrently<C: CondowClient, P: Probe + Clone>(
 
     let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
 
-    let downloader = two_concurrently::TwoPartsConcurrently::from_client(
+    let stream = two_concurrently::TwoPartsConcurrently::from_client(
         client,
         location,
         part_requests,
@@ -125,10 +127,10 @@ fn download_chunks_two_concurrently<C: CondowClient, P: Probe + Clone>(
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
-        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
+        ChunkStream::from_two_concurrently(stream, bytes_hint)
     }
 }
 
@@ -139,7 +141,7 @@ fn download_chunks_three_concurrently<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = configuration.bytes_hint();
+    let bytes_hint = BytesHint::new_exact(configuration.exact_bytes());
 
     let DownloadConfiguration {
         location,
@@ -150,7 +152,7 @@ fn download_chunks_three_concurrently<C: CondowClient, P: Probe + Clone>(
 
     let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
 
-    let downloader = three_concurrently::ThreePartsConcurrently::from_client(
+    let stream = three_concurrently::ThreePartsConcurrently::from_client(
         client,
         location,
         part_requests,
@@ -160,10 +162,10 @@ fn download_chunks_three_concurrently<C: CondowClient, P: Probe + Clone>(
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
-        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
+        ChunkStream::from_three_concurrently(stream, bytes_hint)
     }
 }
 
@@ -174,7 +176,7 @@ fn download_chunks_four_concurrently<C: CondowClient, P: Probe + Clone>(
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> ChunkStream {
-    let bytes_hint = configuration.bytes_hint();
+    let bytes_hint = BytesHint::new_exact(configuration.exact_bytes());
 
     let DownloadConfiguration {
         location,
@@ -185,7 +187,7 @@ fn download_chunks_four_concurrently<C: CondowClient, P: Probe + Clone>(
 
     let log_dl_msg_as_dbg = config.log_download_messages_as_debug;
 
-    let downloader = four_concurrently::FourPartsConcurrently::from_client(
+    let stream = four_concurrently::FourPartsConcurrently::from_client(
         client,
         location,
         part_requests,
@@ -195,9 +197,9 @@ fn download_chunks_four_concurrently<C: CondowClient, P: Probe + Clone>(
     );
 
     if *config.ensure_active_pull {
-        let active_stream = active_pull(downloader, probe, log_dl_msg_as_dbg);
-        ChunkStream::from_receiver(active_stream, bytes_hint)
+        let active_stream = active_pull(stream, probe, log_dl_msg_as_dbg);
+        ChunkStream::from_active_stream(active_stream, bytes_hint)
     } else {
-        ChunkStream::from_stream(downloader.boxed(), bytes_hint)
+        ChunkStream::from_four_concurrently(stream, bytes_hint)
     }
 }

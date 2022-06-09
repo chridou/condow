@@ -37,12 +37,7 @@ use rusoto_s3::{GetObjectError, GetObjectRequest, HeadObjectError, HeadObjectReq
 pub use rusoto_core::Region;
 pub use rusoto_s3::S3Client;
 
-use condow_core::{
-    condow_client::*,
-    config::Config,
-    errors::CondowError,
-    streams::{BytesHint, BytesStream},
-};
+use condow_core::{condow_client::*, config::Config, errors::CondowError};
 
 use condow_core::errors::http_status_to_error;
 pub use condow_core::*;
@@ -311,7 +306,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
         &self,
         location: Self::Location,
         range: InclusiveRange,
-    ) -> BoxFuture<'static, Result<BytesStream, CondowError>> {
+    ) -> BoxFuture<'static, Result<ClientBytesStream, CondowError>> {
         let client = self.0.clone();
         let f = async move {
             let (bucket, object_key) = location.into_inner();
@@ -327,10 +322,10 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
                 .await
                 .map_err(get_obj_err_to_download_err)?;
 
-            let bytes_hint = response
+            let exact_bytes = response
                 .content_length
-                .map(|s| BytesHint::new_exact(s as u64))
-                .unwrap_or_else(BytesHint::new_no_hint);
+                .map(|s| s as u64)
+                .unwrap_or_else(|| range.len());
 
             let stream = if let Some(stream) = response.body {
                 stream
@@ -340,7 +335,7 @@ impl<C: S3 + Clone + Send + Sync + 'static> CondowClient for S3ClientWrapper<C> 
 
             let stream = stream.map_err(From::from);
 
-            Ok(BytesStream::new(stream, bytes_hint))
+            Ok(ClientBytesStream::new(stream, exact_bytes))
         };
 
         Box::pin(f)

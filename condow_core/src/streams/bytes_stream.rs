@@ -13,7 +13,12 @@ use futures::{
 use pin_project_lite::pin_project;
 use tokio::sync::mpsc as tokio_mpsc;
 
-use crate::{errors::CondowError, streams::BytesHint, streams::OrderedChunkStream};
+use crate::{
+    errors::CondowError,
+    machinery::download::{ActiveStream, PartsBytesStream},
+    streams::BytesHint,
+    streams::OrderedChunkStream,
+};
 
 /// Item of a [BytesStream]
 pub type BytesStreamItem = Result<Bytes, CondowError>;
@@ -21,8 +26,7 @@ pub type BytesStreamItem = Result<Bytes, CondowError>;
 pin_project! {
     /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes
     ///
-    /// This stream is fused. It will always return `None` after `None` or an error was
-    /// returned.
+    /// This stream is NOT fused.
     pub struct BytesStream {
         #[pin]
         source: SourceFlavour,
@@ -35,32 +39,6 @@ impl BytesStream {
     where
         St: Stream<Item = BytesStreamItem> + Send + 'static,
     {
-        Self {
-            source: SourceFlavour::DynStream {
-                stream: stream.boxed(),
-            },
-            bytes_hint,
-        }
-    }
-
-    pub fn new_io<St>(stream: St, bytes_hint: BytesHint) -> Self
-    where
-        St: Stream<Item = Result<Bytes, io::Error>> + Send + 'static,
-    {
-        let stream = stream.map_err(From::from);
-        Self {
-            source: SourceFlavour::DynStream {
-                stream: stream.boxed(),
-            },
-            bytes_hint,
-        }
-    }
-
-    pub fn new_io_dyn(
-        stream: BoxStream<'static, Result<Bytes, io::Error>>,
-        bytes_hint: BytesHint,
-    ) -> Self {
-        let stream = stream.map_err(From::from);
         Self {
             source: SourceFlavour::DynStream {
                 stream: stream.boxed(),
@@ -88,7 +66,7 @@ impl BytesStream {
         }
     }
 
-    pub fn from_chunk_stream(stream: OrderedChunkStream) -> Self {
+    pub fn new_chunk_stream(stream: OrderedChunkStream) -> Self {
         let bytes_hint = stream.bytes_hint();
         Self {
             source: SourceFlavour::ChunksOrdered { stream },
@@ -117,12 +95,23 @@ impl BytesStream {
         Self::once(Ok(bytes))
     }
 
-    pub fn bytes_hint(&self) -> BytesHint {
-        self.bytes_hint
-    }
-
     pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
         self.map_err(From::from)
+    }
+
+    pub(crate) fn new_parts_bytes_stream(stream: PartsBytesStream) -> Self {
+        let bytes_hint = stream.bytes_hint();
+        Self {
+            source: SourceFlavour::PartsBytesStream { stream },
+            bytes_hint,
+        }
+    }
+
+    pub(crate) fn new_active_stream(stream: ActiveStream<Bytes>, bytes_hint: BytesHint) -> Self {
+        Self {
+            source: SourceFlavour::ActiveStream { stream },
+            bytes_hint,
+        }
     }
 
     /// Writes all bytes left on the stream into the provided buffer
@@ -198,10 +187,15 @@ impl BytesStream {
         self.try_fold(0u64, |acc, chunk| future::ok(acc + chunk.len() as u64))
             .await
     }
+
+    pub fn bytes_hint(&self) -> BytesHint {
+        self.bytes_hint
+    }
 }
 
 impl Stream for BytesStream {
     type Item = BytesStreamItem;
+
     fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let mut this = self.project();
 
@@ -226,7 +220,9 @@ pin_project! {
     #[project = SourceFlavourProj]
     enum SourceFlavour {
         DynStream{#[pin] stream: BoxStream<'static, BytesStreamItem>},
+        PartsBytesStream{#[pin] stream: PartsBytesStream },
         ChunksOrdered{#[pin] stream: OrderedChunkStream},
+        ActiveStream{#[pin] stream: ActiveStream<Bytes>},
         TokioChannel{#[pin] receiver: tokio_mpsc::UnboundedReceiver<BytesStreamItem>},
         FuturesChannel{#[pin] receiver: futures_mpsc::UnboundedReceiver<BytesStreamItem>},
         Empty,
@@ -242,11 +238,17 @@ impl Stream for SourceFlavour {
 
         match this {
             SourceFlavourProj::DynStream { mut stream } => stream.as_mut().poll_next(cx),
+            SourceFlavourProj::PartsBytesStream { stream } => match stream.poll_next(cx) {
+                Poll::Ready(Some(res)) => Poll::Ready(Some(res)),
+                Poll::Ready(None) => Poll::Ready(None),
+                Poll::Pending => Poll::Pending,
+            },
             SourceFlavourProj::ChunksOrdered { stream } => match stream.poll_next(cx) {
                 Poll::Ready(Some(res)) => Poll::Ready(Some(res.map(|chunk| chunk.bytes))),
                 Poll::Ready(None) => Poll::Ready(None),
                 Poll::Pending => Poll::Pending,
             },
+            SourceFlavourProj::ActiveStream { stream } => stream.poll_next(cx),
             SourceFlavourProj::TokioChannel { mut receiver } => receiver.poll_recv(cx),
             SourceFlavourProj::FuturesChannel { receiver } => receiver.poll_next(cx),
             SourceFlavourProj::Empty => Poll::Ready(None),
