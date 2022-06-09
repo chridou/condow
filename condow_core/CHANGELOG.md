@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Internally no dyn dispatch streams (except from client)
 - No more notification on individual chunks received
+- `CondowClient` got an own bytes stream to be returned on downloads (`ClientBytesStream`)
 
 ## 0.18.2 - 2022-06-07
 
