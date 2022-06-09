@@ -17,6 +17,7 @@ pub(crate) use concurrent::{
 pub(crate) use part_chunks_stream::PartChunksStream;
 pub(crate) use sequential::{
     download_bytes_sequentially, download_chunks_sequentially, DownloadPartsSeq, PartsBytesStream,
+    ShortPathTerminator,
 };
 
 mod concurrent;

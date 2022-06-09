@@ -11,9 +11,11 @@ use super::active_pull;
 
 pub(crate) use download_parts_seq::DownloadPartsSeq;
 pub(crate) use parts_bytes_stream::PartsBytesStream;
+pub(crate) use short_path::ShortPathTerminator;
 
 pub mod part_bytes_stream;
 pub mod parts_bytes_stream;
+mod short_path;
 
 /// Download the parts sequentially.
 ///
@@ -45,12 +47,16 @@ pub(crate) fn download_chunks_sequentially<C: CondowClient, P: Probe + Clone>(
     }
 }
 
-pub(crate) fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
+pub(crate) async fn download_bytes_sequentially<C: CondowClient, P: Probe + Clone>(
     client: ClientRetryWrapper<C>,
     configuration: DownloadConfiguration<C::Location>,
     probe: P,
     download_span_guard: DownloadSpanGuard,
 ) -> BytesStream {
+    if configuration.part_requests.parts_hint() == 1 {
+        return short_path::short_path(client, configuration, probe, download_span_guard).await;
+    }
+
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let log_dl_msg_dbg = configuration.config.log_download_messages_as_debug;
 

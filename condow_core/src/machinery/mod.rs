@@ -96,7 +96,7 @@ pub(crate) async fn download_bytes<C: CondowClient, DR: Into<DownloadRange>, P: 
     probe.download_started();
 
     let stream = if configuration.max_concurrency() <= 1 {
-        download::download_bytes_sequentially(client, configuration, probe, download_guard)
+        download::download_bytes_sequentially(client, configuration, probe, download_guard).await
     } else {
         download::download_bytes_concurrently(client, configuration, probe, download_guard)
     };
