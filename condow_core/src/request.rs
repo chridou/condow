@@ -480,7 +480,7 @@ mod tests {
     async fn request_adapter_typed_compiles() {
         let client = InMemoryClient::<i32>::new_static(b"a remote BLOB");
         let config = Config::default();
-        let client = ClientRetryWrapper::new(client, config.retries.clone());
+        let client = ClientRetryWrapper::new(client, config.retries);
 
         struct FooAdapter {
             client: ClientRetryWrapper<InMemoryClient<i32>>,
@@ -541,7 +541,7 @@ mod tests {
     async fn request_adapter_str_compiles() {
         let client = InMemoryClient::<i32>::new_static(b"a remote BLOB");
         let config = Config::default();
-        let client = ClientRetryWrapper::new(client, config.retries.clone());
+        let client = ClientRetryWrapper::new(client, config.retries);
 
         struct FooAdapter {
             client: ClientRetryWrapper<InMemoryClient<i32>>,
