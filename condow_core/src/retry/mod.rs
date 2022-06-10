@@ -391,8 +391,7 @@ where
             let (client, config) = inner.as_ref();
             if let Some(config) = config {
                 let stream =
-                    RetryPartStream::from_client(client, location, range, *config, probe)
-                        .await?;
+                    RetryPartStream::from_client(client, location, range, *config, probe).await?;
                 Ok(ClientBytesStream::new(stream, range.len()))
             } else {
                 Ok(client.download(location, range).await?)

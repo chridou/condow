@@ -544,6 +544,10 @@ mod download_bytes {
         let blob = (0u8..100).collect::<Vec<_>>();
 
         for &n_concurrency in CONCURRENCIES {
+            if n_concurrency == 1 {
+                // Will take the "short path" which can not catch panics
+                continue;
+            }
             for &seq_mode in SEQ_MODES {
                 let config = Config::default()
                     .max_buffers_full_delay_ms(0)

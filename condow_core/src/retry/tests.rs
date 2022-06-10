@@ -1265,11 +1265,9 @@ mod retry_download_get_stream {
             move |range: InclusiveRange| client.download(IgnoreLocation, range).boxed()
         };
 
-        match gen_retry_get_stream_fn(
-            Arc::new(get_part_stream),
-            config,
-            Arc::new(probe.clone()),
-        )(InclusiveRange(0, 42))
+        match gen_retry_get_stream_fn(Arc::new(get_part_stream), config, Arc::new(probe.clone()))(
+            InclusiveRange(0, 42),
+        )
         .await
         {
             Ok(_) => Ok(probe.0.load(Ordering::SeqCst)),

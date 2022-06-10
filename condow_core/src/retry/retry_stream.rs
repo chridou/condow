@@ -40,8 +40,7 @@ where
         probe: P,
     ) -> Result<Self, CondowError> {
         let probe = Arc::new(probe);
-        let get_stream_fn =
-            gen_retry_get_stream_fn(get_stream_fn, config, Arc::clone(&probe));
+        let get_stream_fn = gen_retry_get_stream_fn(get_stream_fn, config, Arc::clone(&probe));
 
         let initial_stream = get_stream_fn(initial_range).await?;
 
