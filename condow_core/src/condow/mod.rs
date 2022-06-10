@@ -98,7 +98,7 @@ where
     pub async fn get_size<L: Into<C::Location>>(&self, location: L) -> Result<u64, CondowError> {
         let location = location.into();
         let retry_wrapper = ClientRetryWrapper::new(self.client.clone(), self.config.retries);
-        retry_wrapper.get_size(location.into(), &()).await
+        retry_wrapper.get_size(location, &()).await
     }
 }
 

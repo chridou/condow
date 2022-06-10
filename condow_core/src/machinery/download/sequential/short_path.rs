@@ -8,7 +8,6 @@ use crate::{
     condow_client::ClientBytesStream,
     condow_client::CondowClient,
     config::LogDownloadMessagesAsDebug,
-    errors::CondowError,
     machinery::{
         configure_download::DownloadConfiguration, download::active_pull,
         part_request::PartRequest, DownloadSpanGuard,
@@ -31,31 +30,12 @@ pub(crate) async fn short_path<C: CondowClient, P: Probe + Clone>(
     let ensure_active_pull = configuration.config.ensure_active_pull;
     let location = configuration.location;
     let part_request = configuration.part_requests.next().unwrap();
-
-    let client_stream_fut = tokio::spawn({
-        let probe = probe.clone();
-        async move {
-            match client
-                .download(location, part_request.blob_range, probe.clone())
-                .await
-            {
-                Ok(stream) => stream,
-                Err(err) => {
-                    probe.part_failed(&err, 0, &part_request.blob_range);
-                    probe.download_failed(Some(download_started_at.elapsed()));
-                    log_dl_msg_dbg.log(format!("download failed: {err}"));
-
-                    ClientBytesStream::once_err(err)
-                }
-            }
-        }
-    });
-
-    let client_stream = match client_stream_fut.await {
+    let stream = match client
+        .download(location, part_request.blob_range, probe.clone())
+        .await
+    {
         Ok(stream) => stream,
         Err(err) => {
-            let err =
-                CondowError::new_other("panic on remote request (aquire stream)").with_source(err);
             probe.part_failed(&err, 0, &part_request.blob_range);
             probe.download_failed(Some(download_started_at.elapsed()));
             log_dl_msg_dbg.log(format!("download failed: {err}"));
@@ -67,7 +47,7 @@ pub(crate) async fn short_path<C: CondowClient, P: Probe + Clone>(
     probe.part_started(part_request.part_index, part_request.blob_range);
 
     let stream = ShortPathTerminator::new(
-        client_stream,
+        stream,
         part_request,
         probe.clone(),
         download_started_at,

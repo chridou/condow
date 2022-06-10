@@ -41,7 +41,7 @@ where
     ) -> Result<Self, CondowError> {
         let probe = Arc::new(probe);
         let get_stream_fn =
-            gen_retry_get_stream_fn(get_stream_fn, config.clone(), Arc::clone(&probe));
+            gen_retry_get_stream_fn(get_stream_fn, config, Arc::clone(&probe));
 
         let initial_stream = get_stream_fn(initial_range).await?;
 
@@ -265,7 +265,6 @@ where
     let get_with_retries_fn: GetStreamFn = Arc::new(move |range: InclusiveRange| {
         let get_stream_fn_no_retries = Arc::clone(&get_stream_fn_no_retries);
         let probe = Arc::clone(&probe);
-        let config = config.clone();
         async move {
             // The first attempt
             let mut last_err = match get_stream_fn_no_retries(range).await {

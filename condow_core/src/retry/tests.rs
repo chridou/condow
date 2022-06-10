@@ -1267,7 +1267,7 @@ mod retry_download_get_stream {
 
         match gen_retry_get_stream_fn(
             Arc::new(get_part_stream),
-            config.clone(),
+            config,
             Arc::new(probe.clone()),
         )(InclusiveRange(0, 42))
         .await
