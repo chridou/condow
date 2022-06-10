@@ -93,7 +93,10 @@ mod client_bytes_stream {
     use pin_project_lite::pin_project;
     use tokio::sync::mpsc as tokio_mpsc;
 
-    use crate::streams::{BytesHint, BytesStreamItem};
+    use crate::{
+        errors::CondowError,
+        streams::{BytesHint, BytesStreamItem},
+    };
 
     pin_project! {
     /// A stream of [Bytes] (chunks) where there can be an error for each chunk of bytes.
@@ -184,6 +187,10 @@ mod client_bytes_stream {
 
         pub fn once_ok(bytes: Bytes) -> Self {
             Self::once(Ok(bytes))
+        }
+
+        pub fn once_err(error: CondowError) -> Self {
+            Self::once(Err(error))
         }
 
         pub fn into_io_stream(self) -> impl Stream<Item = Result<Bytes, io::Error>> {
